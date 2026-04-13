@@ -100,6 +100,7 @@ ingress:
 #   COGNITO_USER_POOL_ID   — Cognito user pool ID
 #   COGNITO_CLIENT_ID      — Cognito app client ID
 #   COGNITO_ISSUER_URL     — Cognito user pool issuer URL
+#   AUTH_COGNITO_ISSUER_URL — Alias of COGNITO_ISSUER_URL (TanStack Start naming)
 #   COGNITO_DOMAIN         — Cognito hosted UI domain
 #   BEDROCK_AGENT_API_KEY  — Bedrock Agent API key
 #   REVALIDATION_SECRET    — ISR revalidation token

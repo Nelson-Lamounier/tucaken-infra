@@ -223,6 +223,8 @@ def resolve_admin_secrets(cfg: StartAdminConfig, ssm_client: object, client_erro
         secrets["AUTH_COGNITO_DOMAIN"] = secrets["COGNITO_DOMAIN"]
     if "COGNITO_CLIENT_ID" in secrets:
         secrets["AUTH_COGNITO_CLIENT_ID"] = secrets["COGNITO_CLIENT_ID"]
+    if "COGNITO_ISSUER_URL" in secrets:
+        secrets["AUTH_COGNITO_ISSUER_URL"] = secrets["COGNITO_ISSUER_URL"]
 
     # VITE_APP_URL: base URL for the admin app — used by auth.ts to build the
     # Cognito redirect_uri (e.g. https://nelsonlamounier.com/admin/auth/callback).
@@ -267,6 +269,7 @@ _ADMIN_SECRET_KEYS = [
     # to construct the Cognito PKCE login URL at runtime.
     "AUTH_COGNITO_DOMAIN",
     "AUTH_COGNITO_CLIENT_ID",
+    "AUTH_COGNITO_ISSUER_URL",
     "VITE_APP_URL",
     "BEDROCK_AGENT_API_KEY",
     "REVALIDATION_SECRET",

@@ -2550,29 +2550,7 @@ install:
 # Kubernetes healty
 [group('k8s')]
 cluster-health:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "━━━ NODES ━━━" && kubectl get nodes -o wide
-    echo "" && echo "━━━ NODE RESOURCES ━━━" && kubectl top nodes
-    echo "" && echo "━━━ NAMESPACES ━━━" && kubectl get namespaces
-    echo "" && echo "━━━ POD SUMMARY BY NAMESPACE ━━━" && \
-      kubectl get pods -A --no-headers | awk '{print $1}' | sort -u | \
-      while read ns; do \
-        running=$$(kubectl get pods -n $$ns --no-headers 2>/dev/null | grep -c "Running" || true); \
-        total=$$(kubectl get pods -n $$ns --no-headers 2>/dev/null | wc -l | tr -d ' '); \
-        pending=$$(kubectl get pods -n $$ns --no-headers 2>/dev/null | grep -vc "Running\|Completed" || true); \
-        icon="✅"; [ "$$pending" -gt 0 ] && icon="⚠️ "; \
-        echo "$$icon $$ns: $$running/$$total Running"; \
-      done
-    echo "" && echo "━━━ UNHEALTHY PODS ━━━" && \
-      kubectl get pods -A | grep -v "Running\|Completed\|NAME" || echo "✅ All healthy"
-    echo "" && echo "━━━ ARGOCD APPS ━━━" && kubectl get applications -n argocd
-    echo "" && echo "━━━ INGRESSROUTES ━━━" && kubectl get ingressroute -A
-    echo "" && echo "━━━ PDBS ━━━" && kubectl get pdb -A
-    echo "" && echo "━━━ RESOURCE QUOTAS ━━━" && kubectl get resourcequota -A
-    echo "" && echo "━━━ SITE ━━━" && \
-      curl -sI https://nelsonlamounier.com | head -1 && \
-      curl -sI https://nelsonlamounier.com/admin/login | head -1
+   ./scripts/cluster-health.sh
 
 
 # =============================================================================

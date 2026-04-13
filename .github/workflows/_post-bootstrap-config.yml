@@ -143,15 +143,40 @@ jobs:
           echo "  Max wait: ${MAX_WAIT}s | Poll interval: ${POLL}s"
           echo ""
 
+          # Resolve status for a single execution ID.
+          # Detects ID type by prefix:
+          #   arn:aws:states:* → Step Functions execution ARN  (general-pool, monitoring-pool)
+          #   UUID              → SSM Automation execution ID  (worker, mon-worker, argocd-worker)
+          # Maps both APIs to a common terminal-state vocabulary.
+          get_status() {
+            local ID="$1"
+            if [[ "$ID" == arn:aws:states:* ]]; then
+              local SFN_STATUS
+              SFN_STATUS=$(aws stepfunctions describe-execution \
+                --execution-arn "$ID" \
+                --query 'status' \
+                --output text 2>/dev/null || echo "UNKNOWN")
+              case "$SFN_STATUS" in
+                SUCCEEDED)  echo "Success" ;;
+                FAILED)     echo "Failed" ;;
+                TIMED_OUT)  echo "TimedOut" ;;
+                ABORTED)    echo "Cancelled" ;;
+                *)          echo "Running" ;;
+              esac
+            else
+              aws ssm get-automation-execution \
+                --automation-execution-id "$ID" \
+                --query AutomationExecution.AutomationExecutionStatus \
+                --output text 2>/dev/null || echo "Unknown"
+            fi
+          }
+
           waited=0
           while [ $waited -lt $MAX_WAIT ]; do
             all_done=true
             for PARAM in "${!EXEC_IDS[@]}"; do
               ID="${EXEC_IDS[$PARAM]}"
-              STATUS=$(aws ssm get-automation-execution \
-                --automation-execution-id "$ID" \
-                --query AutomationExecution.AutomationExecutionStatus \
-                --output text 2>/dev/null || echo "Unknown")
+              STATUS=$(get_status "$ID")
               echo "  $(basename $PARAM): $STATUS (${waited}s elapsed)"
               case $STATUS in
                 Success|Failed|TimedOut|Cancelled|CompletedWithFailure) ;;

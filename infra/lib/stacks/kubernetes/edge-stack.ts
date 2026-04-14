@@ -492,6 +492,10 @@ export class KubernetesEdgeStack extends cdk.Stack {
         // difference from CACHING_DISABLED is that CookieBehavior.ALL causes
         // CloudFront to forward Set-Cookie response headers back to the viewer,
         // which is required for the Auth.js CSRF double-submit flow.
+        //
+        // Authorization is included in the cache key (required by CloudFront —
+        // it cannot go in OriginRequestPolicy) so admin-api receives the Bearer
+        // token. With TTL=0 the cache key is never used for actual caching.
         const authNoCachePolicy = new cloudfront.CachePolicy(this, 'AuthNoCachePolicy', {
             comment: 'No caching — passes Set-Cookie headers for Auth.js CSRF/session flow',
             defaultTtl: cdk.Duration.seconds(0),
@@ -499,7 +503,7 @@ export class KubernetesEdgeStack extends cdk.Stack {
             minTtl: cdk.Duration.seconds(0),
             cookieBehavior: cloudfront.CacheCookieBehavior.all(),
             queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
-            headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+            headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization'),
             enableAcceptEncodingGzip: false,
             enableAcceptEncodingBrotli: false,
         });

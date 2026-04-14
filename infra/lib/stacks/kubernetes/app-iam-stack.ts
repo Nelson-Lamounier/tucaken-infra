@@ -38,6 +38,15 @@ export interface KubernetesAppIamStackProps extends cdk.StackProps {
     /** Reference to the control plane stack (for instance role) */
     readonly controlPlaneStack: KubernetesControlPlaneStack;
 
+    /**
+     * Instance role of the general-pool worker ASG.
+     *
+     * Application pods (admin-api, public-api, start-admin) run on worker nodes,
+     * not the control plane. DynamoDB, S3, and Lambda grants must be attached to
+     * the worker node instance role so pods can reach AWS services via IMDS.
+     */
+    readonly workerPoolRole: iam.IRole;
+
     /** Target deployment environment */
     readonly targetEnvironment: Environment;
 
@@ -126,17 +135,14 @@ export class KubernetesAppIamStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: KubernetesAppIamStackProps) {
         super(scope, id, props);
 
-        // Import the instance role from the control plane stack
-        const instanceRole = props.controlPlaneStack.instanceRole;
+        // Import the instance roles from the control plane and worker pool stacks.
+        // Application pods (admin-api, public-api, start-admin) run on worker nodes —
+        // grants must land on the worker role. The control plane role also receives
+        // the same grants for deploy.py bootstrap scripts (S3/SSM access).
+        const controlPlaneRole = props.controlPlaneStack.instanceRole;
+        const workerRole = props.workerPoolRole;
 
-        // =====================================================================
-        // Application-tier IAM grants
-        //
-        // All grants are conditional — no-op if the corresponding props
-        // are absent. This allows the stack to be deployed in
-        // monitoring-only mode without any application-tier permissions.
-        // =====================================================================
-        grantApplicationPermissions(instanceRole, {
+        const grantProps = {
             region: this.region,
             account: this.account,
             dynamoTableArns: props.dynamoTableArns,
@@ -148,14 +154,32 @@ export class KubernetesAppIamStack extends cdk.Stack {
             bedrockSsmPath: props.bedrockSsmPath,
             secretsManagerPathPattern: props.secretsManagerPathPattern,
             lambdaInvokeArns: props.lambdaInvokeArns,
-        });
+        };
+
+        // =====================================================================
+        // Application-tier IAM grants
+        //
+        // Granted to both roles:
+        //   - Worker node role  — pods (admin-api, public-api) use IMDS to access
+        //                         DynamoDB, S3, and Lambda via the worker role.
+        //   - Control plane role — deploy.py bootstrap scripts running via SSM
+        //                          Automation need S3/SSM access on the control plane.
+        //
+        // All grants are conditional — no-op if the corresponding props are absent.
+        // =====================================================================
+        grantApplicationPermissions(workerRole, grantProps);
+        grantApplicationPermissions(controlPlaneRole, grantProps);
 
         // =====================================================================
         // Stack Outputs
         // =====================================================================
         new cdk.CfnOutput(this, 'InstanceRoleArn', {
-            value: instanceRole.roleArn,
-            description: 'Instance role ARN receiving application-tier grants',
+            value: controlPlaneRole.roleArn,
+            description: 'Control plane instance role ARN receiving application-tier grants',
+        });
+        new cdk.CfnOutput(this, 'WorkerRoleArn', {
+            value: workerRole.roleArn,
+            description: 'Worker node instance role ARN receiving application-tier grants',
         });
     }
 }

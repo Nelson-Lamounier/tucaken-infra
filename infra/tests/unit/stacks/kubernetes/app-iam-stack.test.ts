@@ -20,6 +20,7 @@
 
 import { Template, Match } from 'aws-cdk-lib/assertions';
 import * as cdk from 'aws-cdk-lib/core';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 import { Environment } from '../../../../lib/config';
 import { getK8sConfigs } from '../../../../lib/config/kubernetes';
@@ -71,8 +72,14 @@ function createAppIamStack(
         ssmPrefix: '/k8s/development',
     });
 
+    // Minimal worker role stub — avoids instantiating the full WorkerAsgStack
+    const workerRole = new iam.Role(app, 'TestWorkerRole', {
+        assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+    });
+
     const stack = new KubernetesAppIamStack(app, 'TestK8sAppIamStack', {
         controlPlaneStack,
+        workerPoolRole: workerRole,
         env: TEST_ENV_EU,
         targetEnvironment: Environment.DEVELOPMENT,
         configs: TEST_CONFIGS,

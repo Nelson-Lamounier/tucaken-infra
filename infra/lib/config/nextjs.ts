@@ -772,7 +772,7 @@ function buildNextJsConfigs(): Record<DeployableEnvironment, NextJsConfigs> {
             albOriginTimeouts: { connectionAttempts: 3, connectionTimeout: cdk.Duration.seconds(10), readTimeout: cdk.Duration.seconds(30), keepaliveTimeout: cdk.Duration.seconds(5) },
             errorResponseTtl: cdk.Duration.seconds(60),
             cacheHeaders: { dynamic: ['Accept', 'Accept-Language'], api: ['Accept', 'Accept-Language', 'Authorization', 'Content-Type'] },
-            originRequestHeaders: ['Host', 'CloudFront-Viewer-Country', 'CloudFront-Is-Mobile-Viewer', 'CloudFront-Is-Desktop-Viewer', 'User-Agent', 'Content-Type', 'x-tsr-serverFn'],
+            originRequestHeaders: ['Host', 'CloudFront-Viewer-Country', 'CloudFront-Is-Mobile-Viewer', 'CloudFront-Is-Desktop-Viewer', 'User-Agent', 'Content-Type', 'x-tsr-serverFn', 'Authorization'],
             adminCookies: [...AUTH_COOKIES],
         },
         ecsTask: {
@@ -862,7 +862,7 @@ function buildNextJsConfigs(): Record<DeployableEnvironment, NextJsConfigs> {
             albOriginTimeouts: { connectionAttempts: 3, connectionTimeout: cdk.Duration.seconds(10), readTimeout: cdk.Duration.seconds(30), keepaliveTimeout: cdk.Duration.seconds(5) },
             errorResponseTtl: cdk.Duration.seconds(60),
             cacheHeaders: { dynamic: ['Accept', 'Accept-Language'], api: ['Accept', 'Accept-Language', 'Authorization', 'Content-Type'] },
-            originRequestHeaders: ['Host', 'CloudFront-Viewer-Country', 'CloudFront-Is-Mobile-Viewer', 'CloudFront-Is-Desktop-Viewer', 'User-Agent', 'Content-Type', 'x-tsr-serverFn'],
+            originRequestHeaders: ['Host', 'CloudFront-Viewer-Country', 'CloudFront-Is-Mobile-Viewer', 'CloudFront-Is-Desktop-Viewer', 'User-Agent', 'Content-Type', 'x-tsr-serverFn', 'Authorization'],
             adminCookies: [...AUTH_COOKIES],
         },
         ecsTask: {
@@ -952,7 +952,7 @@ function buildNextJsConfigs(): Record<DeployableEnvironment, NextJsConfigs> {
             albOriginTimeouts: { connectionAttempts: 3, connectionTimeout: cdk.Duration.seconds(10), readTimeout: cdk.Duration.seconds(30), keepaliveTimeout: cdk.Duration.seconds(5) },
             errorResponseTtl: cdk.Duration.seconds(60),
             cacheHeaders: { dynamic: ['Accept', 'Accept-Language'], api: ['Accept', 'Accept-Language', 'Authorization', 'Content-Type'] },
-            originRequestHeaders: ['Host', 'CloudFront-Viewer-Country', 'CloudFront-Is-Mobile-Viewer', 'CloudFront-Is-Desktop-Viewer', 'User-Agent', 'Content-Type', 'x-tsr-serverFn'],
+            originRequestHeaders: ['Host', 'CloudFront-Viewer-Country', 'CloudFront-Is-Mobile-Viewer', 'CloudFront-Is-Desktop-Viewer', 'User-Agent', 'Content-Type', 'x-tsr-serverFn', 'Authorization'],
             adminCookies: [...AUTH_COOKIES],
         },
         ecsTask: {

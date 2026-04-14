@@ -81,15 +81,16 @@ export function cognitoJwtAuth(
         issuer: issuerUrl,
         audience: clientId,
       });
-
       ctx.set('jwtPayload', payload as JWTPayload);
-      await next();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Token validation failed';
       ctx.res = new Response(
         JSON.stringify({ error: 'Unauthorised', detail: message }),
         { status: 401, headers: { 'Content-Type': 'application/json' } },
       );
+      return;
     }
+
+    await next();
   };
 }

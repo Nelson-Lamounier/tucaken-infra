@@ -336,7 +336,11 @@ def upsert_public_api_ingressroute(
                 },
             },
             "spec": {
-                "entryPoints": ["websecure"],
+                # ENTRYPOINT: 'web' (port 80) — not 'websecure'.
+                # CloudFront → EIP uses HTTP_ONLY (port 80). Traefik's 'web' entrypoint
+                # handles all CloudFront traffic. The 'websecure' entrypoint (port 443)
+                # would never be reached from CloudFront.
+                "entryPoints": ["web"],
                 "routes": [
                     {
                         "match": match_rule,
@@ -346,7 +350,6 @@ def upsert_public_api_ingressroute(
                         ],
                     }
                 ],
-                "tls": {"certResolver": "letsencrypt"},
             },
         }
 

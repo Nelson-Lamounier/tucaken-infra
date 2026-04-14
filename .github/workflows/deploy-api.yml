@@ -323,6 +323,31 @@ jobs:
 
 
       # -------------------------------------------------------------------------
+      # Sync deploy scripts to S3 so the control-plane instance runs the
+      # version from this commit, not whatever was cached from the last
+      # _deploy-ssm-automation.yml run.
+      # -------------------------------------------------------------------------
+      - name: Sync Admin-API Scripts to S3
+        run: |
+          SCRIPTS_BUCKET=$(aws ssm get-parameter \
+            --name "/k8s/${{ env.ENVIRONMENT }}/scripts-bucket" \
+            --query 'Parameter.Value' \
+            --output text)
+
+          echo "Syncing k8s-bootstrap helpers..."
+          aws s3 sync kubernetes-app/k8s-bootstrap/ \
+            "s3://${SCRIPTS_BUCKET}/k8s-bootstrap/" \
+            --region "${{ env.AWS_REGION }}"
+
+          echo "Syncing admin-api deploy scripts..."
+          aws s3 sync kubernetes-app/workloads/charts/admin-api/ \
+            "s3://${SCRIPTS_BUCKET}/app-deploy/admin-api/" \
+            --exclude "chart/*" --exclude "__pycache__/*" \
+            --region "${{ env.AWS_REGION }}"
+
+          echo "[PASS] admin-api scripts synced to s3://${SCRIPTS_BUCKET}/app-deploy/admin-api/"
+
+      # -------------------------------------------------------------------------
       # Bootstrap admin-api K8s resources via deploy.py.
       #
       # deploy.py creates:
@@ -332,6 +357,10 @@ jobs:
       #
       # The script is the sole owner of these resources. ArgoCD only manages
       # the Deployment, Service, NetworkPolicy, and ResourceQuota via Helm.
+      #
+      # The SSM command fetches the scripts bucket from SSM and syncs the
+      # latest deploy.py from S3 before executing, ensuring the instance
+      # always runs the version from this commit.
       # -------------------------------------------------------------------------
       - name: Run admin-api deploy.py via SSM (Secret + ConfigMap + IngressRoute)
         env:
@@ -354,7 +383,11 @@ jobs:
           CMD_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["KUBECONFIG=/etc/kubernetes/admin.conf python3 /data/app-deploy/admin-api/deploy.py 2>&1"]' \
+            --parameters 'commands=[
+              "BUCKET=$(aws ssm get-parameter --name /k8s/development/scripts-bucket --query Parameter.Value --output text --region eu-west-1 2>/dev/null || echo \"\")",
+              "[ -n \"$BUCKET\" ] && aws s3 sync s3://$BUCKET/k8s-bootstrap/ /data/k8s-bootstrap/ --region eu-west-1 2>&1 && aws s3 sync s3://$BUCKET/app-deploy/admin-api/ /data/app-deploy/admin-api/ --region eu-west-1 2>&1 && echo \"[S3] scripts refreshed\" || echo \"[WARN] S3 sync skipped\"",
+              "KUBECONFIG=/etc/kubernetes/admin.conf python3 /data/app-deploy/admin-api/deploy.py 2>&1"
+            ]' \
             --region "$REGION" \
             --query "Command.CommandId" --output text)
 
@@ -625,11 +658,39 @@ jobs:
 
 
       # -------------------------------------------------------------------------
+      # Sync deploy scripts to S3 so the control-plane instance runs the
+      # version from this commit, not whatever was cached from the last
+      # _deploy-ssm-automation.yml run.
+      # -------------------------------------------------------------------------
+      - name: Sync Public-API Scripts to S3
+        run: |
+          SCRIPTS_BUCKET=$(aws ssm get-parameter \
+            --name "/k8s/${{ env.ENVIRONMENT }}/scripts-bucket" \
+            --query 'Parameter.Value' \
+            --output text)
+
+          echo "Syncing k8s-bootstrap helpers..."
+          aws s3 sync kubernetes-app/k8s-bootstrap/ \
+            "s3://${SCRIPTS_BUCKET}/k8s-bootstrap/" \
+            --region "${{ env.AWS_REGION }}"
+
+          echo "Syncing public-api deploy scripts..."
+          aws s3 sync kubernetes-app/workloads/charts/public-api/ \
+            "s3://${SCRIPTS_BUCKET}/app-deploy/public-api/" \
+            --exclude "chart/*" --exclude "__pycache__/*" \
+            --region "${{ env.AWS_REGION }}"
+
+          echo "[PASS] public-api scripts synced to s3://${SCRIPTS_BUCKET}/app-deploy/public-api/"
+
+      # -------------------------------------------------------------------------
       # Bootstrap public-api K8s resources via deploy.py.
       #
       # deploy.py creates:
       #   public-api-config  (ConfigMap)   — DynamoDB table names, region
       #   public-api         (IngressRoute) — Traefik /api/* routing rule
+      #
+      # The SSM command fetches the scripts bucket from SSM and syncs the
+      # latest deploy.py from S3 before executing.
       # -------------------------------------------------------------------------
       - name: Run public-api deploy.py via SSM (ConfigMap + IngressRoute)
         env:
@@ -652,7 +713,11 @@ jobs:
           CMD_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["KUBECONFIG=/etc/kubernetes/admin.conf python3 /data/app-deploy/public-api/deploy.py 2>&1"]' \
+            --parameters 'commands=[
+              "BUCKET=$(aws ssm get-parameter --name /k8s/development/scripts-bucket --query Parameter.Value --output text --region eu-west-1 2>/dev/null || echo \"\")",
+              "[ -n \"$BUCKET\" ] && aws s3 sync s3://$BUCKET/k8s-bootstrap/ /data/k8s-bootstrap/ --region eu-west-1 2>&1 && aws s3 sync s3://$BUCKET/app-deploy/public-api/ /data/app-deploy/public-api/ --region eu-west-1 2>&1 && echo \"[S3] scripts refreshed\" || echo \"[WARN] S3 sync skipped\"",
+              "KUBECONFIG=/etc/kubernetes/admin.conf python3 /data/app-deploy/public-api/deploy.py 2>&1"
+            ]' \
             --region "$REGION" \
             --query "Command.CommandId" --output text)
 

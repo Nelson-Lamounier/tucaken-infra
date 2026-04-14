@@ -317,12 +317,16 @@ spec:
 """
 
 
-def _resolve_origin_secret(ssm_client: object, environment: str, client_error_cls: type) -> str:
+def _resolve_origin_secret(ssm_client: object, environment: str, client_error_cls: type) -> str | None:
     """Fetch the CloudFront origin secret from SSM.
 
-    Mirrors the start-admin deploy.py pattern — the secret is stored at
+    Mirrors the nextjs/start-admin deploy.py pattern — the secret is stored at
     /k8s/{environment}/cloudfront-origin-secret and rotated periodically.
     During rotation both old and new values are accepted (regex alternation).
+
+    Returns None (with a warning) when the parameter doesn't exist yet —
+    Day-0 deployments run before _deploy-ssm-automation.yml seeds the secret.
+    In that case upsert_admin_api_ingressroute() will skip IngressRoute creation.
 
     Args:
         ssm_client: boto3 SSM client.
@@ -330,7 +334,8 @@ def _resolve_origin_secret(ssm_client: object, environment: str, client_error_cl
         client_error_cls: botocore ClientError class.
 
     Returns:
-        Regex pattern string for HeaderRegexp matcher (one or two values).
+        Regex pattern string for HeaderRegexp matcher (one or two values),
+        or None if the parameter doesn't exist.
     """
     import re
     path = f"/k8s/{environment}/cloudfront-origin-secret"
@@ -339,17 +344,16 @@ def _resolve_origin_secret(ssm_client: object, environment: str, client_error_cl
         history = ssm_client.get_parameter_history(Name=path, WithDecryption=True)
         versions = sorted(history["Parameters"], key=lambda p: p["Version"], reverse=True)
         if not versions:
-            raise RuntimeError(f"No versions found for SSM parameter: {path}")
+            log_warn("No versions found for CloudFront origin secret — IngressRoute skipped (Day-0?)", ssm_path=path)
+            return None
         latest = re.escape(versions[0]["Value"])
         if len(versions) >= 2:
             previous = re.escape(versions[1]["Value"])
             return f"{previous}|{latest}"
         return latest
-    except client_error_cls as exc:
-        raise RuntimeError(
-            f"CloudFront origin secret not found at {path}. "
-            "Ensure the SSM parameter exists before running deploy.py."
-        ) from exc
+    except client_error_cls:
+        log_warn("CloudFront origin secret not found — IngressRoute skipped (Day-0?)", ssm_path=path)
+        return None
 
 
 def upsert_admin_api_ingressroute(cfg: AdminApiConfig, ssm_client: object, client_error_cls: type) -> None:
@@ -358,6 +362,10 @@ def upsert_admin_api_ingressroute(cfg: AdminApiConfig, ssm_client: object, clien
     This function is the sole owner of the admin-api IngressRoute.
     It must be called after create_public_api_k8s_resources() so the
     namespace already exists.
+
+    Skips gracefully when /k8s/{env}/cloudfront-origin-secret has not been
+    seeded yet (Day-0 bootstrap order).  Re-run after _deploy-ssm-automation.yml
+    to apply the IngressRoute.
 
     Args:
         cfg: admin-api deployment configuration.
@@ -372,6 +380,9 @@ def upsert_admin_api_ingressroute(cfg: AdminApiConfig, ssm_client: object, clien
     # routes /api/admin/* to admin-api and /api/* (excluding admin) to public-api.
     host = "nelsonlamounier.com"
     origin_secret = _resolve_origin_secret(ssm_client, cfg.environment_name, client_error_cls)
+    if origin_secret is None:
+        log_warn("Skipping IngressRoute creation — origin secret not available yet")
+        return
 
     manifest = INGRESSROUTE_TEMPLATE.format(host=host, origin_secret=origin_secret)
 

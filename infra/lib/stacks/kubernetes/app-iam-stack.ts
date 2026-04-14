@@ -145,7 +145,14 @@ export class KubernetesAppIamStack extends cdk.Stack {
         // grants must land on the worker role. The control plane role also receives
         // the same grants for deploy.py bootstrap scripts (S3/SSM access).
         const controlPlaneRole = props.controlPlaneStack.instanceRole;
-        const workerRoleArn = ssm.StringParameter.valueFromLookup(this, props.workerRoleSsmPath);
+        // valueFromLookup() returns "dummy-value-for-<path>" when the SSM parameter
+        // doesn't exist yet (first synth before GeneralPool is deployed). Substitute a
+        // valid-format placeholder so CDK can synthesize without error — the real ARN
+        // is resolved on the next synth after GeneralPool writes the parameter.
+        const rawWorkerRoleArn = ssm.StringParameter.valueFromLookup(this, props.workerRoleSsmPath);
+        const workerRoleArn = rawWorkerRoleArn.startsWith('dummy-value-for-')
+            ? `arn:aws:iam::${cdk.Stack.of(this).account}:role/dummy-worker-role-placeholder`
+            : rawWorkerRoleArn;
         const workerRole = iam.Role.fromRoleArn(this, 'WorkerRole', workerRoleArn, { mutable: true });
 
         const grantProps = {

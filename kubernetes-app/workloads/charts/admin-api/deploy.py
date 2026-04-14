@@ -319,10 +319,12 @@ def upsert_admin_api_ingressroute(cfg: AdminApiConfig) -> None:
     import subprocess
     import tempfile
 
-    # Derive hostname from SSM prefix (mirrors nextjs deploy.py pattern).
-    # Production: nelsonlamounier.com, Development: dev.nelsonlamounier.com (or override)
-    env = cfg.environment_name
-    host = "nelsonlamounier.com" if env == "production" else f"{env}.nelsonlamounier.com"
+    # admin-api is routed via the main domain at /api/admin/* for all environments.
+    # The subpath exclusion on the public-api IngressRoute ensures Traefik correctly
+    # routes /api/admin/* to admin-api and /api/* (excluding admin) to public-api.
+    # Subdomain routing (admin-api.nelsonlamounier.com) was intentionally abandoned:
+    # those DNS records do not exist and BFF calls are server-to-server (in-cluster).
+    host = "nelsonlamounier.com"
 
     manifest = INGRESSROUTE_TEMPLATE.format(host=host)
 

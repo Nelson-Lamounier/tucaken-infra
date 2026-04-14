@@ -774,17 +774,23 @@ export class KubernetesEdgeStack extends cdk.Stack {
         if (props.baseDomain) {
             const bffSsmPaths = bedrockSsmPaths(props.targetEnvironment);
 
+            // In-cluster Kubernetes service DNS is used for server-to-server calls.
+            // admin-api and public-api are BFF services — only reachable within the
+            // cluster, not via public subdomains. Using in-cluster DNS avoids the
+            // need for external DNS records (admin-api.nelsonlamounier.com /
+            // api.nelsonlamounier.com do not exist) and keeps BFF traffic off the
+            // public internet.
             new ssm.StringParameter(this, 'AdminApiUrlParameter', {
                 parameterName: bffSsmPaths.adminApiUrl,
-                stringValue: `https://admin-api.${props.baseDomain}`,
-                description: `admin-api BFF public URL (start-admin ADMIN_API_URL)`,
+                stringValue: `http://admin-api.admin-api:3002`,
+                description: `admin-api BFF in-cluster URL (start-admin ADMIN_API_URL)`,
                 tier: ssm.ParameterTier.STANDARD,
             });
 
             new ssm.StringParameter(this, 'PublicApiUrlParameter', {
                 parameterName: bffSsmPaths.publicApiUrl,
-                stringValue: `https://api.${props.baseDomain}`,
-                description: `public-api BFF public URL (site PUBLIC_API_URL)`,
+                stringValue: `http://public-api.public-api:3001`,
+                description: `public-api BFF in-cluster URL (site PUBLIC_API_URL)`,
                 tier: ssm.ParameterTier.STANDARD,
             });
         }

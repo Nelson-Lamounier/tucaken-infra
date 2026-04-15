@@ -42,6 +42,7 @@ function createApiStack(
         'TestBedrockApiStack',
         {
             namePrefix: NAME_PREFIX,
+            environmentName: 'development',
             lambdaMemoryMb: 256,
             lambdaTimeoutSeconds: 60,
             logRetention: logs.RetentionDays.ONE_WEEK,

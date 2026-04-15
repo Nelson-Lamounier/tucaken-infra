@@ -350,6 +350,70 @@ describe('runAgent — Error Handling', () => {
             `Agent '${TEST_AGENT_NAME}' failed in pipeline '${ctx.pipelineId}'`,
         );
     });
+
+    it('should throw AgentExecutionError when stopReason is max_tokens', async () => {
+        const config = buildConfig(VALID_MAX_TOKENS, VALID_THINKING_BUDGET);
+        const ctx = buildPipelineContext();
+
+        // Simulate a truncated response — Bedrock returns stopReason='max_tokens'
+        mockSend.mockResolvedValueOnce({
+            output: {
+                message: {
+                    content: [{ text: '{"truncated": "respon' }],
+                },
+            },
+            usage: { inputTokens: 1000, outputTokens: 8192 },
+            stopReason: 'max_tokens',
+        });
+
+        try {
+            await runAgent({
+                config,
+                userMessage: TEST_USER_MESSAGE,
+                parseResponse: (text: string) => JSON.parse(text),
+                pipelineContext: ctx,
+            });
+            fail('Expected AgentExecutionError to be thrown');
+        } catch (error) {
+            expect(error).toBeInstanceOf(AgentExecutionError);
+            const agentErr = error as InstanceType<typeof AgentExecutionError>;
+            expect(agentErr.cause.message).toContain('response truncated');
+            expect(agentErr.cause.message).toContain("stopReason='max_tokens'");
+        }
+    });
+
+    it('should include token budget details in max_tokens truncation error', async () => {
+        const config = buildConfig(VALID_MAX_TOKENS, VALID_THINKING_BUDGET);
+        const ctx = buildPipelineContext();
+
+        mockSend.mockResolvedValueOnce({
+            output: {
+                message: {
+                    content: [{ text: '{"incomplete": true' }],
+                },
+            },
+            usage: { inputTokens: 500, outputTokens: 8192 },
+            stopReason: 'max_tokens',
+        });
+
+        try {
+            await runAgent({
+                config,
+                userMessage: TEST_USER_MESSAGE,
+                parseResponse: (text: string) => JSON.parse(text),
+                pipelineContext: ctx,
+            });
+            fail('Expected AgentExecutionError to be thrown');
+        } catch (error) {
+            const agentErr = error as InstanceType<typeof AgentExecutionError>;
+            expect(agentErr.cause.message).toContain(
+                `Output used 8192 of ${VALID_MAX_TOKENS} maxTokens`,
+            );
+            expect(agentErr.cause.message).toContain(
+                `thinkingBudget=${VALID_THINKING_BUDGET}`,
+            );
+        }
+    });
 });
 
 // =============================================================================

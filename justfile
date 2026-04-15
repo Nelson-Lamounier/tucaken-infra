@@ -2562,3 +2562,67 @@ cluster-health:
 [group('gh')]
 gh-dispatch workflow:
     npx tsx scripts/local/gh-dispatch.ts {{workflow}}
+
+
+# =============================================================================
+# LOCAL DOCKER TESTING — admin-api
+#
+# Full local development cycle for the admin-api BFF container.
+# Requirements:
+#   - Docker Desktop or colima running
+#   - ~/.aws credentials for the dev-account profile (or AWS SSO session active)
+#   - api/admin-api/.env file with real ARNs and table names
+#
+# Usage:
+#   just admin-api-up           # Stop any running container, build, and start
+#   just admin-api-down         # Stop and remove container
+#   just admin-api-logs         # Tail container logs
+#   just admin-api-test TOKEN   # Smoke-test the health + draft endpoints
+# =============================================================================
+
+# Build the admin-api Docker image and start it in detached mode.
+# Mounts ~/.aws read-only and passes AWS_PROFILE for credential resolution.
+[group('local-dev')]
+admin-api-up profile="dev-account":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    AWS_PROFILE={{profile}} bash api/admin-api/scripts/local-admin-api.sh
+
+# Stop and remove the local admin-api container.
+[group('local-dev')]
+admin-api-down:
+    docker compose -f api/admin-api/docker-compose.yml down --remove-orphans --timeout 10
+    echo "✓ admin-api container stopped"
+
+# Tail logs from the local admin-api container.
+[group('local-dev')]
+admin-api-logs:
+    docker compose -f api/admin-api/docker-compose.yml logs --follow
+
+# Run a smoke test against the local admin-api container.
+# Requires a valid Cognito JWT token — copy from browser dev tools on the admin UI.
+# Usage: just admin-api-test <your-jwt-token>
+[group('local-dev')]
+admin-api-test token slug="test-smoke-slug-$(date +%s)":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BASE="http://localhost:3002"
+    echo "── Health check ──────────────────────────────────────"
+    curl --silent --fail "${BASE}/healthz" | python3 -m json.tool
+    echo ""
+    echo "── Draft upload (POST /api/admin/drafts/{{slug}}) ───"
+    curl --silent --fail --show-error \
+      -X POST "${BASE}/api/admin/drafts/{{slug}}" \
+      -H "Authorization: Bearer {{token}}" \
+      -H "Content-Type: application/json" \
+      -d '{"content": "# Smoke Test\n\nLocal Docker test at '"'"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"'"'."}' \
+      | python3 -m json.tool
+    echo ""
+    echo "── Pipeline re-trigger (POST /api/admin/pipelines/article) ───"
+    curl --silent --fail --show-error \
+      -X POST "${BASE}/api/admin/pipelines/article" \
+      -H "Authorization: Bearer {{token}}" \
+      -H "Content-Type: application/json" \
+      -d '{"slug": "{{slug}}"}' \
+      | python3 -m json.tool
+

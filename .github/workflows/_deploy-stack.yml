@@ -329,7 +329,7 @@ jobs:
           STACK_NAME: ${{ inputs.stack-name }}
           ENVIRONMENT: ${{ inputs.environment }}
           AWS_REGION: ${{ inputs.aws-region }}
-          AWS_ACCOUNT_ID: ${{ steps.resolve-account.outputs.account_id }}
+          AWS_ACCOUNT_ID: ${{ steps.resolve-account.outputs.account_id || 'unknown' }}
           OUTPUTS_DIRECTORY: ${{ inputs.outputs-directory }}
           DEPLOY_STATUS: ${{ steps.deploy.outputs.status || 'unknown' }}
           DEPLOY_DURATION: ${{ steps.deploy.outputs.duration || '0' }}

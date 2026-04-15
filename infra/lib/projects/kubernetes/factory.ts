@@ -389,6 +389,12 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 signalsTimeoutMinutes: 40,
                 namePrefix,
                 crossAccountDnsRoleArn: edgeConfig.crossAccountRoleArn,
+                // Wire the notification email so the monitoring SNS topic has an
+                // email subscriber. Without this, Grafana alerts are published to
+                // the topic (via the EC2 instance role) but never delivered to a
+                // human recipient. emailConfig is sourced from NOTIFICATION_EMAIL
+                // env var at CDK synth time — same as all other stacks.
+                notificationEmail: emailConfig.notificationEmail,
             },
         );
         monitoringPoolStack.addDependency(controlPlaneStack);

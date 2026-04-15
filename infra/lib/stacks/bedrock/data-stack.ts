@@ -9,6 +9,7 @@
  * agent redeployments.
  */
 
+import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -34,6 +35,22 @@ export interface BedrockDataStackProps extends cdk.StackProps {
     readonly sonnetProfileSourceArn: string;
     /** Runtime environment name (for profile tags) */
     readonly environmentName: string;
+    /**
+     * Email address to notify when the Bedrock monthly spend reaches budget thresholds.
+     *
+     * When provided, creates a `CfnBudget` that fires at 80 % and 100 % of
+     * `monthlyBudgetUsd`. Notifications use AWS Budgets built-in email delivery
+     * (no SNS topic needed).
+     *
+     * @default undefined — no budget alarm created
+     */
+    readonly budgetAlertEmail?: string;
+    /**
+     * Monthly Bedrock spend limit in USD.
+     *
+     * @default 20
+     */
+    readonly monthlyBudgetUsd?: number;
 }
 
 /**
@@ -188,6 +205,63 @@ export class BedrockDataStack extends cdk.Stack {
             description: `Knowledge Base data bucket ARN for ${namePrefix}`,
             tier: ssm.ParameterTier.STANDARD,
         });
+
+        // =================================================================
+        // Monthly Budget Alarm — FinOps Guardrail (Gap C3)
+        //
+        // Creates an AWS Budgets cost alert scoped to the Amazon Bedrock
+        // service. Fires SNS email notifications at 80 % (FORECASTED) and
+        // 100 % (ACTUAL) of the monthly limit so spend spikes are caught
+        // before the period ends.
+        //
+        // Only created when budgetAlertEmail is provided — omit in local/test
+        // stacks to avoid stray budget resources.
+        // =================================================================
+        if (props.budgetAlertEmail) {
+            const budgetAmountUsd = props.monthlyBudgetUsd ?? 20;
+
+            new budgets.CfnBudget(this, 'BedrockMonthlyBudget', {
+                budget: {
+                    budgetName: `${namePrefix}-bedrock-monthly`,
+                    budgetType: 'COST',
+                    timeUnit: 'MONTHLY',
+                    budgetLimit: {
+                        amount: budgetAmountUsd,
+                        unit: 'USD',
+                    },
+                    costFilters: {
+                        // Scope to Bedrock service costs only
+                        Service: ['Amazon Bedrock'],
+                    },
+                },
+                notificationsWithSubscribers: [
+                    {
+                        notification: {
+                            comparisonOperator: 'GREATER_THAN',
+                            notificationType: 'FORECASTED',
+                            threshold: 80,
+                            thresholdType: 'PERCENTAGE',
+                        },
+                        subscribers: [{
+                            address: props.budgetAlertEmail,
+                            subscriptionType: 'EMAIL',
+                        }],
+                    },
+                    {
+                        notification: {
+                            comparisonOperator: 'GREATER_THAN',
+                            notificationType: 'ACTUAL',
+                            threshold: 100,
+                            thresholdType: 'PERCENTAGE',
+                        },
+                        subscribers: [{
+                            address: props.budgetAlertEmail,
+                            subscriptionType: 'EMAIL',
+                        }],
+                    },
+                ],
+            });
+        }
 
         // =================================================================
         // Stack Outputs

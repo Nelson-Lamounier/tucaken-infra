@@ -41,6 +41,8 @@ import type {
     InvokeRequestBody,
     InvokeResponseBody,
     ErrorResponseBody,
+    CallerRole,
+    ChatbotCallerContext,
 } from './types.js';
 
 // =============================================================================
@@ -354,12 +356,23 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
         });
 
         // =====================================================================
+        // Resolve caller context (Gap A3)
+        // =====================================================================
+        const validCallerRoles: ReadonlyArray<CallerRole> = ['recruiter', 'engineer', 'unknown'];
+        const resolvedRole: CallerRole =
+            body.callerRole !== undefined && validCallerRoles.includes(body.callerRole)
+                ? body.callerRole
+                : 'unknown';
+        const callerContext: ChatbotCallerContext = { callerRole: resolvedRole };
+
+        // =====================================================================
         // Invoke the agent (delegated to agents/ module)
         // =====================================================================
         const result = await invokeChatbotAgent(
             { agentId: config.agentId, agentAliasId: config.agentAliasId },
             inputCheck.sanitised,
             sessionId,
+            callerContext,
         );
 
         // =====================================================================
@@ -381,6 +394,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
             durationMs,
             inputBlocked: false,
             outputRedacted: wasRedacted,
+            callerRole: resolvedRole,
             origin: event.headers?.origin ?? 'unknown',
             userAgent: event.headers?.['user-agent']?.substring(0, 200) ?? 'unknown',
             ip: event.requestContext?.identity?.sourceIp ?? 'unknown',

@@ -105,7 +105,15 @@ export const BEDROCK_CONFIGS: Record<DeployableEnvironment, BedrockConfigs> = {
         knowledgeBase: {
             pineconeSecretName: 'bedrock-dev/pinecone-api-key',
             description: 'Portfolio repository documentation knowledge base (development)',
-            instruction: 'Use this knowledge base to answer questions about the portfolio project, its architecture, design decisions, and implementation details.',
+            // Gap A7: Precise retrieval instruction — guides the agent to search across
+            // all portfolio topic areas listed in the agent instruction (KB TOPICS section).
+            instruction:
+                'Search this knowledge base to answer questions about Nelson Lamounier\'s portfolio. ' +
+                'Topics include: AWS CDK infrastructure, Kubernetes cluster operations, ' +
+                'Bedrock AI/ML pipelines, GitHub Actions CI/CD, Next.js applications, ' +
+                'observability (Grafana/Loki/Prometheus), and AWS certifications. ' +
+                'Always retrieve context before answering. If no relevant context is found, ' +
+                'do not answer from general knowledge — report that the information is not in the portfolio records.',
         },
         api: {
             enableApiKey: true,
@@ -128,7 +136,14 @@ export const BEDROCK_CONFIGS: Record<DeployableEnvironment, BedrockConfigs> = {
         knowledgeBase: {
             pineconeSecretName: 'bedrock-stg/pinecone-api-key',
             description: 'Portfolio repository documentation knowledge base (staging)',
-            instruction: 'Use this knowledge base to answer questions about the portfolio project, its architecture, design decisions, and implementation details.',
+            // Gap A7: Consistent with development — precise retrieval guidance.
+            instruction:
+                'Search this knowledge base to answer questions about Nelson Lamounier\'s portfolio. ' +
+                'Topics include: AWS CDK infrastructure, Kubernetes cluster operations, ' +
+                'Bedrock AI/ML pipelines, GitHub Actions CI/CD, Next.js applications, ' +
+                'observability (Grafana/Loki/Prometheus), and AWS certifications. ' +
+                'Always retrieve context before answering. If no relevant context is found, ' +
+                'do not answer from general knowledge — report that the information is not in the portfolio records.',
         },
         api: {
             enableApiKey: true,
@@ -151,7 +166,15 @@ export const BEDROCK_CONFIGS: Record<DeployableEnvironment, BedrockConfigs> = {
         knowledgeBase: {
             pineconeSecretName: 'bedrock-prd/pinecone-api-key',
             description: 'Portfolio repository documentation knowledge base',
-            instruction: 'Use this knowledge base to answer questions about the portfolio project, its architecture, design decisions, and implementation details. Always be precise and cite specific components or files when relevant.',
+            // Gap A7: Production instruction adds citation requirement for higher grounding precision.
+            instruction:
+                'Search this knowledge base to answer questions about Nelson Lamounier\'s portfolio. ' +
+                'Topics include: AWS CDK infrastructure, Kubernetes cluster operations, ' +
+                'Bedrock AI/ML pipelines, GitHub Actions CI/CD, Next.js applications, ' +
+                'observability (Grafana/Loki/Prometheus), and AWS certifications. ' +
+                'Always retrieve context before answering and cite specific documents or components ' +
+                'when relevant. If no relevant context is found, do not answer from general knowledge ' +
+                '— report that the information is not in the portfolio records.',
         },
         api: {
             enableApiKey: true,

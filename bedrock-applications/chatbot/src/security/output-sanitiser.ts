@@ -33,12 +33,19 @@
  * partial redaction artefacts.
  */
 const SENSITIVE_OUTPUT_PATTERNS: ReadonlyArray<{ readonly regex: RegExp; readonly replacement: string }> = [
+    // AWS resource identifiers — most specific first to avoid partial redaction artefacts
     { regex: /arn:aws:[a-zA-Z0-9-]+:[a-z0-9-]*:\d{12}:[^\s,)}\]]+/g, replacement: '[AWS Resource]' },
     { regex: /\b\d{12}\b/g, replacement: '[Account ID]' },
-    { regex: /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, replacement: '[IP Address]' },
     { regex: /\b[A-Z0-9]{20}\b/g, replacement: '[Access Key]' },
-    { regex: /(?:api[_-]?key|secret|token|password)\s*[:=]\s*\S+/gi, replacement: '[REDACTED]' },
+    // Network identifiers
+    { regex: /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, replacement: '[IP Address]' },
     { regex: /https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}[^\s]*/g, replacement: '[Internal URL]' },
+    // Gap S3: Internal hostname redaction — catches Kubernetes cluster-internal
+    // service endpoints (*.cluster.local), VPC-internal DNS (*.internal), and
+    // mDNS / link-local hostnames (*.local) that could expose infrastructure topology.
+    { regex: /\b[a-z][a-z0-9-]{2,62}\.(internal|local|cluster\.local)\b/gi, replacement: '[Internal Host]' },
+    // Credentials in key=value / key: value form
+    { regex: /(?:api[_-]?key|secret|token|password)\s*[:=]\s*\S+/gi, replacement: '[REDACTED]' },
 ];
 
 // =============================================================================

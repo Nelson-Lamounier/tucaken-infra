@@ -26,6 +26,13 @@ export interface InvokeRequestBody {
     readonly prompt: string;
     /** Optional session ID for conversation continuity (UUID v4 format) */
     readonly sessionId?: string;
+    /**
+     * Optional caller role hint — used to adapt response depth and framing
+     * via `promptSessionAttributes` on the Bedrock Agent invocation.
+     *
+     * @default 'unknown'
+     */
+    readonly callerRole?: CallerRole;
 }
 
 /**
@@ -40,6 +47,34 @@ export interface InvokeResponseBody {
     /** Session ID for conversation continuity */
     readonly sessionId: string;
 }
+
+// =============================================================================
+// CALLER CONTEXT (Gap A3)
+// =============================================================================
+
+/**
+ * Caller role hint — informs the agent how to frame its responses.
+ *
+ * - `recruiter`: emphasise achievements, outcomes, and team impact
+ * - `engineer`: include technical depth, architecture rationale
+ * - `unknown`: balanced default; no framing adjustment
+ */
+export type CallerRole = 'recruiter' | 'engineer' | 'unknown';
+
+/**
+ * Caller context passed as `promptSessionAttributes` to the Bedrock Agent.
+ *
+ * Bedrock surfaces these as session-scoped key–value pairs that the agent
+ * instruction can reference via `$session.promptSessionAttributes.callerRole`.
+ */
+export interface ChatbotCallerContext {
+    /** Resolved caller role (never undefined — defaults to 'unknown') */
+    readonly callerRole: CallerRole;
+}
+
+// =============================================================================
+// ERROR TYPES
+// =============================================================================
 
 /**
  * Error response payload returned on validation or server errors.

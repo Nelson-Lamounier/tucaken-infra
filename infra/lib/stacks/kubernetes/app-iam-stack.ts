@@ -112,6 +112,17 @@ export interface KubernetesAppIamStackProps extends cdk.StackProps {
     readonly secretsManagerPathPattern?: string;
 
     /**
+     * Secrets Manager path pattern for Bedrock infrastructure secrets.
+     *
+     * Grants `secretsmanager:GetSecretValue` on this pattern so the
+     * public-api BFF proxy can retrieve the Bedrock chatbot API key
+     * via the EC2 instance profile — no static credentials in K8s.
+     *
+     * @example 'bedrock-development/bedrock-api-key*'
+     */
+    readonly bedrockSecretsManagerPath?: string;
+
+    /**
      * Lambda function ARNs to grant invocation access.
      *
      * Grants `lambda:InvokeFunction` for the admin-api BFF to trigger
@@ -166,6 +177,7 @@ export class KubernetesAppIamStack extends cdk.Stack {
             ssmParameterPath: props.ssmParameterPath,
             bedrockSsmPath: props.bedrockSsmPath,
             secretsManagerPathPattern: props.secretsManagerPathPattern,
+            bedrockSecretsManagerPath: props.bedrockSecretsManagerPath,
             lambdaInvokeArns: props.lambdaInvokeArns,
         };
 
@@ -212,6 +224,8 @@ interface ApplicationIamGrantsProps {
     readonly ssmParameterPath?: string;
     readonly bedrockSsmPath?: string;
     readonly secretsManagerPathPattern?: string;
+    /** Bedrock secrets path pattern — grants BFF proxy access to the chatbot API key. */
+    readonly bedrockSecretsManagerPath?: string;
     /** Lambda ARNs granted invocation access (admin-api BFF pipeline triggers). */
     readonly lambdaInvokeArns?: string[];
 }
@@ -350,6 +364,23 @@ function grantApplicationPermissions(
             ],
             resources: [
                 `arn:aws:secretsmanager:${region}:${account}:secret:${props.secretsManagerPathPattern}`,
+            ],
+        }));
+    }
+
+    // Gap S2: BFF proxy API key — grants public-api to read the Bedrock
+    // chatbot API key from Secrets Manager via the EC2 instance profile.
+    // Secrets Manager ARNs have a 6-char random suffix, so the path pattern
+    // must end with '*' (e.g. 'bedrock-development/bedrock-api-key*').
+    if (props.bedrockSecretsManagerPath) {
+        role.addToPrincipalPolicy(new iam.PolicyStatement({
+            sid: 'BedrockSecretsManagerRead',
+            effect: iam.Effect.ALLOW,
+            actions: [
+                'secretsmanager:GetSecretValue',
+            ],
+            resources: [
+                `arn:aws:secretsmanager:${region}:${account}:secret:${props.bedrockSecretsManagerPath}`,
             ],
         }));
     }

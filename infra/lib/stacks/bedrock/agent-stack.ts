@@ -109,6 +109,12 @@ export class BedrockAgentStack extends cdk.Stack {
                 inputStrength: bedrock.ContentFilterStrength.HIGH,
                 outputStrength: bedrock.ContentFilterStrength.HIGH,
             });
+            // Gap S4 — PROMPT_ATTACK outputStrength is intentionally NONE.
+            // The guardrail blocks prompt injection attempts on INPUT (strength: HIGH).
+            // The model is not expected to generate attack patterns in its responses,
+            // so output filtering is disabled to avoid false-positive blocks on
+            // legitimate responses that discuss security concepts (e.g. explaining
+            // what a prompt injection attack is when retrieved from the KB).
             this.guardrail.addContentFilter({
                 type: bedrock.ContentFilterType.PROMPT_ATTACK,
                 inputStrength: bedrock.ContentFilterStrength.HIGH,

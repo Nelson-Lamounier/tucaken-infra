@@ -166,6 +166,32 @@ def resolve_public_api_config(
     except client_error_cls:
         log_warn("Strategist table name not found", ssm_path=strategist_path)
 
+    # ── Bedrock chatbot API Gateway URL (Gap S2 — BFF proxy) ────────────────
+    # The URL is non-sensitive — safe to store in ConfigMap.
+    # The public-api BFF uses this URL to forward /api/chatbot/invoke requests.
+    bedrock_api_url_path = f"{bedrock_prefix}/api-url"
+    try:
+        resp = ssm_client.get_parameter(Name=bedrock_api_url_path, WithDecryption=False)
+        config["BEDROCK_API_URL"] = resp["Parameter"]["Value"]
+        log_info("Resolved BEDROCK_API_URL", ssm_path=bedrock_api_url_path)
+    except client_error_cls:
+        log_warn("Bedrock API URL not found — chatbot BFF will return 503", ssm_path=bedrock_api_url_path)
+
+    # ── Bedrock chatbot API key secret ARN (Gap S2 — BFF proxy) ─────────────
+    # The ARN is non-sensitive — safe to store in ConfigMap.
+    # The *value* of the secret is fetched at runtime by the public-api pod
+    # via the EC2 instance profile (never stored in ConfigMap or K8s Secret).
+    bedrock_api_key_secret_arn_path = f"{bedrock_prefix}/bedrock-api-key-secret-arn"
+    try:
+        resp = ssm_client.get_parameter(Name=bedrock_api_key_secret_arn_path, WithDecryption=False)
+        config["BEDROCK_API_KEY_SECRET_ARN"] = resp["Parameter"]["Value"]
+        log_info("Resolved BEDROCK_API_KEY_SECRET_ARN", ssm_path=bedrock_api_key_secret_arn_path)
+    except client_error_cls:
+        log_warn(
+            "Bedrock API key secret ARN not found — chatbot BFF will return 503",
+            ssm_path=bedrock_api_key_secret_arn_path,
+        )
+
     # ── Region (non-sensitive — safe in ConfigMap) ───────────────────────────
     # AWS_DEFAULT_REGION is read by the AWS SDK v3 default credential chain.
     # It is NOT a secret. Stored in ConfigMap, not Secret.
@@ -187,11 +213,13 @@ def create_public_api_k8s_resources(v1: object, cfg: PublicApiConfig) -> None:
     Profile (IMDS) by the AWS SDK v3 default credential chain inside the pod.
 
     ConfigMap keys (all non-sensitive):
-        DYNAMODB_TABLE_NAME    — Content DynamoDB table name
-        DYNAMODB_GSI1_NAME     — GSI for status+date queries (constant)
-        DYNAMODB_GSI2_NAME     — GSI for tag+date queries (constant)
-        STRATEGIST_TABLE_NAME  — Strategist DynamoDB table (resumes domain)
-        AWS_DEFAULT_REGION     — AWS region for the SDK default chain
+        DYNAMODB_TABLE_NAME        — Content DynamoDB table name
+        DYNAMODB_GSI1_NAME         — GSI for status+date queries (constant)
+        DYNAMODB_GSI2_NAME         — GSI for tag+date queries (constant)
+        STRATEGIST_TABLE_NAME      — Strategist DynamoDB table (resumes domain)
+        AWS_DEFAULT_REGION         — AWS region for the SDK default chain
+        BEDROCK_API_URL            — Bedrock chatbot API Gateway URL (BFF proxy)
+        BEDROCK_API_KEY_SECRET_ARN — SM ARN for chatbot API key (value fetched at runtime)
 
     Args:
         v1: Kubernetes ``CoreV1Api`` instance.

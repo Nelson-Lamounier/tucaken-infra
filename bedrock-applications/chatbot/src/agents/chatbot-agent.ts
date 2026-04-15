@@ -34,7 +34,7 @@ import {
     InvokeAgentCommand,
 } from '@aws-sdk/client-bedrock-agent-runtime';
 
-import type { ChatbotAgentConfig, ChatbotInvocationResult } from '../types.js';
+import type { ChatbotAgentConfig, ChatbotCallerContext, ChatbotInvocationResult } from '../types.js';
 
 // =============================================================================
 // CLIENT INITIALISATION
@@ -66,6 +66,7 @@ const client = new BedrockAgentRuntimeClient({});
  * @param config - Agent ID and alias ID configuration
  * @param prompt - The sanitised user prompt text
  * @param sessionId - Session ID for conversation continuity
+ * @param callerContext - Optional caller context for response framing (Gap A3)
  * @returns The agent's complete text response with timing
  * @throws Error if no completion stream is returned
  */
@@ -73,6 +74,7 @@ export async function invokeChatbotAgent(
     config: ChatbotAgentConfig,
     prompt: string,
     sessionId: string,
+    callerContext?: ChatbotCallerContext,
 ): Promise<ChatbotInvocationResult> {
     const startTime = Date.now();
 
@@ -81,6 +83,12 @@ export async function invokeChatbotAgent(
         agentAliasId: config.agentAliasId,
         sessionId,
         inputText: prompt,
+        // Gap A3: Inject caller context as session attributes so the agent
+        // instruction can adapt response framing via:
+        // $session.promptSessionAttributes.callerRole
+        promptSessionAttributes: callerContext
+            ? { callerRole: callerContext.callerRole }
+            : undefined,
     });
 
     const response = await client.send(command);

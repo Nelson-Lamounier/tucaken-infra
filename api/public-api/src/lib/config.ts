@@ -29,6 +29,20 @@ export interface Config {
   readonly resumesTableName: string | undefined;
   /** TCP port the HTTP server binds to. */
   readonly port: number;
+  /**
+   * Bedrock chatbot API Gateway URL (e.g. https://id.execute-api.eu-west-1.amazonaws.com/v1/).
+   * Sourced from BEDROCK_API_URL (ConfigMap).
+   * Optional — if absent the /api/chatbot/invoke route returns 503.
+   */
+  readonly bedrockApiUrl: string | undefined;
+  /**
+   * Secrets Manager ARN for the Bedrock chatbot API key.
+   * Sourced from BEDROCK_API_KEY_SECRET_ARN (ConfigMap).
+   * The value is fetched at runtime via the EC2 instance profile — never
+   * stored in ConfigMap or K8s Secrets (Gap S2).
+   * Optional — if absent the /api/chatbot/invoke route returns 503.
+   */
+  readonly bedrockApiKeySecretArn: string | undefined;
 }
 
 /**
@@ -63,5 +77,7 @@ export function loadConfig(): Config {
     dynamoGsi2Name: process.env['DYNAMODB_GSI2_NAME'] as string,
     resumesTableName: process.env['STRATEGIST_TABLE_NAME'] ?? undefined,
     port: parseInt(process.env['PORT'] ?? '3001', 10),
+    bedrockApiUrl: process.env['BEDROCK_API_URL'] ?? undefined,
+    bedrockApiKeySecretArn: process.env['BEDROCK_API_KEY_SECRET_ARN'] ?? undefined,
   });
 }

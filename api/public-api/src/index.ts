@@ -29,6 +29,7 @@ import { logger } from 'hono/logger';
 import { loadConfig } from './lib/config.js';
 import health from './routes/health.js';
 import articles from './routes/articles.js';
+import chatbot from './routes/chatbot.js';
 import tags from './routes/tags.js';
 import resumes from './routes/resumes.js';
 
@@ -48,7 +49,8 @@ app.use(
   '*',
   cors({
     origin: ['https://nelsonlamounier.com', 'http://localhost:3000'],
-    allowMethods: ['GET', 'HEAD', 'OPTIONS'],
+    // POST added for /api/chatbot/invoke (BFF proxy — Gap S2)
+    allowMethods: ['GET', 'HEAD', 'OPTIONS', 'POST'],
     allowHeaders: ['Content-Type', 'Accept'],
     credentials: false,
     maxAge: 86_400,
@@ -61,6 +63,7 @@ app.use(
 
 app.route('/', health);
 app.route('/', articles);
+app.route('/', chatbot);
 app.route('/', tags);
 app.route('/', resumes);
 

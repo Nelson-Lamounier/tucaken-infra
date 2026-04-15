@@ -118,6 +118,9 @@ export class BedrockProjectFactory implements IProjectFactory<BedrockFactoryCont
                 haikuProfileSourceArn: SYSTEM_INFERENCE_PROFILES.CLAUDE_HAIKU_4_5,
                 sonnetProfileSourceArn: SYSTEM_INFERENCE_PROFILES.CLAUDE_SONNET_4_6,
                 environmentName: this.environment,
+                // Gap C3: Wire monthly budget alarm when a notification email is configured.
+                // Consistent with the NOTIFICATION_EMAIL convention in shared/factory.ts.
+                budgetAlertEmail: process.env.NOTIFICATION_EMAIL,
                 env,
             }
         );
@@ -168,7 +171,7 @@ export class BedrockProjectFactory implements IProjectFactory<BedrockFactoryCont
                 removalPolicy: configs.removalPolicy,
                 knowledgeBase: kbStack.knowledgeBase,
                 env,
-            }
+            },
         );
         agentStack.addDependency(dataStack);
         agentStack.addDependency(kbStack);
@@ -183,6 +186,7 @@ export class BedrockProjectFactory implements IProjectFactory<BedrockFactoryCont
             stackId(this.namespace, 'Api', this.environment),
             {
                 namePrefix,
+                environmentName: this.environment,
                 lambdaMemoryMb: allocs.apiLambda.memoryMb,
                 lambdaTimeoutSeconds: allocs.apiLambda.timeoutSeconds,
                 logRetention: configs.logRetention,

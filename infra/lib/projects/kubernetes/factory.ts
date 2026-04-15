@@ -448,6 +448,10 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 ],
                 // Bedrock pipeline SSM — resolve infrastructure for admin publish
                 bedrockSsmPath: `/${bedrockNamePrefix}/*`,
+                // Gap S2: BFF proxy — public-api reads the Bedrock chatbot API key
+                // from Secrets Manager using the EC2 instance profile.
+                // The '*' suffix covers the 6-char random suffix in SM ARNs.
+                bedrockSecretsManagerPath: `${bedrockNamePrefix}/bedrock-api-key*`,
                 dynamoKmsKeySsmPath: ssmPaths.dynamodbKmsKeyArn,
                 // admin-api BFF — Lambda invocation for article publish/trigger/strategist
                 // Called via EC2 instance role (IMDS) — no static credentials in K8s.

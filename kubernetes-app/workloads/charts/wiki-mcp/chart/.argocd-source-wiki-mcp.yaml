@@ -1,0 +1,4 @@
+helm:
+  parameters:
+  - name: image.tag
+    value: 26e4b812815d173483d2fa770c84cd0d8d80e774-r2

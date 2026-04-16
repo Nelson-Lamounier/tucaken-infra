@@ -31,7 +31,7 @@
 # =========================================================================
 image:
   repository: ""  # REQUIRED: set to ECR URI, e.g. 771826808455.dkr.ecr.eu-west-1.amazonaws.com/wiki-mcp
-  tag: "latest"
+  tag: ""  # managed by ArgoCD Image Updater write-back
   pullPolicy: IfNotPresent
 
 # =========================================================================

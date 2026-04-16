@@ -239,12 +239,13 @@ jobs:
       # trigger-config.ts resolves SM-B ARN from SSM, starts the execution,
       # and polls until it reaches a terminal state (max 60 min).
       #
-      # SM-B runs five deploy.py scripts sequentially on the control plane:
+      # SM-B runs six deploy.py scripts sequentially on the control plane:
       #   1. nextjs/deploy.py      — K8s Secret + IngressRoute originSecret patch
       #   2. monitoring/deploy.py  — K8s Secrets + Helm chart + Grafana reset
       #   3. start-admin/deploy.py — Cognito / DynamoDB / Bedrock Secret
       #   4. admin-api/deploy.py   — ConfigMap + Secret + IngressRoute
       #   5. public-api/deploy.py  — ConfigMap + Secret + IngressRoute
+      #   6. wiki-mcp/deploy.py    — wiki-mcp-config ConfigMap + wiki-mcp-basicauth Secret
       #
       # Equivalent local command: just config-run ${{ inputs.environment }}
       # -----------------------------------------------------------------------

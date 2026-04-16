@@ -5,8 +5,8 @@
  * Replaces the three named worker stacks (AppWorker, MonitoringWorker, ArgocdWorker)
  * with two parameterised ASG pools driven by `WorkerPoolType`:
  *
- *   - `general`:    t3.small Spot, min=1/max=4. Hosts Next.js, start-admin, ArgoCD,
- *                   and system components (no taint — all pods accepted).
+ *   - `general`:    t3.small Spot, min=1/max=4. Hosts Next.js, start-admin, admin-api,
+ *                   public-api, wiki-mcp, and system components (no taint — all pods accepted).
  *   - `monitoring`: t3.medium Spot, min=1/max=2. Hosts the observability stack
  *                   (Prometheus, Grafana, Loki, Tempo, Alloy) with a
  *                   `dedicated=monitoring:NoSchedule` taint applied by the
@@ -70,9 +70,9 @@ import {
 /**
  * The type of worker pool.
  *
- * - `general`:    Hosts Next.js, start-admin, ArgoCD, system components.
+ * - `general`:    Hosts Next.js, start-admin, admin-api, public-api, wiki-mcp, system components.
  *                 No taint — accepts all pods without toleration.
- * - `monitoring`: Hosts Prometheus, Grafana, Loki, Tempo, Alloy.
+ * - `monitoring`: Hosts Prometheus, Grafana, Loki, Tempo, Alloy, ArgoCD.
  *                 Tainted `dedicated=monitoring:NoSchedule` by bootstrap.
  */
 export type WorkerPoolType = 'general' | 'monitoring';

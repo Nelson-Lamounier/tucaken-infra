@@ -94,6 +94,9 @@ export type { LogLevel, LogFunction } from './logger.js';
 // ─── EMF Metric Emission ─────────────────────────────────────────────────────
 export { emitEmfMetric } from './emf.js';
 
+// ─── MCP HTTP Client ─────────────────────────────────────────────────────────
+export { callMcpTool } from './mcp-client.js';
+
 export type { EmfMetricEntry } from './emf.js';
 
 // ─── Strategist Pipeline Types ───────────────────────────────────────────────

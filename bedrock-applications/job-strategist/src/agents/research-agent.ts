@@ -17,8 +17,9 @@ import {
     BedrockAgentRuntimeClient,
     RetrieveCommand,
 } from '@aws-sdk/client-bedrock-agent-runtime';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
-import { runAgent, parseJsonResponse } from '../../../shared/src/index.js';
+import { runAgent, parseJsonResponse, callMcpTool } from '../../../shared/src/index.js';
 import { formatResumeForPrompt } from '../services/resume-service.js';
 import { RESEARCH_PERSONA_SYSTEM_PROMPT } from '../prompts/research-persona.js';
 import { sanitiseInput } from '../security/input-sanitiser.js';
@@ -61,8 +62,11 @@ const KNOWLEDGE_BASE_ID = process.env.KNOWLEDGE_BASE_ID ?? '';
 /** wiki-mcp base URL — deterministic constraint retrieval (falls back to Pinecone if unset) */
 const WIKI_MCP_URL = process.env.WIKI_MCP_URL ?? '';
 
-/** wiki-mcp BasicAuth header value ("Basic <base64>") */
-const WIKI_MCP_AUTH = process.env.WIKI_MCP_AUTH ?? '';
+/**
+ * SSM path for the wiki-mcp BasicAuth SecureString (e.g. /wiki-mcp/basicauth-header).
+ * Value is fetched at runtime — CloudFormation cannot resolve ssm-secure refs in Lambda env vars.
+ */
+const WIKI_MCP_AUTH_SSM_PATH = process.env.WIKI_MCP_AUTH_SSM_PATH ?? '';
 
 /** Maximum KB passages to retrieve */
 const MAX_KB_PASSAGES = 15;
@@ -145,32 +149,45 @@ function deduplicatePassages(passages: string[]): string {
     return unique.length > 0 ? unique.join('\n\n---\n\n') : '';
 }
 
+// Module-level cache — fetched once per Lambda execution context.
+let cachedWikiMcpAuth = '';
+
 /**
- * Fetch resume constraints from wiki-mcp `/api/constraints` REST endpoint.
+ * Resolve the wiki-mcp BasicAuth header.
  *
- * Returns the combined content of three structured pages:
+ * Fetches the SSM SecureString at `/wiki-mcp/basicauth-header` on first call
+ * and caches the result for the lifetime of the Lambda execution context.
+ * Returns empty string when WIKI_MCP_AUTH_SSM_PATH is not configured.
+ */
+async function resolveWikiMcpAuth(): Promise<string> {
+    if (cachedWikiMcpAuth) return cachedWikiMcpAuth;
+    if (!WIKI_MCP_AUTH_SSM_PATH) return '';
+
+    const ssmClient = new SSMClient({});
+    const resp = await ssmClient.send(
+        new GetParameterCommand({ Name: WIKI_MCP_AUTH_SSM_PATH, WithDecryption: true }),
+    );
+    cachedWikiMcpAuth = resp.Parameter?.Value ?? '';
+    return cachedWikiMcpAuth;
+}
+
+/**
+ * Fetch resume constraints from the wiki-mcp MCP server via Streamable HTTP.
+ *
+ * Calls the `get_resume_constraints` tool which returns the combined content of:
  *   - resume/agent-guide   — hard rules, confidence thresholds, ATS rules, banned verbs
  *   - resume/gap-awareness — what NOT to claim; absent/partial concepts with safe framing
  *   - resume/voice-library — authentic phrase anchors, banned AI terms, sentence variation
  *
- * Single HTTP GET — no MCP protocol overhead (no handshake/session management).
- * 10 s timeout guards against pod unavailability.
- *
  * @returns Combined constraint pages as plain text, or empty string if wiki-mcp is not configured
  */
 async function getWikiMcpConstraints(): Promise<string> {
-    if (!WIKI_MCP_URL || !WIKI_MCP_AUTH) {
+    const authHeader = await resolveWikiMcpAuth();
+    if (!WIKI_MCP_URL || !authHeader) {
         return '';
     }
-    console.log('[strategist-research] Fetching resume constraints from wiki-mcp');
-    const res = await fetch(`${WIKI_MCP_URL}/api/constraints`, {
-        headers: { Authorization: WIKI_MCP_AUTH },
-        signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-        throw new Error(`wiki-mcp /api/constraints → ${res.status}`);
-    }
-    const text = await res.text();
+    console.log('[strategist-research] Fetching resume constraints from wiki-mcp via MCP');
+    const text = await callMcpTool(WIKI_MCP_URL, authHeader, 'get_resume_constraints', {});
     console.log(
         `[strategist-research] wiki-mcp constraints fetched: ${(text.length / 1024).toFixed(1)}KB`,
     );
@@ -288,7 +305,7 @@ export async function executeResearchAgent(
     let resumeConstraints = '';
 
     const hasKb = Boolean(KNOWLEDGE_BASE_ID);
-    const hasWikiMcp = Boolean(WIKI_MCP_URL && WIKI_MCP_AUTH);
+    const hasWikiMcp = Boolean(WIKI_MCP_URL && WIKI_MCP_AUTH_SSM_PATH);
 
     if (hasKb || hasWikiMcp) {
         // Factual KB queries + wiki-mcp constraint fetch — all in parallel

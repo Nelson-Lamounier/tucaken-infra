@@ -94,7 +94,9 @@ export interface StrategistPipelineStackProps extends cdk.StackProps {
     readonly knowledgeBaseArn?: string;
     /** wiki-mcp base URL for deterministic constraint retrieval (optional) */
     readonly wikiMcpUrl?: string;
-    /** SSM SecureString path for wiki-mcp BasicAuth header, e.g. /wiki-mcp/basicauth-header (optional) */
+    /** SSM parameter path for wiki-mcp BasicAuth header, e.g. /wiki-mcp/basicauth-header (optional).
+     *  Passed as WIKI_MCP_AUTH_SSM_PATH and fetched at Lambda runtime (SSM SecureString
+     *  cannot be resolved via CloudFormation dynamic references in Lambda env vars). */
     readonly wikiMcpAuthSsmPath?: string;
     /** Runtime environment name */
     readonly environmentName: string;
@@ -205,15 +207,11 @@ export class StrategistPipelineStack extends cdk.Stack {
                 ENVIRONMENT: props.environmentName,
                 ...(props.knowledgeBaseId ? { KNOWLEDGE_BASE_ID: props.knowledgeBaseId } : {}),
                 // wiki-mcp — deterministic constraint retrieval (optional; falls back to Pinecone)
+                // WIKI_MCP_AUTH_SSM_PATH is the SSM path; Lambda fetches + decrypts at runtime.
+                // CloudFormation {{resolve:ssm-secure:...}} is NOT supported in Lambda env vars.
                 ...(props.wikiMcpUrl ? { WIKI_MCP_URL: props.wikiMcpUrl } : {}),
                 ...(props.wikiMcpAuthSsmPath
-                    ? {
-                          WIKI_MCP_AUTH: ssm.StringParameter.valueForSecureStringParameter(
-                              this,
-                              props.wikiMcpAuthSsmPath,
-                              1,
-                          ),
-                      }
+                    ? { WIKI_MCP_AUTH_SSM_PATH: props.wikiMcpAuthSsmPath }
                     : {}),
             },
             description: `Strategist Research Agent (${props.researchModel})`,
@@ -355,6 +353,15 @@ export class StrategistPipelineStack extends cdk.Stack {
             researchFn.addToRolePolicy(new iam.PolicyStatement({
                 actions: ['bedrock:Retrieve'],
                 resources: [props.knowledgeBaseArn],
+            }));
+        }
+        if (props.wikiMcpAuthSsmPath) {
+            // Runtime SSM fetch: Lambda reads + decrypts the BasicAuth SecureString itself.
+            researchFn.addToRolePolicy(new iam.PolicyStatement({
+                actions: ['ssm:GetParameter'],
+                resources: [
+                    `arn:aws:ssm:${this.region}:${this.account}:parameter${props.wikiMcpAuthSsmPath}`,
+                ],
             }));
         }
 

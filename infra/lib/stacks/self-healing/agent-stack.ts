@@ -148,6 +148,22 @@ export class SelfHealingAgentStack extends cdk.Stack {
         });
 
         // =================================================================
+        // SQS — Lambda Dead Letter Queue (Standard)
+        //
+        // Lambda DLQ must be Standard — Lambda does not support FIFO queues
+        // as a dead-letter target (AWS limitation). The FIFO agentDlq above
+        // serves the trigger queue's redrive policy; this Standard queue
+        // captures any async Lambda invocation failures independently.
+        // =================================================================
+        const agentLambdaDlq = new sqs.Queue(this, 'AgentLambdaDlq', {
+            queueName: `${namePrefix}-agent-lambda-dlq`,
+            retentionPeriod: cdk.Duration.days(props.dlqRetentionDays),
+            enforceSSL: true,
+            encryption: sqs.QueueEncryption.SQS_MANAGED,
+            removalPolicy: props.removalPolicy,
+        });
+
+        // =================================================================
         // SQS — FIFO Trigger Queue (SH-S6: Rate Limiting)
         //
         // Absorbs alarm storms by serialising events for the SAME alarm
@@ -284,7 +300,7 @@ export class SelfHealingAgentStack extends cdk.Stack {
                     '@aws-sdk/*',
                 ],
             },
-            deadLetterQueue: this.agentDlq,
+            deadLetterQueue: agentLambdaDlq,
             deadLetterQueueEnabled: true,
             retryAttempts: 2,
             // FinOps: cap parallel Bedrock agent invocations

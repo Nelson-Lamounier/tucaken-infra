@@ -13,6 +13,7 @@
  *   - start-admin/deploy.py  — start-admin-secrets K8s Secret (Cognito / DynamoDB / Bedrock)
  *   - admin-api/deploy.py    — admin-api K8s Secret + ConfigMap + IngressRoute
  *   - public-api/deploy.py   — public-api K8s Secret + ConfigMap + IngressRoute
+ *   - wiki-mcp/deploy.py     — wiki-mcp-config ConfigMap + wiki-mcp-basicauth Secret
  *
  * ## Self-Healing Trigger (Primary Path)
  * An EventBridge rule listens for `ExecutionSucceeded` events from SM-A
@@ -98,6 +99,7 @@ export interface ConfigOrchestratorProps {
  *   3. start-admin — admin panel (internal tooling)
  *   4. admin-api  — BFF service (depends on start-admin Cognito pool)
  *   5. public-api — BFF service (depends on DynamoDB/Bedrock config)
+ *   6. wiki-mcp   — FastMCP server (ConfigMap + basicauth Secret from SSM)
  */
 const DEPLOY_STEPS: ConfigStep[] = [
     {
@@ -129,6 +131,12 @@ const DEPLOY_STEPS: ConfigStep[] = [
         scriptPath: 'app-deploy/public-api/deploy.py',
         timeoutSeconds: 300,
         description: 'public-api K8s Secret + ConfigMap + IngressRoute',
+    },
+    {
+        name: 'DeployWikiMcpConfig',
+        scriptPath: 'app-deploy/wiki-mcp/deploy.py',
+        timeoutSeconds: 120,
+        description: 'wiki-mcp-config ConfigMap + wiki-mcp-basicauth Secret',
     },
 ];
 

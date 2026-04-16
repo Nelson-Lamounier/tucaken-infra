@@ -264,6 +264,11 @@ export class BedrockApiStack extends cdk.Stack {
             });
             apiKeySecret.applyRemovalPolicy(props.removalPolicy);
 
+            NagSuppressions.addResourceSuppressions(
+                apiKeySecret,
+                [{ id: 'AwsSolutions-SMG4', reason: 'API key secret is statically mapped to CfnApiKey; automatic rotation would break API Gateway mapping without custom Lambdas' }],
+            );
+
             // CfnApiKey resolves the CF dynamic reference at deploy time.
             // apigateway.ApiKey (L2) does not support setting an explicit value,
             // so we drop to L1 here and create an L2 shim for the usage plan.

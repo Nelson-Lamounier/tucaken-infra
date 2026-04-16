@@ -2626,3 +2626,61 @@ admin-api-test token slug="test-smoke-slug-$(date +%s)":
       -d '{"slug": "{{slug}}"}' \
       | python3 -m json.tool
 
+
+# =============================================================================
+# LOCAL DOCKER TESTING — frontend images (start-admin + site)
+#
+# Builds and runs the frontend images against the already-running admin-api.
+# Admin-api must be started first with `just admin-api-up`.
+#
+# Network wiring (matches production):
+#   K8s:   start-admin → http://admin-api.admin-api:3002
+#   Local: start-admin → http://admin-api:3002  (Docker DNS alias)
+#
+# Requirements:
+#   - admin-api running locally (just admin-api-up)
+#   - ~/.aws credentials for the dev-account profile
+#   - ../frontend-portfolio/apps/start-admin/.env.local with Cognito vars
+#
+# Usage:
+#   just cluster-up              # Stop → build → start frontend images
+#   just cluster-up --no-rebuild # Use cached images (faster restarts)
+#   just cluster-logs            # Tail combined logs
+#   just cluster-down            # Stop and remove frontend containers
+# =============================================================================
+
+FRONTEND_REPO := justfile_directory() + "/../frontend-portfolio"
+
+# Stop → build → start frontend images (start-admin + site) against local admin-api.
+[group('local-dev')]
+cluster-up profile="dev-account" *flags="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    AWS_PROFILE={{profile}} npx tsx "{{FRONTEND_REPO}}/scripts/local-dev.ts" {{flags}}
+
+# Stop → start using cached images (skips docker build, faster restarts).
+[group('local-dev')]
+cluster-fast profile="dev-account":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    AWS_PROFILE={{profile}} npx tsx "{{FRONTEND_REPO}}/scripts/local-dev.ts" --no-rebuild
+
+# Stop → build → start → tail combined logs (Ctrl+C detaches, containers stay up).
+[group('local-dev')]
+cluster-logs profile="dev-account":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    AWS_PROFILE={{profile}} npx tsx "{{FRONTEND_REPO}}/scripts/local-dev.ts" --logs
+
+# Build and start only start-admin (skip site).
+[group('local-dev')]
+cluster-admin profile="dev-account":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    AWS_PROFILE={{profile}} npx tsx "{{FRONTEND_REPO}}/scripts/local-dev.ts" --admin-only
+
+# Stop and remove frontend containers only (admin-api unaffected).
+[group('local-dev')]
+cluster-down:
+    npx tsx "{{FRONTEND_REPO}}/scripts/local-dev.ts" --stop
+

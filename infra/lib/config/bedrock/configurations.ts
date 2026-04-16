@@ -108,12 +108,8 @@ export const BEDROCK_CONFIGS: Record<DeployableEnvironment, BedrockConfigs> = {
             // Gap A7: Precise retrieval instruction — guides the agent to search across
             // all portfolio topic areas listed in the agent instruction (KB TOPICS section).
             instruction:
-                'Search this knowledge base to answer questions about Nelson Lamounier\'s portfolio. ' +
-                'Topics include: AWS CDK infrastructure, Kubernetes cluster operations, ' +
-                'Bedrock AI/ML pipelines, GitHub Actions CI/CD, Next.js applications, ' +
-                'observability (Grafana/Loki/Prometheus), and AWS certifications. ' +
-                'Always retrieve context before answering. If no relevant context is found, ' +
-                'do not answer from general knowledge — report that the information is not in the portfolio records.',
+                'Answers portfolio questions: AWS CDK, Kubernetes, AI/ML, CI/CD, Next.js, ' +
+                'observability, AWS certs. Always retrieve context before answering. No general knowledge.',
         },
         api: {
             enableApiKey: true,
@@ -138,12 +134,8 @@ export const BEDROCK_CONFIGS: Record<DeployableEnvironment, BedrockConfigs> = {
             description: 'Portfolio repository documentation knowledge base (staging)',
             // Gap A7: Consistent with development — precise retrieval guidance.
             instruction:
-                'Search this knowledge base to answer questions about Nelson Lamounier\'s portfolio. ' +
-                'Topics include: AWS CDK infrastructure, Kubernetes cluster operations, ' +
-                'Bedrock AI/ML pipelines, GitHub Actions CI/CD, Next.js applications, ' +
-                'observability (Grafana/Loki/Prometheus), and AWS certifications. ' +
-                'Always retrieve context before answering. If no relevant context is found, ' +
-                'do not answer from general knowledge — report that the information is not in the portfolio records.',
+                'Answers portfolio questions: AWS CDK, Kubernetes, AI/ML, CI/CD, Next.js, ' +
+                'observability, AWS certs. Always retrieve context before answering. No general knowledge.',
         },
         api: {
             enableApiKey: true,
@@ -168,13 +160,8 @@ export const BEDROCK_CONFIGS: Record<DeployableEnvironment, BedrockConfigs> = {
             description: 'Portfolio repository documentation knowledge base',
             // Gap A7: Production instruction adds citation requirement for higher grounding precision.
             instruction:
-                'Search this knowledge base to answer questions about Nelson Lamounier\'s portfolio. ' +
-                'Topics include: AWS CDK infrastructure, Kubernetes cluster operations, ' +
-                'Bedrock AI/ML pipelines, GitHub Actions CI/CD, Next.js applications, ' +
-                'observability (Grafana/Loki/Prometheus), and AWS certifications. ' +
-                'Always retrieve context before answering and cite specific documents or components ' +
-                'when relevant. If no relevant context is found, do not answer from general knowledge ' +
-                '— report that the information is not in the portfolio records.',
+                'Answers portfolio questions: AWS, K8s, AI/ML, CI/CD, Next.js, observability. ' +
+                'Retrieve context before answering and cite specific documents. No general knowledge.',
         },
         api: {
             enableApiKey: true,

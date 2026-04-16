@@ -365,6 +365,9 @@ export interface StrategistResearchResult {
 
     /** Concatenated KB passages with source citations */
     readonly kbContext: string;
+
+    /** Resume domain constraints — rules, gaps, and status thresholds (non-negotiable) */
+    readonly resumeConstraints: string;
 }
 
 // =============================================================================

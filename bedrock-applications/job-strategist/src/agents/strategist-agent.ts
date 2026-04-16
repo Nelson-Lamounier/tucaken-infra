@@ -135,11 +135,24 @@ function buildStrategistMessage(
     // Resume data (structured JSON from pipeline context, formatted as sectioned text)
     if (research.resumeData) {
         sections.push(
-            '', '### Current Resume Content (Source of Truth)',
-            'This is the candidate\u2019s canonical resume. Preserve layout and wording unless KB evidence warrants an addition.',
+            '', '### Current Resume Content (Content Reference — Draft)',
+            'This is the candidate\u2019s current resume. Use as content and style baseline.',
+            'If constraint rules (above or below) conflict with resume wording, the constraints take precedence.',
             '--- BEGIN RESUME ---',
             formatResumeForPrompt(research.resumeData),
             '--- END RESUME ---',
+        );
+    }
+
+    // Resume domain constraints (mandatory rules, gaps, and status thresholds)
+    if (research.resumeConstraints) {
+        sections.push(
+            '', '### Resume Domain Constraints (MANDATORY — Read Before Generating Bullets)',
+            'These are NON-NEGOTIABLE rules and gap boundaries from the resume domain KB.',
+            'Apply these constraints BEFORE and AFTER generating each achievement bullet.',
+            '--- BEGIN CONSTRAINTS ---',
+            research.resumeConstraints,
+            '--- END CONSTRAINTS ---',
         );
     }
 

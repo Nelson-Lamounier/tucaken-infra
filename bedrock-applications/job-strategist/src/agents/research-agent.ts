@@ -72,63 +72,71 @@ const bedrockAgentClient = new BedrockAgentRuntimeClient({});
 // =============================================================================
 
 /**
- * Multi-query KB retrieval for comprehensive portfolio context.
+ * Execute a single KB retrieval query.
  *
- * Performs multiple targeted queries to retrieve:
- * 1. Skill-specific project evidence
- * 2. General portfolio summary
- * 3. GitHub activity and contributions
- *
- * @param jobDescription - The full job description text
- * @returns Concatenated KB passages with source citations
+ * @param query - Search query text for the Knowledge Base
+ * @returns Raw passages with source/score metadata prefix
  */
-async function queryKnowledgeBase(jobDescription: string): Promise<string> {
+async function querySingleKb(query: string): Promise<string[]> {
     if (!KNOWLEDGE_BASE_ID) {
-        console.log('[strategist-research] KB retrieval skipped — no KNOWLEDGE_BASE_ID configured');
-        return '';
+        return [];
     }
 
-    // Build multiple targeted queries for comprehensive retrieval
-    const queries = [
-        jobDescription.substring(0, 1000),  // Primary: job requirements matching
-        'resume professional experience skills qualifications',  // Portfolio overview
-        'project architecture technical implementation deployment', // Project evidence
-    ];
+    console.log(`[strategist-research] Querying KB with: "${query.substring(0, 80)}..."`);
 
-    const allPassages: string[] = [];
-
-    for (const query of queries) {
-        console.log(`[strategist-research] Querying KB with: "${query.substring(0, 80)}..."`);
-
-        const command = new RetrieveCommand({
-            knowledgeBaseId: KNOWLEDGE_BASE_ID,
-            retrievalQuery: { text: query },
-            retrievalConfiguration: {
-                vectorSearchConfiguration: {
-                    numberOfResults: MAX_KB_PASSAGES,
-                },
+    const command = new RetrieveCommand({
+        knowledgeBaseId: KNOWLEDGE_BASE_ID,
+        retrievalQuery: { text: query },
+        retrievalConfiguration: {
+            vectorSearchConfiguration: {
+                numberOfResults: MAX_KB_PASSAGES,
             },
-        });
+        },
+    });
 
-        const response = await bedrockAgentClient.send(command);
-        const results = response.retrievalResults ?? [];
+    const response = await bedrockAgentClient.send(command);
+    const results = response.retrievalResults ?? [];
+    const passages: string[] = [];
 
-        for (const result of results) {
-            if (result.content?.text) {
-                const source = result.location?.s3Location?.uri ?? 'unknown';
-                const score = result.score ?? 0;
-                allPassages.push(
-                    `[Source: ${source}, Score: ${score.toFixed(3)}]\n${result.content.text}`,
-                );
-            }
+    for (const result of results) {
+        if (result.content?.text) {
+            const source = result.location?.s3Location?.uri ?? 'unknown';
+            const score = result.score ?? 0;
+            passages.push(
+                `[Source: ${source}, Score: ${score.toFixed(3)}]\n${result.content.text}`,
+            );
         }
     }
 
-    // Deduplicate passages by content (same passage may appear in multiple queries)
-    const unique = [...new Set(allPassages)];
-    console.log(`[strategist-research] KB returned ${unique.length} unique passages`);
+    return passages;
+}
 
-    return unique.join('\n\n---\n\n');
+/**
+ * Deduplicate KB passages by content only.
+ *
+ * The score prefix (e.g. `[Source: ..., Score: 0.87]`) differs across
+ * queries, so a naive `new Set()` would treat identical text blocks
+ * as distinct entries. This helper strips the first line (metadata)
+ * before comparison.
+ *
+ * @param passages - Array of passages with `[Source: ..., Score: ...]\n<content>` format
+ * @returns Deduplicated passages joined with separator, empty string if none
+ */
+function deduplicatePassages(passages: string[]): string {
+    const seen = new Set<string>();
+    const unique = passages.filter((passage) => {
+        // Strip the metadata prefix line for content-only comparison
+        const contentOnly = passage.split('\n').slice(1).join('\n');
+        if (seen.has(contentOnly)) return false;
+        seen.add(contentOnly);
+        return true;
+    });
+
+    console.log(
+        `[strategist-research] Deduplicated ${passages.length} passages → ${unique.length} unique`,
+    );
+
+    return unique.length > 0 ? unique.join('\n\n---\n\n') : '';
 }
 
 // =============================================================================
@@ -161,8 +169,10 @@ function buildResearchMessage(
 
     if (resumeData) {
         sections.push(
-            '## Current Resume (Source of Truth — DynamoDB)',
-            'This is the candidate\u2019s canonical resume. Layout and wording are authoritative.',
+            '## Current Resume (Draft — DynamoDB)',
+            'This is the candidate\u2019s current resume draft. Use it for content and style reference.',
+            'If KB constraint pages (Gap Awareness, Agent Guide) conflict with resume wording,',
+            'the KB constraints take precedence — flag the conflict and suggest a correction.',
             '--- BEGIN RESUME ---',
             formatResumeForPrompt(resumeData),
             '--- END RESUME ---',
@@ -174,8 +184,8 @@ function buildResearchMessage(
         sections.push(
             '## Knowledge Base — Portfolio & Project Evidence',
             'The following passages were retrieved from the candidate\'s portfolio documentation.',
-            'Use these to SUPPLEMENT the resume with verifiable project evidence.',
-            'KB evidence may ADD skills to the resume when project proof exists, but must NOT override resume wording.',
+            'Use these to SUPPLEMENT and VERIFY the resume with verifiable project evidence.',
+            'KB constraint passages (containing "NEVER", "ABSENT", "PROHIBITED") OVERRIDE resume wording.',
             '',
             kbContext,
             '',
@@ -206,9 +216,9 @@ const RESEARCH_CONFIG: AgentConfig = {
  * Execute the Strategist Research Agent.
  *
  * 1. Sanitises the job description input
- * 2. Queries the Pinecone KB for portfolio evidence
+ * 2. Queries the Pinecone KB in parallel (3 factual + 2 constraint queries)
  * 3. Reads structured resume data from the pipeline context (fetched by trigger)
- * 4. Runs Haiku 3.5 to produce a structured research brief
+ * 4. Runs Haiku 4.5 to produce a structured research brief
  *
  * @param ctx - Pipeline context with job description and resumeData
  * @returns Research result with verified/partial/gap skill classification
@@ -227,8 +237,44 @@ export async function executeResearchAgent(
         console.warn(`[strategist-research] ${warning}`);
     }
 
-    // 2. Query Knowledge Base for portfolio evidence
-    const kbContext = await queryKnowledgeBase(sanitised);
+    // 2. Query Knowledge Base — 6 parallel queries (3 factual + 3 constraint)
+    //    Factual queries retrieve project evidence and skills
+    //    Constraint queries retrieve mandatory rules, gaps, status thresholds, and voice
+    let kbContext = '';
+    let resumeConstraints = '';
+
+    if (KNOWLEDGE_BASE_ID) {
+        const [factual1, factual2, factual3, agentRules, gapBoundaries, voiceLibrary] = await Promise.all([
+            querySingleKb(sanitised.substring(0, 1000)),
+            querySingleKb('resume professional experience skills qualifications'),
+            querySingleKb('project architecture technical implementation deployment'),
+            querySingleKb(
+                'resume generation agent instructions confidence thresholds STRONG PARTIAL ABSENT hard rules',
+            ),
+            querySingleKb(
+                'resume honest boundaries what not to claim gaps absent overclaim service mesh SLA',
+            ),
+            querySingleKb(
+                'candidate writing voice authentic language personal phrases tone style',
+            ),
+        ]);
+
+        // Factual context — evidence for achievement bullet generation
+        const allFactualPassages = [...factual1, ...factual2, ...factual3];
+        kbContext = deduplicatePassages(allFactualPassages);
+
+        // Resume domain constraints — rules, gaps, status thresholds, and voice anchoring (non-negotiable)
+        const allConstraintPassages = [...agentRules, ...gapBoundaries, ...voiceLibrary];
+        resumeConstraints = deduplicatePassages(allConstraintPassages);
+
+        console.log(
+            `[strategist-research] KB retrieval complete — ` +
+            `factual=${kbContext.length > 0 ? `${(kbContext.length / 1024).toFixed(1)}KB` : 'empty'}, ` +
+            `constraints=${resumeConstraints.length > 0 ? `${(resumeConstraints.length / 1024).toFixed(1)}KB` : 'empty'}`,
+        );
+    } else {
+        console.log('[strategist-research] KB retrieval skipped — no KNOWLEDGE_BASE_ID configured');
+    }
 
     // 3. Read resume from pipeline context (fetched at trigger time)
     const resumeData = ctx.resumeData;
@@ -279,6 +325,7 @@ export async function executeResearchAgent(
                 fitSummary: parsed.fitSummary ?? 'Analysis incomplete — insufficient data for assessment.',
                 resumeData,
                 kbContext,
+                resumeConstraints,
             };
         },
         pipelineContext: {

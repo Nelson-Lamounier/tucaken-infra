@@ -138,6 +138,7 @@ export async function executeCoachAgent(
             sourceKey: '',
             bucket: ctx.bucket,
             environment: ctx.environment,
+            version: 0, // Coach pipeline has no article versioning; sentinel value
             cumulativeTokens: ctx.cumulativeTokens,
             cumulativeCostUsd: ctx.cumulativeCostUsd,
             retryAttempt: 0,

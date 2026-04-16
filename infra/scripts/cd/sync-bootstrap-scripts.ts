@@ -140,6 +140,13 @@ const SYNC_TARGETS: SyncTarget[] = [
         excludes: ['chart/*', '__pycache__/*'],
         optional: true,
     },
+    {
+        label: 'Wiki-MCP Deploy Scripts',
+        sourceDir: 'kubernetes-app/workloads/charts/wiki-mcp',
+        s3Prefix: 'app-deploy/wiki-mcp/',
+        excludes: ['chart/*', 'wiki-mcp-values.yaml', '__pycache__/*'],
+        optional: true,
+    },
 ];
 
 // =============================================================================

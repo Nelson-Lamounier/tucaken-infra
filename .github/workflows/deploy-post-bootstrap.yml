@@ -65,6 +65,9 @@ jobs:
   #   2. workloads/charts/nextjs/      → s3://{bucket}/app-deploy/nextjs/
   #   3. platform/charts/monitoring/   → s3://{bucket}/app-deploy/monitoring/
   #   4. workloads/charts/start-admin/ → s3://{bucket}/app-deploy/start-admin/
+  #   5. workloads/charts/admin-api/   → s3://{bucket}/app-deploy/admin-api/
+  #   6. workloads/charts/public-api/  → s3://{bucket}/app-deploy/public-api/
+  #   7. workloads/charts/wiki-mcp/    → s3://{bucket}/app-deploy/wiki-mcp/
   # ===========================================================================
   sync-scripts:
     name: "Sync Scripts to S3"

@@ -211,6 +211,7 @@ export class StrategistPipelineStack extends cdk.Stack {
                           WIKI_MCP_AUTH: ssm.StringParameter.valueForSecureStringParameter(
                               this,
                               props.wikiMcpAuthSsmPath,
+                              1,
                           ),
                       }
                     : {}),

@@ -66,7 +66,7 @@ healthChecks:
     path: /healthz
     initialDelaySeconds: 10
     periodSeconds: 5
-    failureThreshold: 24     # 24 × 5s = 120s max startup (Python import time)
+    failureThreshold: 24     # 24 × 5s = 120s max startup
   readiness:
     path: /healthz
     periodSeconds: 10
@@ -87,6 +87,8 @@ env:
         key: WIKI_S3_BUCKET
   - name: WIKI_KB_PREFIX
     value: "kb-docs"
+  - name: AWS_DEFAULT_REGION
+    value: "eu-west-1"
   - name: PORT
     value: "8000"
 

@@ -87,7 +87,7 @@ env:
         key: WIKI_S3_BUCKET
   - name: WIKI_KB_PREFIX
     value: "kb-docs"
-  - name: AWS_DEFAULT_REGION
+  - name: AWS_REGION
     value: "eu-west-1"
   - name: PORT
     value: "8000"

@@ -50,8 +50,9 @@ if (!RESEARCH_MODEL) {
  */
 const EFFECTIVE_MODEL_ID = process.env.INFERENCE_PROFILE_ARN ?? RESEARCH_MODEL;
 
-/** Maximum output tokens */
-const RESEARCH_MAX_TOKENS = 8192;
+/** Maximum output tokens — must exceed thinkingBudget + expected JSON output.
+ *  thinkingBudget=4096 + research JSON brief ~8-12K tokens = 16384 minimum. */
+const RESEARCH_MAX_TOKENS = 16000;
 
 /** Thinking budget for analysis tasks */
 const RESEARCH_THINKING_BUDGET = 4096;

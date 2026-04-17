@@ -69,7 +69,7 @@ export const RESUME_BUILDER_PERSONA_SYSTEM_PROMPT: SystemContentBlock[] = [
             `- "section" indicates which experience entry or section to add the bullet to`,
             `- Match by company name, role title, or section name`,
             `- Add the suggestedBullet to the highlights array of the matching experience`,
-            `- If section refers to "Summary" or "Professional Summary", REPLACE the entire summary field with suggestedBullet — do NOT append. The summary is a cohesive paragraph, not a bullet list. After replacing, trim or expand the text to land between 113 and 120 words exactly — count words and adjust before returning. Never go below 113 or above 120.`,
+            `- If section refers to "Summary" or "Professional Summary", REPLACE the entire summary field with suggestedBullet — do NOT append. The summary is a cohesive paragraph, not a bullet list. After replacing, trim the text to 100 words maximum — count words before returning. Never exceed 100 words. The final sentence must contain a concrete delivery metric or DORA number; trim from the middle of the paragraph, never from the closing sentence.`,
             `- If section refers to "Key Achievements", add a new achievement entry`,
             ``,
             `## REFRAMES`,

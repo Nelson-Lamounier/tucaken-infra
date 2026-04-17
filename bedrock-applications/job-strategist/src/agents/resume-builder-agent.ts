@@ -36,11 +36,18 @@ const RESUME_BUILDER_MODEL = process.env.RESUME_BUILDER_MODEL ?? 'eu.anthropic.c
  */
 const EFFECTIVE_MODEL_ID = process.env.INFERENCE_PROFILE_ARN ?? RESUME_BUILDER_MODEL;
 
-/** Maximum output tokens — generous for full JSON resume */
-const RESUME_BUILDER_MAX_TOKENS = 8192;
+/**
+ * Maximum output tokens for the full JSON resume.
+ *
+ * Resume-builder is a deterministic JSON-to-JSON transformation — extended
+ * thinking is disabled (budget = 0) so ALL tokens go to text output.
+ * With a 370-word experience section, 160-word projects, and full JSON
+ * scaffolding, a tailored resume can reach 6,000–10,000 output tokens.
+ */
+const RESUME_BUILDER_MAX_TOKENS = 16_000;
 
-/** Thinking budget — moderate for structured editing */
-const RESUME_BUILDER_THINKING_BUDGET = 4096;
+/** Thinking disabled — structured editing does not benefit from reasoning. */
+const RESUME_BUILDER_THINKING_BUDGET = 0;
 
 /** Agent name for logging and metrics */
 const AGENT_NAME = 'resume-builder' as const;

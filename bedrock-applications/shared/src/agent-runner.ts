@@ -299,11 +299,8 @@ export async function runAgent<T>(options: RunAgentOptions<T>): Promise<AgentRes
             `duration=${durationMs}ms`,
         );
 
-        // Extract text content (skip thinking blocks)
-        const outputBlocks = (response.output?.message?.content ?? []) as unknown as Array<Record<string, unknown>>;
-        const textContent = extractTextFromResponse(outputBlocks, agentName);
-
-        // Guard: fail fast when Bedrock truncates the response
+        // Guard: fail fast when Bedrock truncates the response — check BEFORE
+        // extracting text so the real cause surfaces instead of "No text content".
         if (response.stopReason === 'max_tokens') {
             throw new Error(
                 `Agent '${agentName}' response truncated — stopReason='max_tokens'. ` +
@@ -311,6 +308,10 @@ export async function runAgent<T>(options: RunAgentOptions<T>): Promise<AgentRes
                 `(thinkingBudget=${thinkingBudget}). Increase maxTokens to avoid truncation.`,
             );
         }
+
+        // Extract text content (skip thinking blocks)
+        const outputBlocks = (response.output?.message?.content ?? []) as unknown as Array<Record<string, unknown>>;
+        const textContent = extractTextFromResponse(outputBlocks, agentName);
 
         // Parse agent-specific response
         const data = parseResponse(textContent);

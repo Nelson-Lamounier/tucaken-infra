@@ -35,6 +35,7 @@ import {
   RequestCertificateCommand,
   DescribeCertificateCommand,
   DeleteCertificateCommand,
+  ListCertificatesCommand,
   CertificateStatus,
 } from "@aws-sdk/client-acm";
 import {
@@ -417,12 +418,36 @@ async function handleUpdate(
       };
     }
 
-    // Cert is gone (deleted by a previous failed deploy). Fall through to
-    // create a fresh certificate. This is the recovery path.
+    // Cert is gone (deleted by a previous failed deploy).
+    // Before creating a brand-new certificate (which triggers another
+    // 10-minute DNS validation wait), scan ACM for an already-ISSUED cert
+    // that covers this domain. This reconciles CloudFormation state drift
+    // where CFN's stored physicalResourceId points to a deleted cert but a
+    // valid cert for the same domain still exists (e.g. cc20522d is live on
+    // CloudFront while CFN thinks the cert is 2c56f8f7).
     console.warn(
       `Certificate ${oldPhysicalId} no longer exists in ACM (deleted by a ` +
-      "previous failed deploy). Creating a new certificate for the same domain.",
+      "previous failed deploy). Scanning ACM for an existing ISSUED cert before creating a new one.",
     );
+
+    const existingCert = await findExistingIssuedCertificate(newProps.DomainName);
+    if (existingCert) {
+      console.log(
+        `Found existing ISSUED certificate for ${newProps.DomainName}: ${existingCert}. ` +
+        "Reusing it to reconcile CloudFormation state drift — no new cert needed.",
+      );
+      return {
+        PhysicalResourceId: existingCert,
+        Data: {
+          CertificateArn: existingCert,
+          DomainName: newProps.DomainName,
+          ValidationStatus: "RECONCILED",
+          HostedZoneId: newProps.HostedZoneId,
+          Environment: newProps.Environment,
+          CloudFrontAliasCreated: newProps.CloudFrontDomainName ? "true" : "false",
+        },
+      };
+    }
   }
 
   // A new certificate is needed — either because the domain changed, or because
@@ -754,6 +779,51 @@ async function isCertificateValid(certificateArn: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Scan ACM for an already-ISSUED certificate covering the given domain.
+ *
+ * Used as a reconciliation step when CloudFormation's stored physical resource
+ * ID points to a deleted certificate but a valid cert for the same domain still
+ * exists in ACM (e.g. left over from a previous successful deploy). Returning
+ * the existing ARN avoids a full 10-minute DNS re-validation cycle and prevents
+ * an unnecessary CloudFront certificate swap.
+ *
+ * Pagination is handled automatically. Returns the first matching ISSUED cert,
+ * or `undefined` if none is found.
+ *
+ * @param domainName - The primary domain to match (e.g. 'nelsonlamounier.com').
+ * @returns The ARN of a matching ISSUED certificate, or `undefined`.
+ */
+async function findExistingIssuedCertificate(domainName: string): Promise<string | undefined> {
+  console.log(`Scanning ACM for existing ISSUED certificate for domain: ${domainName}`);
+
+  let nextToken: string | undefined;
+
+  do {
+    const command = new ListCertificatesCommand({
+      CertificateStatuses: [CertificateStatus.ISSUED],
+      NextToken: nextToken,
+      MaxItems: 100,
+    });
+
+    const response = await acmClient.send(command);
+    const matches = (response.CertificateSummaryList ?? []).filter(
+      (cert) => cert.DomainName === domainName && cert.CertificateArn,
+    );
+
+    if (matches.length > 0 && matches[0].CertificateArn) {
+      console.log(`Found ISSUED certificate ${matches[0].CertificateArn} for ${domainName}`);
+      return matches[0].CertificateArn;
+    }
+
+    nextToken = response.NextToken;
+  } while (nextToken);
+
+  console.log(`No existing ISSUED certificate found for ${domainName}`);
+  return undefined;
+}
+
 
 /**
  * DNS validation record structure

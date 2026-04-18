@@ -192,6 +192,7 @@ export class AcmCertificateDnsValidationConstruct extends Construct {
                     'acm:DescribeCertificate',
                     'acm:DeleteCertificate',
                     'acm:AddTagsToCertificate',
+                    'acm:ListCertificates', // Required for findExistingIssuedCertificate() recovery scan
                 ],
                 resources: ['*'], // ACM certificates don't exist before creation
             }),

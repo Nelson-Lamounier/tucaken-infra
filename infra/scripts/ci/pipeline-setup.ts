@@ -148,15 +148,17 @@ function resolveEdgeConfig(): EdgeConfig {
     process.exit(1);
   }
 
-  // Mask all infrastructure identifiers
-  maskSecret(domainName);
-  maskSecret(hostedZoneId);
-  maskSecret(crossAccountRoleArn);
-
-  // Write as step outputs for the synth step
+  // Write outputs BEFORE masking — masking before setOutput causes GitHub Actions
+  // to store '***' or '' in the output context, making values unavailable to
+  // downstream steps (documented GitHub Actions limitation).
   setOutput('domain-name', domainName);
   setOutput('hosted-zone-id', hostedZoneId);
   setOutput('cross-account-role-arn', crossAccountRoleArn);
+
+  // Mask after writing so log display is still redacted.
+  maskSecret(domainName);
+  maskSecret(hostedZoneId);
+  maskSecret(crossAccountRoleArn);
 
   logger.success('Edge config resolved');
   return { domainName, hostedZoneId, crossAccountRoleArn };

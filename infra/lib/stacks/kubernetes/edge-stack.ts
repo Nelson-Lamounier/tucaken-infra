@@ -307,6 +307,12 @@ export class KubernetesEdgeStack extends cdk.Stack {
                 crossAccountRoleArn: props.crossAccountRoleArn,
                 validationFunction: this.validationLambda.function,
                 namePrefix,
+                // Force Certificate Lambda to run on every deploy so it can
+                // reconcile CloudFormation state drift (e.g. ghost cert ARNs
+                // left by failed deploys). The Lambda's isCertificateValid +
+                // findExistingIssuedCertificate checks make this a fast no-op
+                // when the cert is already ISSUED — no new cert is created.
+                forceUpdate: process.env.GITHUB_SHA ?? new Date().toISOString(),
             }
         );
 

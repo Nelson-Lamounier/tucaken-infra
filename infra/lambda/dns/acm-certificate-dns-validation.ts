@@ -348,39 +348,89 @@ async function handleCreate(
 /**
  * Handle Update events
  *
- * For certificate updates, we create a new certificate first, then delete the old one.
- * This ensures zero downtime during certificate updates.
+ * Strategy:
+ *  - If the domain name has NOT changed, reuse the existing certificate ARN.
+ *    CloudFront distributions can take 5–15 minutes to update; deleting the
+ *    old cert while CloudFront is mid-update causes a 400 "SSL certificate
+ *    doesn't exist" error (UPDATE_FAILED on the distribution resource).
+ *  - If the domain name HAS changed, request a new certificate and leave the
+ *    old one intact. CloudFront must finish its update before the old cert can
+ *    safely be deleted. Manual cleanup (or the Delete handler) handles removal.
+ *
+ * NOTE: We deliberately NEVER delete the old certificate inside handleUpdate.
+ * The Delete handler is responsible for cert cleanup on stack teardown.
  */
 async function handleUpdate(
   event: CloudFormationCustomResourceEvent,
   context: Context,
 ): Promise<CrProviderResponse> {
-  const oldCertificateArn =
+  const oldPhysicalId =
     "PhysicalResourceId" in event ? event.PhysicalResourceId : undefined;
 
-  console.log("Updating certificate (create new, delete old pattern)");
-  if (oldCertificateArn) {
-    console.log(`Old certificate: ${oldCertificateArn}`);
+  const newProps = event.ResourceProperties as unknown as AcmCertificateProperties;
+  const oldProps = "OldResourceProperties" in event
+    ? (event.OldResourceProperties as unknown as AcmCertificateProperties)
+    : undefined;
+
+  console.log("Certificate update requested");
+  console.log(`Old physical resource ID: ${oldPhysicalId ?? "none"}`);
+
+  // ── DNS-only / A-record modes ─────────────────────────────────────────────
+  // These don't involve ACM certificates; delegate directly to handleCreate
+  // (which is idempotent for alias / A-record resources).
+  const skipCert = newProps.SkipCertificateCreation === "true";
+  if (skipCert) {
+    console.log("DNS-only / A-record mode: delegating to handleCreate");
+    return handleCreate(event, context);
   }
 
-  // Create new certificate
+  // ── Full certificate mode ─────────────────────────────────────────────────
+  const domainChanged =
+    oldProps?.DomainName !== newProps.DomainName ||
+    JSON.stringify(oldProps?.SubjectAlternativeNames ?? []) !==
+      JSON.stringify(newProps.SubjectAlternativeNames ?? []);
+
+  if (!domainChanged && oldPhysicalId?.startsWith("arn:aws:acm:")) {
+    // Domain is unchanged — the existing cert is still valid.
+    // Reuse its ARN so CloudFront is never asked to switch certificates.
+    console.log(
+      `Domain unchanged (${newProps.DomainName}). ` +
+      `Reusing existing certificate: ${oldPhysicalId}`,
+    );
+    return {
+      PhysicalResourceId: oldPhysicalId,
+      Data: {
+        CertificateArn: oldPhysicalId,
+        DomainName: newProps.DomainName,
+        ValidationStatus: "REUSED",
+        HostedZoneId: newProps.HostedZoneId,
+        Environment: newProps.Environment,
+        CloudFrontAliasCreated: newProps.CloudFrontDomainName ? "true" : "false",
+      },
+    };
+  }
+
+  // Domain changed — we must request a new certificate.
+  // IMPORTANT: Do NOT delete the old certificate here.
+  // CloudFront distributions take 5–15 min to update; the old cert must
+  // remain valid for the entire duration of that update. Deleting it
+  // immediately causes CloudFront to return a 400 "SSL certificate doesn't
+  // exist" error, putting the distribution into UPDATE_FAILED.
+  //
+  // The old certificate will be cleaned up by the Delete handler when the
+  // stack is torn down, or can be removed manually from the ACM console
+  // once the CloudFront update is confirmed complete.
+  console.log(
+    `Domain changed from "${oldProps?.DomainName ?? "unknown"}" ` +
+    `to "${newProps.DomainName}". Requesting new certificate.`,
+  );
+  console.log(
+    `Old certificate ARN "${oldPhysicalId}" will NOT be deleted immediately — ` +
+    "it must remain valid until CloudFront finishes its distribution update " +
+    "(typically 5–15 min). Clean it up manually once the update is confirmed complete.",
+  );
+
   const createResponse = await handleCreate(event, context);
-
-  // If creation succeeded and we have an old certificate, delete it
-  if (oldCertificateArn) {
-    try {
-      console.log(`Deleting old certificate: ${oldCertificateArn}`);
-      await deleteCertificate(oldCertificateArn);
-      console.log("Old certificate deleted successfully");
-    } catch (error) {
-      // Log error but don't fail the update
-      console.error("Failed to delete old certificate:", error);
-      console.log(
-        "Continuing with update - old certificate may need manual cleanup",
-      );
-    }
-  }
-
   return createResponse;
 }
 

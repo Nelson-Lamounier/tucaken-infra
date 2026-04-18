@@ -338,6 +338,8 @@ export interface K8sEdgeConfig {
     readonly opsSubdomain?: string;
     /** Root domain for ops DNS record (e.g., 'nelsonlamounier.com') */
     readonly baseDomain?: string;
+    /** GitHub Actions ARC webhook subdomain (e.g., 'runners' -> runners.nelsonlamounier.com → EIP) */
+    readonly runnersSubdomain?: string;
 }
 
 /**
@@ -503,6 +505,7 @@ export const K8S_CONFIGS: Record<DeployableEnvironment, K8sConfigs> = {
             enableIpReputationList: true,
             opsSubdomain: 'ops',
             baseDomain: 'nelsonlamounier.com',
+            runnersSubdomain: 'runners',
         },
         monitoringWorker: {
             instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM),
@@ -610,6 +613,7 @@ export const K8S_CONFIGS: Record<DeployableEnvironment, K8sConfigs> = {
             enableIpReputationList: true,
             opsSubdomain: 'ops',
             baseDomain: 'nelsonlamounier.com',
+            runnersSubdomain: 'runners',
         },
         monitoringWorker: {
             instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),
@@ -713,6 +717,7 @@ export const K8S_CONFIGS: Record<DeployableEnvironment, K8sConfigs> = {
             enableIpReputationList: true,
             opsSubdomain: 'ops',
             baseDomain: 'nelsonlamounier.com',
+            runnersSubdomain: 'runners',
         },
         monitoringWorker: {
             instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.SMALL),

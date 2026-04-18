@@ -273,7 +273,7 @@ jobs:
     name: "[Admin API] Update SSM → ArgoCD"
     needs: [resolve-targets, push-admin-api]
     if: needs.resolve-targets.outputs.deploy-admin-api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, k8s]
     timeout-minutes: 10
     environment: development
 
@@ -323,105 +323,55 @@ jobs:
 
 
       # -------------------------------------------------------------------------
-      # Sync deploy scripts to S3 so the control-plane instance runs the
-      # version from this commit, not whatever was cached from the last
-      # _deploy-ssm-automation.yml run.
-      # -------------------------------------------------------------------------
-      - name: Sync Admin-API Scripts to S3
-        run: |
-          SCRIPTS_BUCKET=$(aws ssm get-parameter \
-            --name "/k8s/${{ env.ENVIRONMENT }}/scripts-bucket" \
-            --query 'Parameter.Value' \
-            --output text)
-
-          echo "Syncing k8s-bootstrap helpers..."
-          aws s3 sync kubernetes-app/k8s-bootstrap/ \
-            "s3://${SCRIPTS_BUCKET}/k8s-bootstrap/" \
-            --exclude ".venv/*" \
-            --region "${{ env.AWS_REGION }}"
-
-          echo "Syncing admin-api deploy scripts..."
-          aws s3 sync kubernetes-app/workloads/charts/admin-api/ \
-            "s3://${SCRIPTS_BUCKET}/app-deploy/admin-api/" \
-            --exclude "chart/*" --exclude "__pycache__/*" \
-            --region "${{ env.AWS_REGION }}"
-
-          echo "[PASS] admin-api scripts synced to s3://${SCRIPTS_BUCKET}/app-deploy/admin-api/"
-
-      # -------------------------------------------------------------------------
-      # Bootstrap admin-api K8s resources via deploy.py.
+      # Apply admin-api K8s resources directly from the runner (in-cluster).
       #
-      # deploy.py creates:
+      # The runner pod runs inside the cluster — no SSM hop, no S3 sync,
+      # no pip install on the control-plane node.
+      #
+      # deploy.py creates (sole owner — ArgoCD never touches these):
       #   admin-api-secrets  (Opaque Secret)  — Cognito auth creds
       #   admin-api-config   (ConfigMap)      — DynamoDB, S3, Lambda refs
       #   admin-api          (IngressRoute)   — Traefik routing rule
       #
-      # The script is the sole owner of these resources. ArgoCD only manages
-      # the Deployment, Service, NetworkPolicy, and ResourceQuota via Helm.
+      # Kubeconfig fetched from SSM (/k8s/{env}/kubeconfig — SecureString
+      # published by control-plane bootstrap on every kubeadm init/restore).
+      # Server URL rewritten from 127.0.0.1:6443 (SSM tunnel) to
+      # kubernetes.default.svc:443 (in-cluster DNS). Same CA cert validates both.
       #
-      # The SSM command fetches the scripts bucket from SSM and syncs the
-      # latest deploy.py from S3 before executing, ensuring the instance
-      # always runs the version from this commit.
+      # kubectl required by admin-api/deploy.py for IngressRoute apply (subprocess).
       # -------------------------------------------------------------------------
-      - name: Setup Node.js and Yarn
-        uses: ./.github/actions/setup-node-yarn
-
-      - name: Run admin-api deploy.py via SSM (Secret + ConfigMap + IngressRoute)
+      - name: Set up in-cluster kubeconfig
         run: |
-          yarn tsx kubernetes-app/k8s-bootstrap/scripts/ssm-deploy.ts \
-            --app admin-api \
-            --environment "${{ env.ENVIRONMENT }}" \
-            --region "${{ env.AWS_REGION }}"
+          aws ssm get-parameter \
+            --name "/k8s/${{ env.ENVIRONMENT }}/kubeconfig" \
+            --with-decryption \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'Parameter.Value' \
+            --output text \
+            | sed 's|https://127.0.0.1:6443|https://kubernetes.default.svc:443|g' \
+            > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
 
-      - name: Force ArgoCD Sync via SSM
-        # ArgoCD Image Updater may take up to 2 minutes to poll SSM.
-        # Trigger an immediate force-sync on the CP node to avoid waiting.
+      - name: Install kubectl
+        run: |
+          KUBECTL_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt)
+          curl -sLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Apply admin-api K8s resources (Secret + ConfigMap + IngressRoute)
         env:
-          REGION: ${{ env.AWS_REGION }}
+          KUBECONFIG: /tmp/kubeconfig
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters \
-              "Name=tag:k8s:bootstrap-role,Values=control-plane" \
-              "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --region "$REGION" --output text 2>/dev/null || echo "")
+          python3 -m pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
+          python3 kubernetes-app/workloads/charts/admin-api/deploy.py
 
-          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-            echo "::warning::Could not resolve control-plane instance — skipping force-sync"
-            exit 0
-          fi
-
-          echo "::add-mask::$INSTANCE_ID"
-
-          CMD_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo kubectl -n argocd exec deploy/argocd-server -- argocd app sync admin-api --force 2>&1 || sudo argocd app sync admin-api --grpc-web 2>&1 || echo [WARN] force-sync skipped — Image Updater will poll within 2 min"]' \
-            --region "$REGION" \
-            --query "Command.CommandId" --output text)
-
-          echo "SSM force-sync command: $CMD_ID"
-
-          for i in $(seq 1 15); do
-            sleep 5
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$CMD_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --region "$REGION" \
-              --query "Status" --output text 2>/dev/null || echo "Pending")
-            echo "  [$i] SSM status: $STATUS"
-            if [[ "$STATUS" == "Success" || "$STATUS" == "Failed" || "$STATUS" == "TimedOut" ]]; then
-              break
-            fi
-          done
-
-          OUTPUT=$(aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" \
-            --query "StandardOutputContent" --output text 2>/dev/null || echo "(no output)")
-          echo "--- Remote output ---"
-          echo "$OUTPUT"
+      - name: Trigger ArgoCD Sync
+        run: |
+          kubectl annotate application admin-api -n argocd \
+            argocd.argoproj.io/refresh=hard --overwrite \
+            --kubeconfig /tmp/kubeconfig
 
       - name: Deploy Summary
         run: |
@@ -564,7 +514,7 @@ jobs:
     name: "[Public API] Update SSM → ArgoCD"
     needs: [resolve-targets, push-public-api]
     if: needs.resolve-targets.outputs.deploy-public-api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, k8s]
     timeout-minutes: 10
     environment: development
 
@@ -611,98 +561,52 @@ jobs:
 
 
       # -------------------------------------------------------------------------
-      # Sync deploy scripts to S3 so the control-plane instance runs the
-      # version from this commit, not whatever was cached from the last
-      # _deploy-ssm-automation.yml run.
-      # -------------------------------------------------------------------------
-      - name: Sync Public-API Scripts to S3
-        run: |
-          SCRIPTS_BUCKET=$(aws ssm get-parameter \
-            --name "/k8s/${{ env.ENVIRONMENT }}/scripts-bucket" \
-            --query 'Parameter.Value' \
-            --output text)
-
-          echo "Syncing k8s-bootstrap helpers..."
-          aws s3 sync kubernetes-app/k8s-bootstrap/ \
-            "s3://${SCRIPTS_BUCKET}/k8s-bootstrap/" \
-            --exclude ".venv/*" \
-            --region "${{ env.AWS_REGION }}"
-
-          echo "Syncing public-api deploy scripts..."
-          aws s3 sync kubernetes-app/workloads/charts/public-api/ \
-            "s3://${SCRIPTS_BUCKET}/app-deploy/public-api/" \
-            --exclude "chart/*" --exclude "__pycache__/*" \
-            --region "${{ env.AWS_REGION }}"
-
-          echo "[PASS] public-api scripts synced to s3://${SCRIPTS_BUCKET}/app-deploy/public-api/"
-
-      # -------------------------------------------------------------------------
-      # Bootstrap public-api K8s resources via deploy.py.
+      # Apply public-api K8s resources directly from the runner (in-cluster).
       #
-      # deploy.py creates:
-      #   public-api-config  (ConfigMap)   — DynamoDB table names, region
+      # The runner pod runs inside the cluster — no SSM hop, no S3 sync.
+      #
+      # deploy.py creates (sole owner — ArgoCD never touches these):
+      #   public-api-config  (ConfigMap)    — DynamoDB table names, region
       #   public-api         (IngressRoute) — Traefik /api/* routing rule
       #
-      # The SSM command fetches the scripts bucket from SSM and syncs the
-      # latest deploy.py from S3 before executing.
+      # Kubeconfig fetched from SSM with server URL rewritten for in-cluster
+      # routing (127.0.0.1:6443 → kubernetes.default.svc:443).
+      #
+      # public-api/deploy.py uses the Python kubernetes client only (no kubectl
+      # subprocess) — kubectl is only needed here for the ArgoCD sync trigger.
       # -------------------------------------------------------------------------
-      - name: Setup Node.js and Yarn
-        uses: ./.github/actions/setup-node-yarn
-
-      - name: Run public-api deploy.py via SSM (ConfigMap + IngressRoute)
+      - name: Set up in-cluster kubeconfig
         run: |
-          yarn tsx kubernetes-app/k8s-bootstrap/scripts/ssm-deploy.ts \
-            --app public-api \
-            --environment "${{ env.ENVIRONMENT }}" \
-            --region "${{ env.AWS_REGION }}"
+          aws ssm get-parameter \
+            --name "/k8s/${{ env.ENVIRONMENT }}/kubeconfig" \
+            --with-decryption \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'Parameter.Value' \
+            --output text \
+            | sed 's|https://127.0.0.1:6443|https://kubernetes.default.svc:443|g' \
+            > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
 
-      - name: Force ArgoCD Sync via SSM
+      - name: Install kubectl
+        run: |
+          KUBECTL_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt)
+          curl -sLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Apply public-api K8s resources (ConfigMap + IngressRoute)
         env:
-          REGION: ${{ env.AWS_REGION }}
+          KUBECONFIG: /tmp/kubeconfig
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters \
-              "Name=tag:k8s:bootstrap-role,Values=control-plane" \
-              "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --region "$REGION" --output text 2>/dev/null || echo "")
+          python3 -m pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
+          python3 kubernetes-app/workloads/charts/public-api/deploy.py
 
-          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-            echo "::warning::Could not resolve control-plane instance — skipping force-sync"
-            exit 0
-          fi
-
-          echo "::add-mask::$INSTANCE_ID"
-
-          CMD_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo kubectl -n argocd exec deploy/argocd-server -- argocd app sync public-api --force 2>&1 || echo [WARN] force-sync skipped — Image Updater will poll within 2 min"]' \
-            --region "$REGION" \
-            --query "Command.CommandId" --output text)
-
-          echo "SSM force-sync command: $CMD_ID"
-
-          for i in $(seq 1 15); do
-            sleep 5
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$CMD_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --region "$REGION" \
-              --query "Status" --output text 2>/dev/null || echo "Pending")
-            echo "  [$i] SSM status: $STATUS"
-            if [[ "$STATUS" == "Success" || "$STATUS" == "Failed" || "$STATUS" == "TimedOut" ]]; then
-              break
-            fi
-          done
-
-          OUTPUT=$(aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" \
-            --query "StandardOutputContent" --output text 2>/dev/null || echo "(no output)")
-          echo "--- Remote output ---"
-          echo "$OUTPUT"
+      - name: Trigger ArgoCD Sync
+        run: |
+          kubectl annotate application public-api -n argocd \
+            argocd.argoproj.io/refresh=hard --overwrite \
+            --kubeconfig /tmp/kubeconfig
 
       - name: Deploy Summary
         run: |

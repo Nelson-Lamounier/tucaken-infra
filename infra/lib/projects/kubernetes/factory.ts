@@ -536,6 +536,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 // Admin services (Grafana/Prometheus/ArgoCD) DNS
                 opsSubdomain: configs.edge.opsSubdomain,
                 baseDomain: configs.edge.baseDomain,
+                runnersSubdomain: configs.edge.runnersSubdomain,
                 env: edgeEnv,
             },
         );

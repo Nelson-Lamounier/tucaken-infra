@@ -183,6 +183,14 @@ export interface KubernetesEdgeStackProps extends cdk.StackProps {
      * Required when opsSubdomain is set.
      */
     readonly baseDomain?: string;
+
+    /**
+     * Subdomain for the GitHub Actions ARC webhook endpoint (e.g., 'runners').
+     * Creates an A record (runners.domain.com) pointing to the EIP.
+     * Traefik routes GitHub webhook events by Host header to the ARC controller.
+     * Required when using ARC webhook mode for faster scale-up.
+     */
+    readonly runnersSubdomain?: string;
 }
 
 // =============================================================================
@@ -726,6 +734,28 @@ export class KubernetesEdgeStack extends cdk.Stack {
                 },
             ],
         );
+
+        // =====================================================================
+        // ARC RUNNERS DNS A RECORD (runners.domain.com → EIP)
+        // =====================================================================
+        // Same pattern as ops: plain A record to EIP, Traefik routes by Host header.
+        // GitHub sends POST /webhook → NLB or EIP → Traefik → ARC webhook service.
+        // No Lambda changes needed — reuses the existing RecordValue (A record) path.
+        if (props.runnersSubdomain && props.baseDomain) {
+            const runnersDomainName = `${props.runnersSubdomain}.${props.baseDomain}`;
+            new cdk.CustomResource(this, 'RunnersDnsRecord', {
+                serviceToken: dnsAliasProvider.serviceToken,
+                properties: {
+                    DomainName: runnersDomainName,
+                    HostedZoneId: props.hostedZoneId,
+                    CrossAccountRoleArn: props.crossAccountRoleArn,
+                    Environment: envName,
+                    SkipCertificateCreation: 'true',
+                    RecordValue: eipAddress,
+                },
+                removalPolicy: logRemovalPolicy,
+            });
+        }
 
         // =====================================================================
         // SSM PARAMETERS

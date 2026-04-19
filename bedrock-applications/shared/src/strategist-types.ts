@@ -371,6 +371,62 @@ export interface StrategistResearchResult {
 }
 
 // =============================================================================
+// ROLE ARCHETYPE SELECTION (Phase 0)
+// =============================================================================
+
+/**
+ * Valid archetype IDs — maps to the 6 archetypes in the wiki role-archetypes page.
+ */
+export type ArchetypeId = 1 | 2 | 3 | 4 | 5 | 6;
+
+/**
+ * Explicit archetype selection output from Strategist Phase 0.
+ *
+ * Phase 0 runs before any resume generation and determines which
+ * archetype lens governs emphasis, exclusions, and lead identity.
+ * Surfaced as a distinct, auditable XML section so failures trace
+ * to a specific archetype mismatch rather than to downstream generation.
+ */
+export interface RoleArchetypeSelection {
+    /**
+     * Archetype name — e.g. "Site Reliability Engineer (SRE)".
+     * Maps directly to the archetype titles in role-archetypes.md.
+     */
+    readonly selectedArchetype: string;
+
+    /**
+     * Numeric archetype ID (1–6) for programmatic routing.
+     * 1 = Platform/Infra, 2 = SRE, 3 = Full-Stack,
+     * 4 = AI/ML, 5 = DevOps/Cloud, 6 = Ops Engineering/Internal Tooling.
+     */
+    readonly archetypeId: ArchetypeId;
+
+    /** JD phrases that triggered this archetype selection. */
+    readonly triggerPhrasesMatched: string[];
+
+    /**
+     * Content categories excluded by this archetype.
+     * e.g. for Archetype 6: ["Next.js/React", "DynamoDB single-table design"]
+     */
+    readonly excludedContentCategories: string[];
+
+    /** One-sentence lead identity for this archetype and role. */
+    readonly leadIdentity: string;
+
+    /**
+     * Selection confidence (0.0–1.0).
+     * Below 0.8 → archetypeGapDetected = true → flag for human review.
+     */
+    readonly confidenceScore: number;
+
+    /**
+     * True when no archetype matches with confidence ≥ 0.8.
+     * Action: use closest match but flag the output for human review.
+     */
+    readonly archetypeGapDetected: boolean;
+}
+
+// =============================================================================
 // RESUME SUGGESTION TYPES
 // =============================================================================
 
@@ -463,7 +519,29 @@ export interface StrategistAnalysisResult {
     /** Generated cover letter (extracted from XML, null when not requested) */
     readonly coverLetter: string | null;
 
-    /** Structured per-item resume tailoring suggestions (parsed from XML) */
+    /**
+     * Explicit archetype selection from Phase 0.
+     * Null when the Strategist did not output a Phase 0 section (legacy runs).
+     */
+    readonly archetypeSelection: RoleArchetypeSelection | null;
+
+    /**
+     * Complete tailored StructuredResumeData produced by the Strategist in Phase 4.
+     *
+     * This is the authoritative tailored resume — generated directly by Sonnet 4.6
+     * with extended thinking. The Resume Builder handler persists this directly to
+     * DynamoDB without any LLM-based patch application.
+     *
+     * Null when no resume was provided (build-from-scratch without base data)
+     * or when the Strategist did not output a <tailored_resume_json> section.
+     */
+    readonly tailoredResumeData: StructuredResumeData | null;
+
+    /**
+     * Structured per-item resume tailoring suggestions (parsed from XML).
+     * Retained for admin UI audit trail — shows what changed and why.
+     * NOT used by the Resume Builder to apply patches (deprecated role).
+     */
     readonly resumeSuggestions: ResumeSuggestions;
 
     /**
@@ -641,19 +719,33 @@ export interface JobApplicationRecord {
  * Contains the rebuilt resume with all Strategist suggestions applied.
  */
 export interface TailoredResumeResult {
-    /** The complete rebuilt resume with suggestions applied */
+    /**
+     * The complete tailored resume.
+     *
+     * In the current pipeline (Option A), this is sourced directly from
+     * `StrategistAnalysisResult.tailoredResumeData` — produced by the
+     * Strategist Agent and validated by the Resume Builder handler.
+     * No LLM patch application occurs in the Resume Builder stage.
+     */
     readonly tailoredResume: StructuredResumeData;
 
-    /** Human-readable summary of changes applied */
+    /** Human-readable summary of the tailoring (from Strategist Phase 0 archetype selection). */
     readonly changesSummary: string;
 
-    /** Count of addition suggestions applied */
+    /**
+     * @deprecated Always 0 — patch application removed in Option A architecture.
+     * The Strategist produces the complete resume directly.
+     */
     readonly additionsApplied: number;
 
-    /** Count of reframe suggestions applied */
+    /**
+     * @deprecated Always 0 — patch application removed in Option A architecture.
+     */
     readonly reframesApplied: number;
 
-    /** Count of ESL corrections applied */
+    /**
+     * @deprecated Always 0 — patch application removed in Option A architecture.
+     */
     readonly eslCorrectionsApplied: number;
 }
 

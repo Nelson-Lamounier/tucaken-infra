@@ -104,11 +104,15 @@ export const handler = async (
     );
 
     // Reconstruct the AgentResult<StrategistAnalysisResult>
+    // archetypeSelection and tailoredResumeData are not stored in the coaching
+    // pipeline's DDB record — null is the correct value for loaded-from-DDB runs.
     const analysis: AgentResult<StrategistAnalysisResult> = {
         data: {
             analysisXml: record.analysisXml,
             metadata: record.metadata,
             coverLetter: record.coverLetter,
+            archetypeSelection: null,
+            tailoredResumeData: null,
             resumeSuggestions: record.resumeSuggestions,
             resumeAdditions: record.resumeAdditions,
             resumeReframes: record.resumeReframes,

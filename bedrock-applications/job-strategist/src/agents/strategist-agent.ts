@@ -12,7 +12,7 @@
  * Pipeline position: API → Research → **Strategist** → Coach → DynamoDB
  */
 
-import { runAgent } from '../../../shared/src/index.js';
+import { runAgent, parseJsonResponse } from '../../../shared/src/index.js';
 import { formatResumeForPrompt } from '../services/resume-service.js';
 import { STRATEGIST_PERSONA_SYSTEM_PROMPT } from '../prompts/strategist-persona.js';
 import { sanitiseOutput } from '../security/output-sanitiser.js';
@@ -27,9 +27,12 @@ import type {
     ResumeReframeSuggestion,
     ResumeEslCorrection,
     ResumeSuggestions,
+    RoleArchetypeSelection,
+    ArchetypeId,
     StrategistPipelineContext,
     StrategistResearchResult,
     StrategistAnalysisResult,
+    StructuredResumeData,
 } from '../../../shared/src/index.js';
 
 // =============================================================================
@@ -45,11 +48,19 @@ const STRATEGIST_MODEL = process.env.STRATEGIST_MODEL ?? 'eu.anthropic.claude-so
  */
 const EFFECTIVE_MODEL_ID = process.env.INFERENCE_PROFILE_ARN ?? STRATEGIST_MODEL;
 
-/** Maximum output tokens — large budget for full XML analysis */
-const STRATEGIST_MAX_TOKENS = 32768;
+/**
+ * Maximum output tokens — read from CDK-injected env var (MAX_TOKENS).
+ * Fallback: 64,000 (supports full XML analysis + tailored resume JSON).
+ * CDK allocations in strategist-allocations.ts are the authoritative source.
+ */
+const STRATEGIST_MAX_TOKENS = Number(process.env.MAX_TOKENS ?? '64000');
 
-/** Extended thinking budget for complex document crafting */
-const STRATEGIST_THINKING_BUDGET = 12288;
+/**
+ * Extended thinking budget — read from CDK-injected env var (THINKING_BUDGET_TOKENS).
+ * Must be < STRATEGIST_MAX_TOKENS. Bedrock carves this from the maxTokens ceiling.
+ * Fallback: 16,384 (leaves ~47k tokens for text output).
+ */
+const STRATEGIST_THINKING_BUDGET = Number(process.env.THINKING_BUDGET_TOKENS ?? '16384');
 
 // =============================================================================
 // USER MESSAGE BUILDER
@@ -132,15 +143,21 @@ function buildStrategistMessage(
         sections.push(`- **${gap.skill}** [${gap.gapType}/${gap.impactSeverity}]: ${gap.disqualifyingAssessment}`);
     }
 
-    // Resume data (structured JSON from pipeline context, formatted as sectioned text)
+    // Resume data — PATH B formatting reference only. All content comes from KB.
     if (research.resumeData) {
         sections.push(
-            '', '### Current Resume Content (Content Reference — Draft)',
-            'This is the candidate\u2019s current resume. Use as content and style baseline.',
-            'If constraint rules (above or below) conflict with resume wording, the constraints take precedence.',
-            '--- BEGIN RESUME ---',
+            '', '### PATH B — Uploaded Resume (FORMATTING REFERENCE ONLY)',
+            '',
+            '⚠️  CONTENT PROHIBITION — NEVER VIOLATE:',
+            'Do NOT copy, paraphrase, or derive any content from this document.',
+            'PERMITTED: section ordering preference, header/contact block format only.',
+            'PROHIBITED: any bullet, summary, skill list, or project description from this document.',
+            'All resume content must be generated from the KB evidence in the research brief above.',
+            'If this document\'s structure conflicts with the Phase 0 archetype ordering, the ARCHETYPE WINS.',
+            'If a section appears here but has no KB evidence, leave it EMPTY — do not copy to fill.',
+            '--- BEGIN FORMATTING REFERENCE ---',
             formatResumeForPrompt(research.resumeData),
-            '--- END RESUME ---',
+            '--- END FORMATTING REFERENCE ---',
         );
     }
 
@@ -306,7 +323,8 @@ function extractEslCorrections(xml: string): ResumeEslCorrection[] {
  * Build the complete ResumeSuggestions object from XML.
  *
  * Extracts all structured suggestion data from the `<resume_tailoring>`
- * section of the Strategist Agent's XML output.
+ * section of the Strategist Agent's XML output. Retained for admin UI
+ * audit trail — no longer used by Resume Builder for patch application.
  *
  * @param xml - Raw XML analysis output
  * @returns Structured resume suggestions
@@ -317,6 +335,107 @@ function buildResumeSuggestions(xml: string): ResumeSuggestions {
         reframes: extractReframes(xml),
         eslCorrections: extractEslCorrections(xml),
     };
+}
+
+// =============================================================================
+// PHASE 0 ARCHETYPE EXTRACTION
+// =============================================================================
+
+/**
+ * Pull inner tag values out of a parent content block.
+ *
+ * Uses String.matchAll — avoids exec() to prevent false-positive
+ * security hook triggers on RegExp.prototype.exec() patterns.
+ */
+function extractTagArray(content: string, tag: string): string[] {
+    const pattern = new RegExp(`<${tag}>(.*?)</${tag}>`, 'gs');
+    return Array.from(content.matchAll(pattern)).map((m) => m[1].trim());
+}
+
+/** Extract a single plain-text tag value from a content block. */
+function extractTagValue(content: string, tag: string): string {
+    const pattern = new RegExp(`<${tag}>(.*?)</${tag}>`, 's');
+    return content.match(pattern)?.[1]?.trim() ?? '';
+}
+
+/** Extract a CDATA-wrapped tag value (falls back to plain-text tag). */
+function extractCdataValue(content: string, tag: string): string {
+    const cdataPattern = new RegExp(`<${tag}><!\\[CDATA\\[([\\s\\S]*?)\\]\\]></${tag}>`);
+    const raw = content.match(cdataPattern)?.[1]?.trim();
+    return raw ?? extractTagValue(content, tag);
+}
+
+/**
+ * Extract the Phase 0 archetype selection from the XML analysis.
+ *
+ * Parses the `<phase_0_archetype_selection>` section introduced in the
+ * Option A architecture. Returns null when the section is absent (legacy
+ * runs or Strategist output that predates Phase 0).
+ *
+ * @param xml - Raw XML analysis output
+ * @returns Parsed archetype selection, or null
+ */
+function extractArchetypeSelection(xml: string): RoleArchetypeSelection | null {
+    const sectionPattern = /<phase_0_archetype_selection>([\s\S]*?)<\/phase_0_archetype_selection>/;
+    const sectionMatch = xml.match(sectionPattern);
+    if (!sectionMatch) return null;
+
+    const content = sectionMatch[1];
+
+    const triggerBlock = content.match(/<trigger_phrases_matched>([\s\S]*?)<\/trigger_phrases_matched>/)?.[1] ?? '';
+    const excludedBlock = content.match(/<excluded_content_categories>([\s\S]*?)<\/excluded_content_categories>/)?.[1] ?? '';
+
+    const archetypeIdRaw = parseInt(extractTagValue(content, 'archetype_id'), 10);
+    const archetypeId: ArchetypeId = ([1, 2, 3, 4, 5, 6].includes(archetypeIdRaw)
+        ? archetypeIdRaw
+        : 1) as ArchetypeId;
+
+    const confidenceRaw = parseFloat(extractTagValue(content, 'confidence_score'));
+    const confidenceScore = isNaN(confidenceRaw) ? 0.5 : Math.min(1, Math.max(0, confidenceRaw));
+
+    return {
+        selectedArchetype: extractTagValue(content, 'selected_archetype'),
+        archetypeId,
+        triggerPhrasesMatched: extractTagArray(triggerBlock, 'phrase'),
+        excludedContentCategories: extractTagArray(excludedBlock, 'category'),
+        leadIdentity: extractCdataValue(content, 'lead_identity'),
+        confidenceScore,
+        archetypeGapDetected: extractTagValue(content, 'archetype_gap_detected') === 'true',
+    };
+}
+
+// =============================================================================
+// TAILORED RESUME JSON EXTRACTION
+// =============================================================================
+
+/**
+ * Extract the complete tailored resume JSON from the XML analysis.
+ *
+ * Parses the `<tailored_resume_json>` CDATA section in Phase 4.
+ * This is the authoritative resume output produced by the Strategist
+ * Agent — the Resume Builder handler persists it directly to DynamoDB
+ * without any further LLM transformation.
+ *
+ * Returns null when the section is absent (build-from-scratch runs
+ * without base resume data, or legacy Strategist output).
+ *
+ * @param xml - Raw XML analysis output
+ * @returns Parsed StructuredResumeData, or null
+ */
+function extractTailoredResumeJson(xml: string): StructuredResumeData | null {
+    const cdataPattern = /<tailored_resume_json><!\[CDATA\[([\s\S]*?)\]\]><\/tailored_resume_json>/;
+    const match = xml.match(cdataPattern);
+    if (!match) return null;
+
+    const raw = match[1].trim();
+    if (!raw) return null;
+
+    try {
+        return parseJsonResponse<StructuredResumeData>(raw, 'strategist-tailored-resume');
+    } catch (err) {
+        console.warn(`[strategist-writer] Failed to parse tailored_resume_json: ${(err as Error).message}`);
+        return null;
+    }
 }
 
 // =============================================================================
@@ -370,10 +489,32 @@ export async function executeStrategistAgent(
                 : null;
             const resumeSuggestions = buildResumeSuggestions(sanitisedXml);
 
+            // Phase 0 — archetype selection (explicit, auditable)
+            const archetypeSelection = extractArchetypeSelection(sanitisedXml);
+            if (archetypeSelection) {
+                console.log(
+                    `[strategist-writer] Phase 0 — archetype="${archetypeSelection.selectedArchetype}" ` +
+                    `(id=${archetypeSelection.archetypeId}, confidence=${archetypeSelection.confidenceScore.toFixed(2)}, ` +
+                    `gap=${archetypeSelection.archetypeGapDetected})`,
+                );
+            } else {
+                console.warn(`[strategist-writer] Phase 0 section absent — legacy or build-from-scratch run`);
+            }
+
+            // Phase 4 — extract complete tailored resume JSON (Option A architecture)
+            const tailoredResumeData = extractTailoredResumeJson(sanitisedXml);
+            if (tailoredResumeData) {
+                console.log(`[strategist-writer] Tailored resume JSON extracted — Resume Builder will persist directly`);
+            } else {
+                console.warn(`[strategist-writer] No tailored_resume_json section found — Resume Builder will skip`);
+            }
+
             return {
                 analysisXml: sanitisedXml,
                 metadata,
                 coverLetter,
+                archetypeSelection,
+                tailoredResumeData,
                 resumeSuggestions,
                 resumeAdditions: resumeSuggestions.additions.length,
                 resumeReframes: resumeSuggestions.reframes.length,
@@ -397,6 +538,8 @@ export async function executeStrategistAgent(
     console.log(
         `[strategist-writer] Analysis generated — fit="${result.data.metadata.overallFitRating}", ` +
         `recommendation="${result.data.metadata.applicationRecommendation}", ` +
+        `archetype="${result.data.archetypeSelection?.selectedArchetype ?? 'unknown'}", ` +
+        `tailoredResume=${result.data.tailoredResumeData !== null}, ` +
         `additions=${result.data.resumeAdditions}, reframes=${result.data.resumeReframes}, ` +
         `esl=${result.data.eslCorrections}`,
     );

@@ -249,23 +249,35 @@ function buildResearchMessage(
 
     if (resumeData) {
         sections.push(
-            '## Current Resume (Draft — DynamoDB)',
-            'This is the candidate\u2019s current resume draft. Use it for content and style reference.',
-            'If KB constraint pages (Gap Awareness, Agent Guide) conflict with resume wording,',
-            'the KB constraints take precedence — flag the conflict and suggest a correction.',
-            '--- BEGIN RESUME ---',
+            '## PATH B — Uploaded Resume (FORMATTING REFERENCE ONLY)',
+            '',
+            '⚠️  CONTENT PROHIBITION — NEVER VIOLATE:',
+            'Do NOT copy, paraphrase, or derive any content from this document.',
+            '',
+            'PERMITTED uses of this document:',
+            '  • Section ordering preference',
+            '  • Header and contact block format (name, email, location, links)',
+            '',
+            'PROHIBITED uses — applying any of these is a fabrication error:',
+            '  • Any bullet point, phrase, or sentence from this document',
+            '  • Summary text, project descriptions, or skill selections',
+            '  • Using the skills list to decide what to include or exclude',
+            '  • Paraphrasing or reformulating any text from this document',
+            '',
+            'If a section exists here but has no KB evidence below, leave that section EMPTY.',
+            'If this document\'s structure conflicts with archetype section ordering, the ARCHETYPE WINS.',
+            '--- BEGIN FORMATTING REFERENCE ---',
             formatResumeForPrompt(resumeData),
-            '--- END RESUME ---',
+            '--- END FORMATTING REFERENCE ---',
             '',
         );
     } else {
         sections.push(
-            '## Resume Mode: Build from Scratch',
-            'No existing resume was provided. The candidate has requested a fresh resume built',
-            'entirely from the Knowledge Base evidence below.',
+            '## PATH A — KB-Only Generation (no resume provided)',
+            'Generate all content entirely from the Knowledge Base evidence below.',
+            'No structural constraints from any uploaded document — this is the preferred default.',
             'Do NOT reference or imply any prior resume draft — there is none.',
-            'Treat ALL skills and experience as sourced exclusively from the KB passages.',
-            'Apply the same confidence thresholds (STRONG/PARTIAL/ABSENT) as normal.',
+            'Apply confidence thresholds (STRONG/PARTIAL/ABSENT) as normal.',
             '',
         );
     }
@@ -275,9 +287,9 @@ function buildResearchMessage(
             '## Knowledge Base — Portfolio & Project Evidence',
             'The following passages were retrieved from the candidate\'s portfolio documentation.',
             resumeData
-                ? 'Use these to SUPPLEMENT and VERIFY the resume with verifiable project evidence.'
+                ? 'These are the SOLE CONTENT SOURCE. The formatting reference above contributes no content.'
                 : 'Use these as the SOLE evidence source for all skill classifications and bullet generation.',
-            'KB constraint passages (containing "NEVER", "ABSENT", "PROHIBITED") OVERRIDE resume wording.',
+            'KB constraint passages (containing "NEVER", "ABSENT", "PROHIBITED") are absolute overrides.',
             '',
             kbContext,
             '',

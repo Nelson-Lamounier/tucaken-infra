@@ -89,8 +89,9 @@ export const STRATEGIST_ALLOCATIONS: Record<DeployableEnvironment, StrategistAll
         },
         strategist: {
             modelId: MODELS.JOB_STRATEGIST_WRITER,
-            maxTokens: 16384,
-            thinkingBudgetTokens: 8192,
+            // 64k ceiling: 16k thinking + 48k text — supports full XML + tailored resume JSON
+            maxTokens: 64_000,
+            thinkingBudgetTokens: 16_384,
         },
         interviewCoach: {
             modelId: MODELS.JOB_STRATEGIST_COACH,
@@ -112,8 +113,9 @@ export const STRATEGIST_ALLOCATIONS: Record<DeployableEnvironment, StrategistAll
         },
         strategist: {
             modelId: MODELS.JOB_STRATEGIST_WRITER,
-            maxTokens: 16384,
-            thinkingBudgetTokens: 12288,
+            // 64k ceiling: 16k thinking + 48k text — supports full XML + tailored resume JSON
+            maxTokens: 64_000,
+            thinkingBudgetTokens: 16_384,
         },
         interviewCoach: {
             modelId: MODELS.JOB_STRATEGIST_COACH,
@@ -135,13 +137,16 @@ export const STRATEGIST_ALLOCATIONS: Record<DeployableEnvironment, StrategistAll
         },
         strategist: {
             modelId: MODELS.JOB_STRATEGIST_WRITER,
-            maxTokens: 16384,
-            thinkingBudgetTokens: 16000,
+            // 64k ceiling: 16k thinking + 48k text — supports full XML + tailored resume JSON
+            // Previous: maxTokens=16384 / thinkingBudget=16000 → 384 text tokens (broken).
+            maxTokens: 64_000,
+            thinkingBudgetTokens: 16_384,
         },
         interviewCoach: {
             modelId: MODELS.JOB_STRATEGIST_COACH,
+            // Previous: thinkingBudget=8192 equalled maxTokens → zero text budget (broken).
             maxTokens: 8192,
-            thinkingBudgetTokens: 8192,
+            thinkingBudgetTokens: 4096,
         },
     },
 };

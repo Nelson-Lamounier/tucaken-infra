@@ -133,6 +133,10 @@ export type {
     ExperienceSignals,
     StrategistResearchResult,
 
+    // Phase 0 Archetype Selection
+    ArchetypeId,
+    RoleArchetypeSelection,
+
     // Strategist Agent
     ResumeAdditionSuggestion,
     ResumeReframeSuggestion,

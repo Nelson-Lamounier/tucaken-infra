@@ -436,6 +436,7 @@ jobs:
       - name: Wait for Rollout Paused + Promote (via SSM)
         env:
           INSTANCE_ID: ${{ steps.resolve-instance.outputs.instance-id }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           REGION="${{ env.AWS_REGION }}"
 
@@ -443,6 +444,10 @@ jobs:
           # The shell script that runs ON the control-plane node.
           # It polls for Paused, promotes, then waits for Healthy.
           # All output is captured and surfaced by get-command-invocation.
+          #
+          # __IMAGE_TAG__ is a placeholder substituted below (before SSM send)
+          # because the heredoc uses single-quote delimiters to prevent
+          # variable expansion on the GitHub runner.
           # ---------------------------------------------------------------
           SCRIPT=$(cat <<'REMOTE_SCRIPT'
           set -euo pipefail
@@ -450,6 +455,7 @@ jobs:
           ROLLOUT="nextjs"
           NAMESPACE="nextjs-app"
           PLUGIN="/usr/local/bin/kubectl-argo-rollouts"
+          EXPECTED_TAG="__IMAGE_TAG__"
 
           # Install the Argo Rollouts plugin if not already present on the node
           if ! sudo test -f "$PLUGIN"; then
@@ -458,6 +464,27 @@ jobs:
               https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
             sudo chmod +x "$PLUGIN"
           fi
+
+          # ─── Step 0: Wait for ArgoCD Image Updater to sync the new image ──────
+          # ArgoCD polls SSM on its own schedule (30–180 s). We must not enter the
+          # Paused loop until the rollout SPEC already references the new tag —
+          # otherwise a still-Healthy rollout (old image) causes an early exit 0
+          # that lets smoke-site see the wrong image.
+          echo "[INFO] Waiting for ArgoCD to sync new image tag: $EXPECTED_TAG (up to 5 min)..."
+          for i in $(seq 1 20); do
+            SPEC_IMAGE=$(sudo kubectl get rollout "$ROLLOUT" -n "$NAMESPACE" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+            if [[ "$SPEC_IMAGE" == *"$EXPECTED_TAG"* ]]; then
+              echo "[PASS] ArgoCD synced new image: $SPEC_IMAGE"
+              break
+            fi
+            echo "  [$i/20] Waiting for ArgoCD sync (spec: ${SPEC_IMAGE##*/:-none})..."
+            if [[ "$i" -eq 20 ]]; then
+              echo "[FAIL] ArgoCD did not sync new image within 5 min. Current spec: $SPEC_IMAGE"
+              exit 1
+            fi
+            sleep 15
+          done
 
           echo "[INFO] Waiting for $ROLLOUT Rollout to reach Paused state (green RS + analysis passed)..."
           for i in $(seq 1 24); do
@@ -470,9 +497,9 @@ jobs:
               echo "[PASS] Rollout is Paused — promoting now"
               break
             fi
-            # If already Healthy (e.g. re-run after auto-promote), skip the wait
+            # Healthy here means new image already promoted (e.g. manual re-run)
             if [[ "$PHASE" == "Healthy" ]]; then
-              echo "[INFO] Rollout is already Healthy — no promotion needed"
+              echo "[INFO] Rollout is Healthy with new image — no promotion needed"
               exit 0
             fi
             if [[ "$PHASE" == "Degraded" || "$PHASE" == "Error" ]]; then
@@ -507,6 +534,10 @@ jobs:
           echo "[WARN] Rollout may still be converging, but promotion was issued"
           REMOTE_SCRIPT
           )
+
+          # Substitute the placeholder with the real image tag before sending.
+          # IMAGE_TAG contains only [a-z0-9-] chars so no escaping is needed.
+          SCRIPT="${SCRIPT//__IMAGE_TAG__/$IMAGE_TAG}"
 
           # jq -Rs encodes the multi-line script as a valid JSON string so the
           # AWS CLI parameter parser does not choke on literal newlines.
@@ -836,6 +867,7 @@ jobs:
       - name: Wait for Rollout Paused + Promote (via SSM)
         env:
           INSTANCE_ID: ${{ steps.resolve-instance.outputs.instance-id }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           REGION="${{ env.AWS_REGION }}"
 
@@ -845,6 +877,7 @@ jobs:
           ROLLOUT="start-admin"
           NAMESPACE="start-admin"
           PLUGIN="/usr/local/bin/kubectl-argo-rollouts"
+          EXPECTED_TAG="__IMAGE_TAG__"
 
           if ! sudo test -f "$PLUGIN"; then
             echo "[INFO] Installing kubectl-argo-rollouts plugin..."
@@ -852,6 +885,23 @@ jobs:
               https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
             sudo chmod +x "$PLUGIN"
           fi
+
+          # ─── Step 0: Wait for ArgoCD Image Updater to sync the new image ──────
+          echo "[INFO] Waiting for ArgoCD to sync new image tag: $EXPECTED_TAG (up to 5 min)..."
+          for i in $(seq 1 20); do
+            SPEC_IMAGE=$(sudo kubectl get rollout "$ROLLOUT" -n "$NAMESPACE" \
+              -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+            if [[ "$SPEC_IMAGE" == *"$EXPECTED_TAG"* ]]; then
+              echo "[PASS] ArgoCD synced new image: $SPEC_IMAGE"
+              break
+            fi
+            echo "  [$i/20] Waiting for ArgoCD sync (spec: ${SPEC_IMAGE##*/:-none})..."
+            if [[ "$i" -eq 20 ]]; then
+              echo "[FAIL] ArgoCD did not sync new image within 5 min. Current spec: $SPEC_IMAGE"
+              exit 1
+            fi
+            sleep 15
+          done
 
           echo "[INFO] Waiting for $ROLLOUT Rollout to reach Paused state..."
           for i in $(seq 1 24); do
@@ -864,9 +914,9 @@ jobs:
               echo "[PASS] Rollout is Paused — promoting now"
               break
             fi
-            # If already Healthy (e.g. re-run after auto-promote), skip the wait
+            # Healthy here means new image already promoted (e.g. manual re-run)
             if [[ "$PHASE" == "Healthy" ]]; then
-              echo "[INFO] Rollout is already Healthy — no promotion needed"
+              echo "[INFO] Rollout is Healthy with new image — no promotion needed"
               exit 0
             fi
             if [[ "$PHASE" == "Degraded" || "$PHASE" == "Error" ]]; then
@@ -901,6 +951,9 @@ jobs:
           echo "[WARN] Rollout may still be converging, but promotion was issued"
           REMOTE_SCRIPT
           )
+
+          # Substitute the placeholder with the real image tag before sending.
+          SCRIPT="${SCRIPT//__IMAGE_TAG__/$IMAGE_TAG}"
 
           # jq -Rs encodes the multi-line script as a valid JSON string so the
           # AWS CLI parameter parser does not choke on literal newlines.

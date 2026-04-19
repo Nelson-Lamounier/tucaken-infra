@@ -1,7 +1,7 @@
 helm:
   parameters:
   - name: image.tag
-    value: 98484ef9fceae7311f96b204284664d988526a84-r1
+    value: 09fd5d383f23b42686a7f63d5a81ab9c374e2d9f-r1
     forcestring: true
   - name: image.repository
     value: 771826808455.dkr.ecr.eu-west-1.amazonaws.com/start-admin

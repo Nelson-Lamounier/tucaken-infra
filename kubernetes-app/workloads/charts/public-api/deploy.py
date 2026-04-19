@@ -193,8 +193,10 @@ def resolve_public_api_config(
         )
 
     # ── Region (non-sensitive — safe in ConfigMap) ───────────────────────────
-    # AWS_DEFAULT_REGION is read by the AWS SDK v3 default credential chain.
-    # It is NOT a secret. Stored in ConfigMap, not Secret.
+    # AWS_REGION is the env var read by the Node.js AWS SDK v3 (@smithy/config-resolver).
+    # AWS_DEFAULT_REGION is the Python/CLI convention — NOT recognised by the Node.js SDK.
+    # Both are set so Python tools (boto3, AWS CLI) and Node.js services all resolve region.
+    config["AWS_REGION"] = cfg.aws_region
     config["AWS_DEFAULT_REGION"] = cfg.aws_region
 
     return config
@@ -217,7 +219,8 @@ def create_public_api_k8s_resources(v1: object, cfg: PublicApiConfig) -> None:
         DYNAMODB_GSI1_NAME         — GSI for status+date queries (constant)
         DYNAMODB_GSI2_NAME         — GSI for tag+date queries (constant)
         STRATEGIST_TABLE_NAME      — Strategist DynamoDB table (resumes domain)
-        AWS_DEFAULT_REGION         — AWS region for the SDK default chain
+        AWS_REGION                 — AWS region for Node.js SDK v3 (@smithy)
+        AWS_DEFAULT_REGION         — AWS region alias for Python SDK / CLI
         BEDROCK_API_URL            — Bedrock chatbot API Gateway URL (BFF proxy)
         BEDROCK_API_KEY_SECRET_ARN — SM ARN for chatbot API key (value fetched at runtime)
 

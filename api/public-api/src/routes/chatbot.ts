@@ -87,7 +87,7 @@ interface ProxyResult {
   readonly data: Record<string, unknown>;
 }
 
-async function proxyToBedrock(body: ReadableStream<Uint8Array> | null): Promise<ProxyResult> {
+async function proxyToBedrock(body: string | null): Promise<ProxyResult> {
   const cfg = loadConfig();
 
   if (!cfg.bedrockApiUrl || !cfg.bedrockApiKeySecretArn) {
@@ -148,7 +148,7 @@ const chatbot = new Hono();
  * Returns the upstream response body and status code unchanged.
  */
 chatbot.post('/api/chatbot/invoke', async (c) => {
-  const { status, data } = await proxyToBedrock(c.req.raw.body);
+  const { status, data } = await proxyToBedrock(await c.req.text());
   return c.json(data, status as Parameters<typeof c.json>[1]);
 });
 
@@ -162,7 +162,7 @@ chatbot.post('/api/chatbot/invoke', async (c) => {
  * bridges that gap without frontend changes.
  */
 chatbot.post('/api/chat', async (c) => {
-  const { status, data } = await proxyToBedrock(c.req.raw.body);
+  const { status, data } = await proxyToBedrock(await c.req.text());
 
   if (status >= 400) {
     return c.json(data, status as Parameters<typeof c.json>[1]);

@@ -32,20 +32,22 @@
 #     On SUCCEED: EventBridge automatically fires SM-B (self-healing)
 #
 #   SM-B (Config Orchestrator) — application runtime config
-#     Manages: 5 deploy.py scripts → K8s Secrets + ConfigMaps + IngressRoutes
-#     Started by: EventBridge (auto) OR trigger-config.ts (manual / Phase 6)
-#     Self-healing: Any control-plane replacement auto-retriggers SM-B
+#     Manages: 6 deploy.py scripts → K8s Secrets + ConfigMaps + IngressRoutes
+#     Started by: EventBridge ONLY (auto after SM-A SUCCEED — self-healing)
+#                 OR deploy-post-bootstrap.yml (manual standalone)
+#     NOT started by this pipeline: admin-api + public-api are applied by
+#     deploy-api.yml (k8s-runner, direct). All 6 services covered on node
+#     replacement via EventBridge.
 #
 # ─── Job Flow ───────────────────────────────────────────────────
-#   sync-and-verify → trigger-bootstrap (SM-A) → verify-ssm-automation
-#                                               → post-bootstrap-config
-#                                                  └ wait-workers → inject-config (SM-B) → verify
+#   sync-and-verify (always) → trigger-bootstrap (SM-A, if input=true) → verify-ssm-automation
 #
-#   1. sync-and-verify         - S3 sync + S3 artefact verification
-#   2. trigger-bootstrap       - Resolves instance IDs, starts SM-A executions
-#   3. verify-ssm-automation   - Instance targeting + health integration tests
-#   4. post-bootstrap-config   - SM-B injects app secrets + ArgoCD health + smoke tests
-#                                 (reusable: _post-bootstrap-config.yml → trigger-config.ts)
+#   1. sync-and-verify     - S3 sync (ALWAYS — no trigger-bootstrap gate) + artefact verify
+#   2. trigger-bootstrap   - Resolves instance IDs, starts SM-A (if trigger-bootstrap=true)
+#   3. verify-ssm-automation - Instance targeting + health integration tests
+#
+#   SM-B is intentionally NOT called here. It fires via EventBridge when SM-A succeeds.
+#   For manual SM-B execution, use deploy-post-bootstrap.yml.
 #
 # ─── How Instance Discovery Works ─────────────────────────────
 # EC2 user data publishes instance IDs to SSM parameters on boot:
@@ -113,7 +115,6 @@ jobs:
   # ===========================================================================
   sync-and-verify:
     name: "S3 Sync & Verify Artefacts"
-    if: inputs.trigger-bootstrap
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
@@ -404,30 +405,11 @@ jobs:
         run: just ci-integration-test kubernetes/ssm-automation-runtime $CDK_ENV --verbose
 
   # ===========================================================================
-  # Phase 6: Post-Bootstrap Config — SM-B App Config Injection + Verify
+  # NOTE: SM-B (Config Orchestrator) is intentionally NOT called here.
   #
-  # Calls the reusable _post-bootstrap-config.yml workflow which:
-  #   1. wait-workers    — polls SSM execution IDs until worker automations settle
-  #   2. inject-config   — starts SM-B (Config Orchestrator) via trigger-config.ts;
-  #                         SM-B runs 5 deploy.py scripts sequentially:
-  #                           nextjs / monitoring / start-admin / admin-api / public-api
-  #   3. verify          — ArgoCD health + IngressRoute origin-secret + smoke tests
-  #
-  # EventBridge Note: SM-A SUCCEED automatically re-fires SM-B even without this
-  # pipeline (self-healing). This Phase 6 call ensures CI completion gates on SM-B.
-  #
-  # Can also be run independently via deploy-post-bootstrap.yml or:
-  #   just config-run development
+  # SM-B fires automatically via EventBridge when SM-A succeeds (self-healing).
+  # admin-api and public-api configs are applied by deploy-api.yml on k8s-runner.
+  # To trigger SM-B manually (e.g. after rotating secrets), use:
+  #   deploy-post-bootstrap.yml  (workflow_dispatch)
+  #   just config-run development  (local)
   # ===========================================================================
-  post-bootstrap-config:
-    name: "Phase 6 — Config Injection (SM-B)"
-    needs: [trigger-bootstrap]
-    if: >-
-      always()
-      && needs.trigger-bootstrap.result == 'success'
-      && inputs.trigger-bootstrap == true
-    uses: ./.github/workflows/_post-bootstrap-config.yml
-    with:
-      environment: ${{ inputs.environment }}
-      cdk-environment: ${{ inputs.cdk-environment }}
-    secrets: inherit

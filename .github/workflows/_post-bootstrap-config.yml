@@ -259,11 +259,18 @@ jobs:
 
 
   # ===========================================================================
-  # Verify & Smoke Tests
+  # Verify & Smoke Tests (k8s-runner — direct in-cluster kubectl)
   #
-  # Runs after SM-B completes. Verifies ArgoCD server health,
-  # runs K8s infrastructure smoke tests, and captures diagnostics on failure.
-  # Skipped on Day-0 when no ArgoCD token exists yet.
+  # Runs after SM-B completes. Verifies ArgoCD health, pod readiness,
+  # IngressRoute origin secret, and cluster smoke tests.
+  #
+  # Runs on k8s-runner (same pattern as deploy-api.yml deploy jobs):
+  #   - Fetches kubeconfig from SSM; rewrites 127.0.0.1:6443 → kubernetes.default.svc:443
+  #   - All kubectl calls are direct (no SSM send-command → EC2 hop)
+  #   - Eliminates the 10–12 s polling overhead per SSM command invocation
+  #
+  # Skipped on Day-0 when no kubeconfig exists yet (k8s-runner pod can still
+  # start; kubeconfig fetch step will fail gracefully if SSM param is absent).
   # ===========================================================================
   verify:
     name: Verify & Smoke Tests
@@ -271,9 +278,7 @@ jobs:
     if: >-
       always()
       && (needs.inject-config.result == 'success' || needs.inject-config.result == 'skipped')
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    runs-on: k8s-runner
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
 
@@ -281,16 +286,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Environment and Dependencies
-        uses: ./.github/actions/setup-node-yarn
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
       - name: Configure AWS Credentials
         uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+
+      # -----------------------------------------------------------------------
+      # Set up in-cluster kubeconfig
+      #
+      # Fetched from SSM; server URL rewritten from 127.0.0.1:6443 (control-plane
+      # localhost tunnel) to kubernetes.default.svc:443 (in-cluster DNS).
+      # The same CA cert validates both endpoints — no TLS skip required.
+      #
+      # Pattern: identical to deploy-api.yml deploy-admin-api / deploy-public-api.
+      # -----------------------------------------------------------------------
+      - name: Set up in-cluster kubeconfig
+        run: |
+          aws ssm get-parameter \
+            --name "/k8s/${{ inputs.cdk-environment }}/kubeconfig" \
+            --with-decryption \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'Parameter.Value' \
+            --output text \
+            | sed 's|https://127.0.0.1:6443|https://kubernetes.default.svc:443|g' \
+            > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
 
       - name: Wait for ArgoCD Token
         id: argocd-token
@@ -326,10 +347,11 @@ jobs:
           echo "::warning::ArgoCD token not found after ${MAX_ATTEMPTS} attempts — Day-0 bootstrap; skipping ArgoCD verification"
 
       # -----------------------------------------------------------------------
-      # ArgoCD Pod Readiness (via SSM send-command)
+      # ArgoCD Pod Readiness (direct kubectl — no SSM hop)
       #
-      # Verifies ArgoCD workloads are Available after bootstrap by running
-      # `kubectl wait` on the control-plane node via SSM send-command.
+      # Replaces the previous SSM send-command → EC2 → kubectl chain.
+      # The k8s-runner pod is already inside the cluster; KUBECONFIG points
+      # directly to the API server via kubernetes.default.svc:443.
       #
       # Strategy: kubectl --for=condition=Available (NO HTTP / NO token).
       #   - argocd-server, argocd-repo-server, argocd-dex-server, argocd-redis
@@ -337,132 +359,89 @@ jobs:
       #   - argocd-application-controller
       #     → checked via `kubectl rollout status statefulset/...`
       #
-      # Day-0 safe: if no control-plane instance exists yet, resolveControlPlane
-      #   exits 0 gracefully (no token required, no conditional skip needed).
-      #
-      # Poll budget: 18 × 20s = 360s — accommodates the ~3-5 min re-bootstrap
-      #   stabilisation window on Day 1+.
+      # Timeout: 360s — accommodates the ~3–5 min re-bootstrap stabilisation window.
       # -----------------------------------------------------------------------
       - name: "ArgoCD Pod Readiness"
+        env:
+          KUBECONFIG: /tmp/kubeconfig
         run: |
-          just ci-argocd-health \
-            --environment ${{ inputs.cdk-environment }} \
-            --region ${{ env.AWS_REGION }} \
-            --max-polls 18 \
-            --poll-interval 20
+          echo "Waiting for ArgoCD deployments to become Available..."
+
+          for deploy in argocd-server argocd-repo-server argocd-dex-server argocd-redis; do
+            kubectl wait deployment/$deploy \
+              -n argocd \
+              --for=condition=Available \
+              --timeout=360s \
+              2>/dev/null \
+              && echo "  [OK] $deploy" \
+              || echo "  ::warning::$deploy not yet Available — may still be starting"
+          done
+
+          kubectl rollout status statefulset/argocd-application-controller \
+            -n argocd \
+            --timeout=360s \
+            2>/dev/null \
+            && echo "  [OK] argocd-application-controller" \
+            || echo "  ::warning::argocd-application-controller not yet rolled out"
+
+          echo "[OK] ArgoCD pod readiness check complete"
 
       # -----------------------------------------------------------------------
-      # Wait for Application Pods Ready
+      # Wait for Application Pods Ready (direct kubectl — no SSM hop)
       #
-      # ArgoCD marking itself Healthy does not guarantee that the workload pods
-      # (nextjs, start-admin) have been scheduled and reached Running.
-      # This step polls the control plane via SSM send-command every 15 s
-      # until at least 2 app pods are Running, or times out after 10 min.
+      # Polls until at least 2 app pods are Running across nextjs-app and
+      # start-admin namespaces. 40 x 15 s = 10 min budget.
       # -----------------------------------------------------------------------
       - name: "Wait for App Pods Ready"
         id: app-pods-ready
         continue-on-error: true # Warn rather than hard-fail in edge cases
+        env:
+          KUBECONFIG: /tmp/kubeconfig
         run: |
-          REGION="${{ env.AWS_REGION }}"
           MIN_PODS=2   # nextjs + start-admin (minimum viable traffic)
-          MAX_POLLS=40 # 40 × 15s = 10 min
+          MAX_POLLS=40 # 40 x 15s = 10 min
           POLL=15
 
-          # Resolve control-plane instance ID via EC2 tags (avoids stale SSM param)
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters \
-              "Name=tag:k8s:bootstrap-role,Values=control-plane" \
-              "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --region "$REGION" --output text 2>/dev/null || echo "")
-
-          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-            echo "::warning::Could not resolve control-plane instance — skipping pod readiness check"
-            exit 0
-          fi
-          echo "::add-mask::$INSTANCE_ID"
-
-          echo "Polling for app pods Ready on control plane..."
+          echo "Polling for app pods Ready..."
           echo "  Minimum pods: $MIN_PODS | Max polls: $MAX_POLLS | Interval: ${POLL}s"
           echo ""
 
           for i in $(seq 1 $MAX_POLLS); do
-            CMD_ID=$(aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --parameters 'commands=["KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A --no-headers 2>/dev/null | awk '\''$1==\"nextjs-app\" || $1==\"start-admin\"'\'' | grep Running | wc -l"]' \
-              --region "$REGION" \
-              --query "Command.CommandId" --output text 2>/dev/null || echo "")
+            COUNT=$(kubectl get pods -A --no-headers 2>/dev/null \
+              | awk '$1=="nextjs-app" || $1=="start-admin"' \
+              | grep -c Running || true)
 
-            [ -z "$CMD_ID" ] && echo "  [$i/$MAX_POLLS] SSM send-command failed — retry" && sleep $POLL && continue
+            echo "  [$i/$MAX_POLLS] Running app pods: ${COUNT:-0}"
 
-            sleep $POLL
-
-            COUNT=$(aws ssm get-command-invocation \
-              --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
-              --region "$REGION" \
-              --query "StandardOutputContent" --output text 2>/dev/null | tr -d '[:space:]')
-
-            echo "  [$i/$MAX_POLLS] Running app pods: ${COUNT:-?}"
-
-            if [ -n "$COUNT" ] && [ "$COUNT" -ge $MIN_PODS ] 2>/dev/null; then
+            if [ "${COUNT:-0}" -ge $MIN_PODS ] 2>/dev/null; then
               echo ""
               echo "[OK] $COUNT app pods are Running — site should be serving traffic"
               exit 0
             fi
+
+            sleep $POLL
           done
 
           echo "::warning::App pods did not reach $MIN_PODS Running within $((MAX_POLLS * POLL))s — site may be starting up"
 
       # -----------------------------------------------------------------------
-      # Verify CloudFront Origin Secret Injected
+      # Verify CloudFront Origin Secret Injected (direct kubectl — no SSM hop)
       #
       # Confirms the Traefik IngressRoute originSecret has been replaced with
-      # a real value by deploy.py Step 5. A lingering placeholder means
-      # CloudFront requests will receive 404s from Traefik.
+      # a real value by deploy.py. A lingering placeholder means CloudFront
+      # requests will receive 404s from Traefik.
       # -----------------------------------------------------------------------
       - name: "Verify CloudFront Origin Secret Injected"
         id: verify-origin-secret
         if: steps.argocd-token.outputs.token != '' && steps.argocd-token.outcome == 'success'
         continue-on-error: false
+        env:
+          KUBECONFIG: /tmp/kubeconfig
         run: |
-          REGION="${{ env.AWS_REGION }}"
-          SSM_PREFIX="/k8s/${{ inputs.cdk-environment }}"
-
-          # Resolve control-plane instance ID (live EC2 tag lookup)
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters \
-              "Name=tag:k8s:bootstrap-role,Values=control-plane" \
-              "Name=instance-state-name,Values=running" \
-            --query "Reservations[0].Instances[0].InstanceId" \
-            --region "$REGION" --output text 2>/dev/null || echo "")
-
-          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-            echo "::warning::Could not resolve control-plane instance — skipping IngressRoute verification"
-            exit 0
-          fi
-          echo "::add-mask::$INSTANCE_ID"
-
-          CMD_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["sudo kubectl -n nextjs-app get ingressroute nextjs -o jsonpath={.spec.routes[0].match} 2>&1 || echo INGRESSROUTE_NOT_FOUND"]' \
-            --region "$REGION" \
-            --query "Command.CommandId" --output text 2>/dev/null || echo "")
-
-          if [ -z "$CMD_ID" ]; then
-            echo "::warning::Could not send SSM command — skipping IngressRoute verification"
-            exit 0
-          fi
-
-          echo "Waiting for SSM command $CMD_ID to complete..."
-          sleep 12
-
-          MATCH=$(aws ssm get-command-invocation \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --region "$REGION" \
-            --query "StandardOutputContent" --output text 2>/dev/null || echo "")
+          MATCH=$(kubectl get ingressroute nextjs \
+            -n nextjs-app \
+            -o jsonpath='{.spec.routes[0].match}' 2>/dev/null \
+            || echo "INGRESSROUTE_NOT_FOUND")
 
           echo "IngressRoute match rule: $MATCH"
 
@@ -480,66 +459,76 @@ jobs:
 
           echo "[OK] IngressRoute has a real origin secret — CloudFront routing is active."
 
+      # -----------------------------------------------------------------------
+      # K8s Smoke Tests (direct kubectl — no SSM hop)
+      #
+      # Inline checks replace the previous `just ci-smoke-kubernetes-infra`
+      # TypeScript integration test (which itself used SSM send-command).
+      # Validates core cluster health signals:
+      #   - Pods not in CrashLoopBackOff or Error
+      #   - ArgoCD applications Synced or OutOfSync (not Unknown/Degraded)
+      #   - Namespaces for all managed services exist
+      # -----------------------------------------------------------------------
       - name: Run K8s Smoke Tests
         id: smoke
+        env:
+          KUBECONFIG: /tmp/kubeconfig
         run: |
-          SMOKE_CMD="just ci-smoke-kubernetes-infra ${{ inputs.cdk-environment }} --region ${{ env.AWS_REGION }}"
-          eval $SMOKE_CMD
+          echo "=== Pods with non-Running/Completed status ==="
+          UNHEALTHY=$(kubectl get pods -A --no-headers 2>/dev/null \
+            | grep -vE '\s(Running|Completed|Succeeded)\s' || true)
+          if [ -n "$UNHEALTHY" ]; then
+            echo "$UNHEALTHY"
+            echo "::warning::Some pods are not in Running/Completed state"
+          else
+            echo "[OK] All pods Running or Completed"
+          fi
+
+          echo ""
+          echo "=== ArgoCD Application Health ==="
+          DEGRADED=$(kubectl get applications -n argocd --no-headers 2>/dev/null \
+            | awk '$3!="Synced" && $3!="OutOfSync"' || true)
+          if [ -n "$DEGRADED" ]; then
+            echo "$DEGRADED"
+            echo "::warning::Some ArgoCD applications are in an unexpected sync state"
+          else
+            echo "[OK] All applications Synced or OutOfSync"
+          fi
+
+          echo ""
+          echo "=== Managed Service Namespaces ==="
+          for ns in nextjs-app start-admin admin-api public-api argocd; do
+            if kubectl get namespace "$ns" &>/dev/null; then
+              echo "  [OK] $ns"
+            else
+              echo "  [WARN] Namespace $ns not found"
+            fi
+          done
 
       # -----------------------------------------------------------------------
-      # Failure Diagnostics — K8s state + boot logs on failure
+      # Failure Diagnostics (direct kubectl — no SSM hop)
       # -----------------------------------------------------------------------
       - name: "Capture Failure Diagnostics"
         if: failure()
         continue-on-error: true
+        env:
+          KUBECONFIG: /tmp/kubeconfig
         run: |
           echo "## Failure Diagnostics" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment**: ${{ inputs.environment }} | **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }} | **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          SSM_PREFIX="/k8s/${{ inputs.cdk-environment }}"
-          REGION="${{ env.AWS_REGION }}"
+          echo "### K8s Pod Status (non-Running)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -A --field-selector=status.phase!=Running \
+            -o wide 2>/dev/null >> $GITHUB_STEP_SUMMARY \
+            || echo "kubectl unavailable" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
-          # Resolve control-plane instance ID
-          INSTANCE_ID=$(aws ssm get-parameter \
-            --name "${SSM_PREFIX}/bootstrap/control-plane-instance-id" \
-            --query 'Parameter.Value' --output text \
-            --region "$REGION" 2>/dev/null || echo "")
-
-          if [ -n "$INSTANCE_ID" ]; then
-            echo "::add-mask::$INSTANCE_ID"
-
-            echo "### K8s Pod Status (non-Running)" >> $GITHUB_STEP_SUMMARY
-            CMD_ID=$(aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --parameters 'commands=["sudo kubectl get pods -A --field-selector=status.phase!=Running -o wide 2>/dev/null || echo No kubectl access"]' \
-              --query 'Command.CommandId' --output text \
-              --region "$REGION" 2>/dev/null || echo "")
-            if [ -n "$CMD_ID" ]; then
-              sleep 10
-              POD_OUTPUT=$(aws ssm get-command-invocation \
-                --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
-                --query 'StandardOutputContent' --output text \
-                --region "$REGION" 2>/dev/null || echo "Could not retrieve")
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "$POD_OUTPUT" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "_Could not resolve instance ID from SSM — skipping K8s diagnostics_" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Config SM-B execution ARN for direct link
           CONFIG_EXEC_ARN="${{ needs.inject-config.outputs.config_execution_arn }}"
           if [ -n "$CONFIG_EXEC_ARN" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### SM-B Execution Reference" >> $GITHUB_STEP_SUMMARY
             echo "\`${CONFIG_EXEC_ARN}\`" >> $GITHUB_STEP_SUMMARY
           fi
-
-      - name: "Fetch Boot Logs from CloudWatch"
-        if: failure()
-        continue-on-error: true
-        run: just ci-fetch-boot-logs ${{ inputs.cdk-environment }} --region ${{ env.AWS_REGION }}

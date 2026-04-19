@@ -197,7 +197,22 @@ async function handleAnalyse(body: AnalyseRequest): Promise<APIGatewayProxyResul
         startedAt: now,
     };
 
-    // Write initial 'analysing' record to DynamoDB
+    // Start Analysis State Machine first so we have the executionArn to store
+    console.log(`[strategist-trigger] Starting analysis execution: ${executionName}`);
+
+    const sfnInput: StrategistResearchHandlerInput = {
+        context: pipelineContext,
+    };
+
+    const result = await sfnClient.send(new StartExecutionCommand({
+        stateMachineArn: ANALYSIS_STATE_MACHINE_ARN,
+        name: executionName,
+        input: JSON.stringify(sfnInput),
+    }));
+
+    console.log(`[strategist-trigger] Analysis execution started — arn=${result.executionArn ?? 'unknown'}`);
+
+    // Write initial 'analysing' record to DynamoDB — after SFN start so executionArn is available
     console.log(`[strategist-trigger] Writing analysing record: APPLICATION#${slug}`);
     await ddbClient.send(new PutCommand({
         TableName: TABLE_NAME,
@@ -206,6 +221,7 @@ async function handleAnalyse(body: AnalyseRequest): Promise<APIGatewayProxyResul
             sk: 'METADATA',
             status: 'analysing',
             pipelineId: executionName,
+            executionArn: result.executionArn ?? '',
             applicationSlug: slug,
             targetCompany: body.targetCompany,
             targetRole: body.targetRole,
@@ -221,21 +237,6 @@ async function handleAnalyse(body: AnalyseRequest): Promise<APIGatewayProxyResul
             gsi2sk: `${datePrefix}#${slug}`,
         },
     }));
-
-    // Start Analysis State Machine
-    console.log(`[strategist-trigger] Starting analysis execution: ${executionName}`);
-
-    const sfnInput: StrategistResearchHandlerInput = {
-        context: pipelineContext,
-    };
-
-    const result = await sfnClient.send(new StartExecutionCommand({
-        stateMachineArn: ANALYSIS_STATE_MACHINE_ARN,
-        name: executionName,
-        input: JSON.stringify(sfnInput),
-    }));
-
-    console.log(`[strategist-trigger] Analysis execution started — arn=${result.executionArn ?? 'unknown'}`);
 
     return buildResponse(200, {
         pipelineId: executionName,

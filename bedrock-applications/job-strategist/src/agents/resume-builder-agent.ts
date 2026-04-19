@@ -130,27 +130,25 @@ function parseResumeBuilderResponse(
     text: string,
     suggestions: ResumeSuggestions,
 ): TailoredResumeResult {
-    // Split response into JSON and summary
-    const summaryMarker = 'CHANGES_SUMMARY:';
-    const summaryIndex = text.lastIndexOf(summaryMarker);
+    // parseJsonResponse now uses balanced brace counting, so it correctly
+    // stops at the root closing `}` even when the model appends commentary
+    // or a CHANGES_SUMMARY line containing `}` characters.
+    const tailoredResume = parseJsonResponse<StructuredResumeData>(text, AGENT_NAME);
 
-    const hasSummary = summaryIndex >= 0;
-    const jsonText = hasSummary
-        ? text.slice(0, summaryIndex).trim()
-        : text.trim();
-    const changesSummary = hasSummary
-        ? text.slice(summaryIndex + summaryMarker.length).trim()
+    // Extract CHANGES_SUMMARY from whatever follows the JSON object.
+    // We find the end of the JSON by stringifying and measuring its length,
+    // then search the remainder for the marker.
+    const jsonLength = JSON.stringify(tailoredResume).length;
+    // Search from the first `{` forward by the parsed JSON's length (approximate)
+    const jsonStart = text.indexOf('{');
+    const remainder = jsonStart >= 0 ? text.slice(jsonStart + jsonLength) : '';
+    const summaryMarker = 'CHANGES_SUMMARY:';
+    const summaryIndex = remainder.indexOf(summaryMarker);
+    const changesSummary = summaryIndex >= 0
+        ? remainder.slice(summaryIndex + summaryMarker.length).trim()
         : `Applied ${suggestions.additions.length} additions, ` +
           `${suggestions.reframes.length} reframes, ` +
           `${suggestions.eslCorrections.length} ESL corrections`;
-
-    // Strip markdown code fences if present
-    const cleanedJson = jsonText
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-
-    const tailoredResume = parseJsonResponse<StructuredResumeData>(cleanedJson, AGENT_NAME);
 
     return {
         tailoredResume,

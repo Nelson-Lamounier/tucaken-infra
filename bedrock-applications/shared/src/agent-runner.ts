@@ -385,29 +385,73 @@ export async function runAgent<T>(options: RunAgentOptions<T>): Promise<AgentRes
 // =============================================================================
 
 /**
- * Extract and parse a JSON object from a model's text response.
+ * Extract the root JSON object from a model's text response using balanced
+ * brace counting.
  *
- * Models sometimes wrap JSON in markdown code fences or include
- * explanatory text before/after the JSON. This function finds
- * the outermost `{...}` and parses it.
+ * `lastIndexOf('}')` is unreliable when the model appends commentary or a
+ * CHANGES_SUMMARY after the JSON — those may contain `}` characters that
+ * push `lastBrace` past the real object boundary.  Balanced counting stops
+ * at the first position where every `{` has been closed, regardless of
+ * what follows.
  *
- * @param responseText - Raw text response from Bedrock
- * @param agentName - Agent name for error context
- * @returns Parsed JSON object
- * @throws Error if no valid JSON is found
+ * @param text      - Raw text potentially containing a JSON object
+ * @param agentName - Agent name for error messages
+ * @returns The raw JSON substring (not yet parsed)
+ * @throws Error if no balanced `{…}` block is found
  */
-export function parseJsonResponse<T>(responseText: string, agentName: string): T {
-    const firstBrace = responseText.indexOf('{');
-    const lastBrace = responseText.lastIndexOf('}');
-
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+function extractJsonObject(text: string, agentName: string): string {
+    const start = text.indexOf('{');
+    if (start === -1) {
         console.error(
-            `[${agentName}] No JSON object found in response. First 500 chars:\n${responseText.substring(0, 500)}`,
+            `[${agentName}] No JSON object found in response. First 500 chars:\n${text.substring(0, 500)}`,
         );
         throw new Error(`Agent '${agentName}': No JSON object found in response`);
     }
 
-    const jsonStr = responseText.substring(firstBrace, lastBrace + 1);
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        if (inString) {
+            if (ch === '\\') escape = true;
+            else if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') { inString = true; continue; }
+        if (ch === '{') { depth++; continue; }
+        if (ch === '}') {
+            depth--;
+            if (depth === 0) return text.substring(start, i + 1);
+        }
+    }
+
+    console.error(
+        `[${agentName}] Unbalanced JSON braces in response. First 500 chars:\n${text.substring(0, 500)}`,
+    );
+    throw new Error(`Agent '${agentName}': No JSON object found in response`);
+}
+
+/**
+ * Extract and parse a JSON object from a model's text response.
+ *
+ * Models sometimes wrap JSON in markdown code fences or include
+ * explanatory text before/after the JSON. This function uses balanced
+ * brace counting to find the outermost `{...}` and parses it.
+ *
+ * @param responseText - Raw text response from Bedrock
+ * @param agentName    - Agent name for error context
+ * @returns Parsed JSON object
+ * @throws Error if no valid JSON is found
+ */
+export function parseJsonResponse<T>(responseText: string, agentName: string): T {
+    const jsonStr = extractJsonObject(responseText, agentName);
 
     try {
         return JSON.parse(jsonStr) as T;

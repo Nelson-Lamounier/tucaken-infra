@@ -20,7 +20,13 @@ import {
   QueryCommand,
   UpdateCommand,
   BatchWriteCommand,
+  GetCommand,
 } from '@aws-sdk/lib-dynamodb';
+import {
+  SFNClient,
+  GetExecutionHistoryCommand,
+  DescribeExecutionCommand,
+} from '@aws-sdk/client-sfn';
 import type { AdminApiConfig } from '../lib/config.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -56,6 +62,26 @@ function getDocClient(region: string): DynamoDBDocumentClient {
   }
   return _docClient;
 }
+
+let _sfnClient: SFNClient | null = null;
+
+function getSfnClient(region: string): SFNClient {
+  if (!_sfnClient) {
+    _sfnClient = new SFNClient({ region });
+  }
+  return _sfnClient;
+}
+
+// Maps Step Functions state names (CDK task IDs) → frontend stage IDs
+const SFN_STATE_TO_STAGE: Record<string, string> = {
+  ResearchTask: 'research',
+  StrategistTask: 'strategist',
+  ResumeBuilderTask: 'resume-builder',
+  AnalysisPersistTask: 'persist',
+  CoachLoaderTask: 'research',
+  CoachTask: 'strategist',
+  CoachPersistTask: 'persist',
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -343,6 +369,84 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono {
     );
 
     return ctx.json({ success: true, status });
+  });
+
+  // ── GET /:slug/execution — real-time Step Functions stage ─────────────────
+  /**
+   * Returns the current Step Functions execution state for an in-flight pipeline.
+   *
+   * Standard workflows don't expose currentState via DescribeExecution, so we
+   * call GetExecutionHistory(reverseOrder=true, maxResults=20) and find the most
+   * recent stateEnteredEventDetails to determine which Lambda is running.
+   *
+   * The executionArn is stored in DynamoDB by the trigger-handler at pipeline start.
+   *
+   * @param slug - Application slug
+   * @returns { sfnStatus, stageId, currentStateName, startDate, elapsedMs }
+   */
+  app.get('/:slug/execution', async (ctx) => {
+    const client = getDocClient(config.awsRegion);
+    const sfn = getSfnClient(config.awsRegion);
+    const slug = ctx.req.param('slug');
+
+    // 1. Read executionArn from DynamoDB
+    const record = await client.send(new GetCommand({
+      TableName: TABLE,
+      Key: { pk: `APPLICATION#${slug}`, sk: 'METADATA' },
+      ProjectionExpression: 'executionArn, #st, startedAt',
+      ExpressionAttributeNames: { '#st': 'status' },
+    }));
+
+    if (!record.Item) {
+      return ctx.json({ error: 'Application not found' }, 404);
+    }
+
+    const executionArn = record.Item['executionArn'] as string | undefined;
+    const dbStatus = record.Item['status'] as string | undefined;
+    const startedAt = record.Item['startedAt'] as string | undefined;
+
+    if (!executionArn) {
+      // Execution ARN not yet stored (old record pre-feature) — return db status only
+      return ctx.json({
+        sfnStatus: dbStatus === 'analysing' ? 'RUNNING' : 'UNKNOWN',
+        stageId: null,
+        currentStateName: null,
+        startDate: startedAt ?? null,
+        elapsedMs: startedAt ? Date.now() - new Date(startedAt).getTime() : null,
+      });
+    }
+
+    // 2. Describe execution for top-level status + timing
+    const describe = await sfn.send(new DescribeExecutionCommand({ executionArn }));
+    const sfnStatus = describe.status ?? 'UNKNOWN';
+    const startDate = describe.startDate?.toISOString() ?? startedAt ?? null;
+    const elapsedMs = describe.startDate
+      ? (describe.stopDate ?? new Date()).getTime() - describe.startDate.getTime()
+      : null;
+
+    if (sfnStatus !== 'RUNNING') {
+      // Terminal — no need to query history for current state
+      return ctx.json({ sfnStatus, stageId: null, currentStateName: null, startDate, elapsedMs });
+    }
+
+    // 3. GetExecutionHistory (reverse) — find the most recent state entered
+    const history = await sfn.send(new GetExecutionHistoryCommand({
+      executionArn,
+      reverseOrder: true,
+      maxResults: 20,
+    }));
+
+    let currentStateName: string | null = null;
+    for (const event of history.events ?? []) {
+      if (event.stateEnteredEventDetails?.name) {
+        currentStateName = event.stateEnteredEventDetails.name;
+        break;
+      }
+    }
+
+    const stageId = currentStateName ? (SFN_STATE_TO_STAGE[currentStateName] ?? null) : null;
+
+    return ctx.json({ sfnStatus, stageId, currentStateName, startDate, elapsedMs });
   });
 
   return app;

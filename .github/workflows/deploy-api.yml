@@ -273,7 +273,7 @@ jobs:
     name: "[Admin API] Update SSM → ArgoCD"
     needs: [resolve-targets, push-admin-api]
     if: needs.resolve-targets.outputs.deploy-admin-api == 'true'
-    runs-on: [self-hosted, k8s]
+    runs-on: k8s
     timeout-minutes: 10
     environment: development
 
@@ -514,7 +514,7 @@ jobs:
     name: "[Public API] Update SSM → ArgoCD"
     needs: [resolve-targets, push-public-api]
     if: needs.resolve-targets.outputs.deploy-public-api == 'true'
-    runs-on: [self-hosted, k8s]
+    runs-on: k8s
     timeout-minutes: 10
     environment: development
 

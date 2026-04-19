@@ -372,7 +372,7 @@ jobs:
           KUBECONFIG: /tmp/kubeconfig
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
-          sudo apt-get install -y -q python3-pip 2>/dev/null || python3 -m ensurepip --upgrade
+          curl -sS https://bootstrap.pypa.io/get-pip.py | python3
           python3 -m pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
           python3 kubernetes-app/workloads/charts/admin-api/deploy.py
 
@@ -616,7 +616,7 @@ jobs:
           KUBECONFIG: /tmp/kubeconfig
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
-          sudo apt-get install -y -q python3-pip 2>/dev/null || python3 -m ensurepip --upgrade
+          curl -sS https://bootstrap.pypa.io/get-pip.py | python3
           python3 -m pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
           python3 kubernetes-app/workloads/charts/public-api/deploy.py
 

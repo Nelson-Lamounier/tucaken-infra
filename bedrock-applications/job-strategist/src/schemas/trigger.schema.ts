@@ -64,8 +64,9 @@ export const AnalyseRequestSchema = z
             .max(200, 'Target role must be at most 200 characters'),
         resumeId: z
             .string()
-            .min(1, 'Resume ID is required')
-            .max(100, 'Resume ID must be at most 100 characters'),
+            .max(100, 'Resume ID must be at most 100 characters')
+            .optional()
+            .default(''),
         includeCoverLetter: z
             .boolean()
             .optional()

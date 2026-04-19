@@ -258,13 +258,25 @@ function buildResearchMessage(
             '--- END RESUME ---',
             '',
         );
+    } else {
+        sections.push(
+            '## Resume Mode: Build from Scratch',
+            'No existing resume was provided. The candidate has requested a fresh resume built',
+            'entirely from the Knowledge Base evidence below.',
+            'Do NOT reference or imply any prior resume draft — there is none.',
+            'Treat ALL skills and experience as sourced exclusively from the KB passages.',
+            'Apply the same confidence thresholds (STRONG/PARTIAL/ABSENT) as normal.',
+            '',
+        );
     }
 
     if (kbContext) {
         sections.push(
             '## Knowledge Base — Portfolio & Project Evidence',
             'The following passages were retrieved from the candidate\'s portfolio documentation.',
-            'Use these to SUPPLEMENT and VERIFY the resume with verifiable project evidence.',
+            resumeData
+                ? 'Use these to SUPPLEMENT and VERIFY the resume with verifiable project evidence.'
+                : 'Use these as the SOLE evidence source for all skill classifications and bullet generation.',
             'KB constraint passages (containing "NEVER", "ABSENT", "PROHIBITED") OVERRIDE resume wording.',
             '',
             kbContext,
@@ -385,7 +397,7 @@ export async function executeResearchAgent(
     // 3. Read resume from pipeline context (fetched at trigger time)
     const resumeData = ctx.resumeData;
     if (!resumeData) {
-        console.warn('[strategist-research] No resume data in pipeline context — analysis will proceed without resume baseline');
+        console.log('[strategist-research] No resume data — build-from-scratch mode, KB is sole evidence source');
     } else {
         console.log(`[strategist-research] Resume loaded from context: ${resumeData.profile.name}`);
     }

@@ -142,35 +142,40 @@ async function handleAnalyse(body: AnalyseRequest): Promise<APIGatewayProxyResul
     const datePrefix = now.slice(0, 10);
     const executionName = `${slug}-${Date.now()}`;
 
-    console.log(`[strategist-trigger] Analyse — slug="${slug}", role="${body.targetRole}", resumeId="${body.resumeId}"`);
+    console.log(`[strategist-trigger] Analyse — slug="${slug}", role="${body.targetRole}", resumeId="${body.resumeId || 'none'}"`);
 
-    // Fetch structured resume from DynamoDB — Zod-validated
+    // Fetch structured resume from DynamoDB — Zod-validated.
+    // Skipped when resumeId is empty (build-from-scratch mode).
     let resumeData: ReturnType<typeof StructuredResumeDataSchema.parse> | null = null;
 
-    console.log(`[strategist-trigger] Fetching resume: RESUME#${body.resumeId}`);
-    const resumeResult = await ddbClient.send(new GetCommand({
-        TableName: TABLE_NAME,
-        Key: {
-            pk: `RESUME#${body.resumeId}`,
-            sk: 'METADATA',
-        },
-    }));
+    if (body.resumeId) {
+        console.log(`[strategist-trigger] Fetching resume: RESUME#${body.resumeId}`);
+        const resumeResult = await ddbClient.send(new GetCommand({
+            TableName: TABLE_NAME,
+            Key: {
+                pk: `RESUME#${body.resumeId}`,
+                sk: 'METADATA',
+            },
+        }));
 
-    if (resumeResult.Item) {
-        const rawResumeData = resumeResult.Item['data'] ?? resumeResult.Item;
-        const parseResult = StructuredResumeDataSchema.safeParse(rawResumeData);
+        if (resumeResult.Item) {
+            const rawResumeData = resumeResult.Item['data'] ?? resumeResult.Item;
+            const parseResult = StructuredResumeDataSchema.safeParse(rawResumeData);
 
-        if (parseResult.success) {
-            resumeData = parseResult.data;
-            console.log(`[strategist-trigger] Resume loaded: ${resumeData.profile.name}`);
+            if (parseResult.success) {
+                resumeData = parseResult.data;
+                console.log(`[strategist-trigger] Resume loaded: ${resumeData.profile.name}`);
+            } else {
+                console.warn(
+                    `[strategist-trigger] Resume data failed validation: ${formatZodError(parseResult.error)}. ` +
+                    'Pipeline will run without resume baseline.',
+                );
+            }
         } else {
-            console.warn(
-                `[strategist-trigger] Resume data failed validation: ${formatZodError(parseResult.error)}. ` +
-                'Pipeline will run without resume baseline.',
-            );
+            console.warn(`[strategist-trigger] Resume not found: RESUME#${body.resumeId} — pipeline will run without resume baseline`);
         }
     } else {
-        console.warn(`[strategist-trigger] Resume not found: RESUME#${body.resumeId} — pipeline will run without resume baseline`);
+        console.log('[strategist-trigger] No resume ID provided — pipeline will build resume from scratch using KB');
     }
 
     // Build pipeline context

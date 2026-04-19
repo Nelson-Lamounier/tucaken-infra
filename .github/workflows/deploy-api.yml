@@ -288,14 +288,6 @@ jobs:
           fetch-depth: 1
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install AWS CLI
-        run: |
-          curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
-          unzip -q /tmp/awscliv2.zip -d /tmp
-          sudo /tmp/aws/install --update
-          rm -rf /tmp/awscliv2.zip /tmp/aws
-          aws --version
-
       - name: Configure AWS Credentials
         uses: ./.github/actions/configure-aws
         with:
@@ -360,21 +352,13 @@ jobs:
             > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
 
-      - name: Install kubectl
-        run: |
-          KUBECTL_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt)
-          curl -sLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl || mv kubectl /home/runner/.local/bin/kubectl
-          kubectl version --client
-
       - name: Apply admin-api K8s resources (Secret + ConfigMap + IngressRoute)
         env:
           KUBECONFIG: /tmp/kubeconfig
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
-          python3 -m venv /tmp/deploy-venv
-          /tmp/deploy-venv/bin/pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
-          /tmp/deploy-venv/bin/python3 kubernetes-app/workloads/charts/admin-api/deploy.py
+          pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
+          python3 kubernetes-app/workloads/charts/admin-api/deploy.py
 
       - name: Trigger ArgoCD Sync
         run: |
@@ -538,14 +522,6 @@ jobs:
           fetch-depth: 1
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install AWS CLI
-        run: |
-          curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
-          unzip -q /tmp/awscliv2.zip -d /tmp
-          sudo /tmp/aws/install --update
-          rm -rf /tmp/awscliv2.zip /tmp/aws
-          aws --version
-
       - name: Configure AWS Credentials
         uses: ./.github/actions/configure-aws
         with:
@@ -604,21 +580,14 @@ jobs:
             > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
 
-      - name: Install kubectl
-        run: |
-          KUBECTL_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt)
-          curl -sLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl || mv kubectl /home/runner/.local/bin/kubectl
-          kubectl version --client
-
       - name: Apply public-api K8s resources (ConfigMap + IngressRoute)
         env:
           KUBECONFIG: /tmp/kubeconfig
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
           python3 -m venv /tmp/deploy-venv
-          /tmp/deploy-venv/bin/pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
-          /tmp/deploy-venv/bin/python3 kubernetes-app/workloads/charts/public-api/deploy.py
+          pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
+          python3 kubernetes-app/workloads/charts/public-api/deploy.py
 
       - name: Trigger ArgoCD Sync
         run: |

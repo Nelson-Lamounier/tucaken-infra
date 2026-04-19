@@ -15,6 +15,7 @@ on:
   push:
     paths:
       - ".github/docker/ci/**"
+      - ".github/docker/arc-runner/**"
     branches:
       - develop
       - main
@@ -88,3 +89,52 @@ jobs:
           echo "| Python | 3 |" >> $GITHUB_STEP_SUMMARY
           echo "| checkov | latest |" >> $GITHUB_STEP_SUMMARY
           echo "| cfn-lint | latest |" >> $GITHUB_STEP_SUMMARY
+
+  build-arc-runner:
+    name: Build & Push ARC Runner Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Image Metadata
+        id: meta
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="ghcr.io/${REPO_LOWER}/arc-runner"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "image=${IMAGE}" >> $GITHUB_OUTPUT
+          echo "tags=${IMAGE}:latest,${IMAGE}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build and Push
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: .github/docker/arc-runner
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Summary
+        run: |
+          echo "## ARC Runner Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ steps.meta.outputs.image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:** \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "| Tool | Pre-installed |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| AWS CLI v2 | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| python3 + pip + venv | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| kubectl (latest stable) | ✅ |" >> $GITHUB_STEP_SUMMARY

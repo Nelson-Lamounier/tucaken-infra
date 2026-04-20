@@ -32,6 +32,8 @@ import {
     GetCommandInvocationCommand,
 } from '@aws-sdk/client-ssm';
 
+import { log } from '../../../../shared/src/index.js';
+
 const ssm = new SSMClient({});
 
 /** Path to the run_summary.json file on the node */
@@ -145,15 +147,11 @@ async function ssmExec(
 
             if (invocation.Status === 'Failed' || invocation.Status === 'Cancelled') {
                 const stderr = invocation.StandardErrorContent?.trim() ?? 'unknown error';
-                console.error(
-                    JSON.stringify({
-                        level: 'ERROR',
-                        message: 'SSM command failed',
-                        commandId,
-                        status: invocation.Status,
-                        stderr,
-                    }),
-                );
+                log('ERROR', 'SSM command failed', {
+                    commandId,
+                    status: invocation.Status,
+                    stderr,
+                });
                 return undefined;
             }
         } catch {
@@ -161,14 +159,10 @@ async function ssmExec(
         }
     }
 
-    console.error(
-        JSON.stringify({
-            level: 'ERROR',
-            message: 'SSM command timed out',
-            commandId,
-            timeoutMs: SSM_POLL_TIMEOUT_MS,
-        }),
-    );
+    log('ERROR', 'SSM command timed out', {
+        commandId,
+        timeoutMs: SSM_POLL_TIMEOUT_MS,
+    });
     return undefined;
 }
 
@@ -193,13 +187,7 @@ export async function handler(event: DiagnosticInput): Promise<DiagnosticReport>
         };
     }
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Fetching node diagnostic summary',
-            instanceId,
-        }),
-    );
+    log('INFO', 'Fetching node diagnostic summary', { instanceId });
 
     try {
         // Fetch the run_summary.json file content
@@ -209,13 +197,7 @@ export async function handler(event: DiagnosticInput): Promise<DiagnosticReport>
         );
 
         if (!rawOutput || rawOutput === 'NOT_FOUND') {
-            console.log(
-                JSON.stringify({
-                    level: 'INFO',
-                    message: 'run_summary.json not found on node',
-                    instanceId,
-                }),
-            );
+            log('INFO', 'run_summary.json not found on node', { instanceId });
 
             return {
                 instanceId,
@@ -227,17 +209,13 @@ export async function handler(event: DiagnosticInput): Promise<DiagnosticReport>
         // Parse the JSON content
         const summary = JSON.parse(rawOutput) as RunSummary;
 
-        console.log(
-            JSON.stringify({
-                level: 'INFO',
-                message: 'Diagnostic summary retrieved',
-                instanceId,
-                overallStatus: summary.overall_status,
-                failureCode: summary.failure_code,
-                totalSteps: summary.total_steps,
-                failedSteps: summary.failed_steps,
-            }),
-        );
+        log('INFO', 'Diagnostic summary retrieved', {
+            instanceId,
+            overallStatus: summary.overall_status,
+            failureCode: summary.failure_code,
+            totalSteps: summary.total_steps,
+            failedSteps: summary.failed_steps,
+        });
 
         return {
             instanceId,
@@ -248,14 +226,7 @@ export async function handler(event: DiagnosticInput): Promise<DiagnosticReport>
         };
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        console.error(
-            JSON.stringify({
-                level: 'ERROR',
-                message: 'Failed to fetch diagnostic summary',
-                instanceId,
-                error,
-            }),
-        );
+        log('ERROR', 'Failed to fetch diagnostic summary', { instanceId, error });
 
         return {
             instanceId,

@@ -23,6 +23,8 @@ import type {
     StrategistAnalysisResult,
 } from '../../../shared/src/index.js';
 
+import { log } from '../../../shared/src/index.js';
+
 import { AnalysisRecordSchema } from '../schemas/dynamo-record.schema.js';
 import { DdbHandlerEnvSchema } from '../schemas/environment.schema.js';
 
@@ -71,10 +73,10 @@ export const handler = async (
 
     const { context } = event;
 
-    console.log(
-        `[coach-loader] Pipeline ${context.pipelineId} ` +
-        `— loading analysis for APPLICATION#${context.applicationSlug}`,
-    );
+    log('INFO', 'Loading analysis', {
+        handler: 'coach-loader', pipelineId: context.pipelineId,
+        applicationSlug: context.applicationSlug,
+    });
 
     // Query for the latest ANALYSIS# record (newest first)
     const result = await ddbClient.send(new QueryCommand({
@@ -98,10 +100,10 @@ export const handler = async (
     // Zod-validate the DynamoDB record (replaces 8× unsafe `as` casts)
     const record = AnalysisRecordSchema.parse(result.Items[0]);
 
-    console.log(
-        `[coach-loader] Loaded analysis: sk="${record.sk}", ` +
-        `fit="${record.metadata.overallFitRating}"`,
-    );
+    log('INFO', 'Analysis loaded', {
+        handler: 'coach-loader', sk: record.sk,
+        fitRating: record.metadata.overallFitRating,
+    });
 
     // Reconstruct the AgentResult<StrategistAnalysisResult>
     // archetypeSelection and tailoredResumeData are not stored in the coaching

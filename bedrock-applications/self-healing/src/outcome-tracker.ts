@@ -24,6 +24,8 @@ import {
     UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 
+import { log } from '../../../shared/src/index.js';
+
 // =============================================================================
 // Configuration
 // =============================================================================
@@ -64,34 +66,7 @@ interface AlarmOkEvent {
     readonly [key: string]: unknown;
 }
 
-// =============================================================================
-// Structured Logger
-// =============================================================================
 
-/**
- * Emit a structured JSON log line.
- *
- * @param level - Log level
- * @param message - Human-readable message
- * @param data - Additional structured data
- */
-function log(
-    level: 'INFO' | 'WARN' | 'ERROR',
-    message: string,
-    data?: Record<string, unknown>,
-): void {
-    const entry = {
-        level,
-        message,
-        timestamp: new Date().toISOString(),
-        ...data,
-    };
-    if (level === 'ERROR') {
-        console.error(JSON.stringify(entry));
-    } else {
-        console.log(JSON.stringify(entry));
-    }
-}
 
 // =============================================================================
 // Handler

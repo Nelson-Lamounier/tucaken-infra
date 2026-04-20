@@ -32,6 +32,8 @@ import {
     GetParameterCommand,
 } from '@aws-sdk/client-ssm';
 
+import { log } from '../../../../shared/src/index.js';
+
 const sfnClient = new SFNClient({});
 const ssmClient = new SSMClient({});
 
@@ -156,14 +158,7 @@ export async function handler(event: RemediateInput): Promise<RemediationReport>
         };
     }
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Initiating node bootstrap remediation',
-            instanceId,
-            role: rawRole,
-        }),
-    );
+    log('INFO', 'Initiating node bootstrap remediation', { instanceId, role: rawRole });
 
     try {
         // Validate role
@@ -194,16 +189,12 @@ export async function handler(event: RemediateInput): Promise<RemediationReport>
             },
         });
 
-        console.log(
-            JSON.stringify({
-                level: 'INFO',
-                message: 'Starting Step Functions bootstrap execution',
-                stateMachineArn,
-                instanceId,
-                role,
-                asgName,
-            }),
-        );
+        log('INFO', 'Starting Step Functions bootstrap execution', {
+            stateMachineArn,
+            instanceId,
+            role,
+            asgName,
+        });
 
         // Start a new Step Functions execution — the router Lambda resolves
         // the role from ASG tags and runs the appropriate bootstrap sequence.
@@ -218,15 +209,11 @@ export async function handler(event: RemediateInput): Promise<RemediationReport>
 
         const executionArn = executionResult.executionArn;
 
-        console.log(
-            JSON.stringify({
-                level: 'INFO',
-                message: 'Step Functions execution started',
-                executionArn,
-                instanceId,
-                role,
-            }),
-        );
+        log('INFO', 'Step Functions execution started', {
+            executionArn,
+            instanceId,
+            role,
+        });
 
         return {
             instanceId,
@@ -236,15 +223,11 @@ export async function handler(event: RemediateInput): Promise<RemediationReport>
         };
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        console.error(
-            JSON.stringify({
-                level: 'ERROR',
-                message: 'Step Functions bootstrap remediation failed',
-                instanceId,
-                role: rawRole,
-                error,
-            }),
-        );
+        log('ERROR', 'Step Functions bootstrap remediation failed', {
+            instanceId,
+            role: rawRole,
+            error,
+        });
 
         return {
             instanceId,

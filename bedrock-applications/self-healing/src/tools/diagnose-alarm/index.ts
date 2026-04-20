@@ -27,6 +27,8 @@ import type {
     MetricDataResult,
 } from '@aws-sdk/client-cloudwatch';
 
+import { log } from '../../../../shared/src/index.js';
+
 const cw = new CloudWatchClient({});
 
 /** Duration of metric lookback window in milliseconds (30 minutes) */
@@ -160,7 +162,7 @@ export async function handler(event: DiagnoseInput): Promise<DiagnosticReport> {
         };
     }
 
-    console.log(JSON.stringify({ level: 'INFO', message: 'Diagnosing alarm', alarmName }));
+    log('INFO', 'Diagnosing alarm', { alarmName });
 
     try {
         const alarmsResponse = await cw.send(new DescribeAlarmsCommand({
@@ -188,18 +190,16 @@ export async function handler(event: DiagnoseInput): Promise<DiagnosticReport> {
             recentDatapoints,
         };
 
-        console.log(JSON.stringify({
-            level: 'INFO',
-            message: 'Diagnosis complete',
+        log('INFO', 'Diagnosis complete', {
             alarmName,
             state: report.state,
             datapointCount: recentDatapoints.length,
-        }));
+        });
 
         return report;
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        console.error(JSON.stringify({ level: 'ERROR', message: 'Diagnosis failed', alarmName, error }));
+        log('ERROR', 'Diagnosis failed', { alarmName, error });
 
         return {
             alarmName,

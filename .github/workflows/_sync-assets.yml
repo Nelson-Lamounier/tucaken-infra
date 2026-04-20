@@ -4,7 +4,7 @@
 #
 # Extracts Next.js static assets from a Docker image cached by the
 # build-push-image workflow, syncs them to S3, and invalidates the
-# CloudFront cache using frontend-ops/sync-static-to-s3.ts.
+# CloudFront cache using scripts/sync-static-to-s3.ts.
 #
 # Prerequisites:
 #   - A prior job must cache a Docker image tar via actions/cache
@@ -82,7 +82,7 @@ jobs:
 
     steps:
       # ------------------------------------------------------------------
-      # 1. Checkout cdk-monitoring (owns frontend-ops/sync-static-to-s3.ts)
+      # 1. Checkout cdk-monitoring (owns scripts/sync-static-to-s3.ts)
       # ------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -196,7 +196,7 @@ jobs:
         env:
           DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          npx tsx frontend-ops/sync-static-to-s3.ts \
+          npx tsx scripts/sync-static-to-s3.ts \
             --env "${DEPLOY_ENVIRONMENT}" \
             --region "${AWS_REGION}"
 

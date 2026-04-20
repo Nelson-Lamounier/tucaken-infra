@@ -23,6 +23,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { executeQaAgent, QA_PASS_THRESHOLD } from '../agents/qa-agent.js';
+import { log } from '../../../shared/src/index.js';
 import type {
     ArticleStatus,
     PipelineOutput,
@@ -74,7 +75,7 @@ async function writeToReviewPrefix(
     content: string,
 ): Promise<void> {
     const key = `${REVIEW_PREFIX}v${version}/${slug}.mdx`;
-    console.log(`[qa-handler] Writing review content to s3://${bucket}/${key}`);
+    log('INFO', 'Writing review content to S3', { handler: 'qa', bucket, key });
 
     await s3Client.send(new PutObjectCommand({
         Bucket: bucket,
@@ -145,10 +146,12 @@ async function writeVersionToDynamoDB(
         gsi1sk: `${datePrefix}#${context.slug}#v${context.version}`,
     };
 
-    console.log(
-        `[qa-handler] Writing DynamoDB VERSION record — ` +
-        `${versionSk}, status=${articleStatus}, qaScore=${qa.data.overallScore}`,
-    );
+    log('INFO', 'Writing DynamoDB VERSION record', {
+        handler: 'qa',
+        versionSk,
+        status: articleStatus,
+        qaScore: qa.data.overallScore,
+    });
 
     await ddbClient.send(new PutCommand({
         TableName: tableName,
@@ -169,11 +172,14 @@ async function writeVersionToDynamoDB(
     // is how the frontend's admin dashboard discovers articles.
     // =====================================================================
     const metadataGsi1sk = `${datePrefix}#${context.slug}`;
-    console.log(
-        `[qa-handler] Upserting METADATA — latestVersion=v${context.version}, ` +
-        `status=${articleStatus}, title="${writer.data.metadata.title}", ` +
-        `gsi1pk=STATUS#${articleStatus}, gsi1sk=${metadataGsi1sk}`,
-    );
+    log('INFO', 'Upserting METADATA record', {
+        handler: 'qa',
+        latestVersion: context.version,
+        status: articleStatus,
+        title: writer.data.metadata.title,
+        gsi1pk: `STATUS#${articleStatus}`,
+        gsi1sk: metadataGsi1sk,
+    });
     await ddbClient.send(new UpdateCommand({
         TableName: tableName,
         Key: {
@@ -239,22 +245,24 @@ async function writeVersionToDynamoDB(
  * @returns Complete pipeline output with pass/fail verdict
  */
 export const handler = async (event: QaHandlerInput): Promise<PipelineOutput> => {
-    console.log(
-        `[qa-handler] Pipeline ${event.context.pipelineId} — ` +
-        `slug: ${event.context.slug}, version: v${event.context.version}, ` +
-        `retryAttempt: ${event.context.retryAttempt}`,
-    );
+    log('INFO', 'QA handler invoked', {
+        handler: 'qa',
+        pipelineId: event.context.pipelineId,
+        slug: event.context.slug,
+        version: event.context.version,
+        retryAttempt: event.context.retryAttempt,
+    });
 
     // Slug-divergence guard: warn if the Writer AI generated a different
     // slug than the pipeline's authoritative context.slug (derived from the
     // S3 filename). The context.slug is ALWAYS used for DDB operations.
     const writerSlug = event.writer?.data?.metadata?.slug;
     if (writerSlug && writerSlug !== event.context.slug) {
-        console.warn(
-            `[qa-handler] ⚠️ SLUG DIVERGENCE DETECTED — ` +
-            `context.slug="${event.context.slug}" vs writer.slug="${writerSlug}". ` +
-            `Using context.slug as authoritative. Writer's slug will be ignored for DDB keys.`,
-        );
+        log('WARN', 'Slug divergence detected', {
+            handler: 'qa',
+            contextSlug: event.context.slug,
+            writerSlug,
+        });
     }
 
     // 1. Execute QA Agent
@@ -269,10 +277,13 @@ export const handler = async (event: QaHandlerInput): Promise<PipelineOutput> =>
     const passed = qa.data.overallScore >= QA_PASS_THRESHOLD;
     const articleStatus: ArticleStatus = passed ? 'review' : 'flagged';
 
-    console.log(
-        `[qa-handler] QA verdict — score=${qa.data.overallScore}, ` +
-        `threshold=${QA_PASS_THRESHOLD}, passed=${passed}, status=${articleStatus}`,
-    );
+    log('INFO', 'QA verdict determined', {
+        handler: 'qa',
+        score: qa.data.overallScore,
+        threshold: QA_PASS_THRESHOLD,
+        passed,
+        articleStatus,
+    });
 
     // 3. Build pipeline output
     const output: PipelineOutput = {

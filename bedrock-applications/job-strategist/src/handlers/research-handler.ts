@@ -17,6 +17,8 @@ import type {
     StrategistWriterHandlerInput,
 } from '../../../shared/src/index.js';
 
+import { log } from '../../../shared/src/index.js';
+
 /**
  * Lambda handler for the Strategist Research Agent.
  *
@@ -33,10 +35,10 @@ export const handler = async (
         );
     }
 
-    console.log(
-        `[strategist-research-handler] Pipeline ${event.context.pipelineId} ` +
-        `— role: ${event.context.targetRole}`,
-    );
+    log('INFO', 'Research stage started', {
+        handler: 'strategist-research-handler', pipelineId: event.context.pipelineId,
+        targetRole: event.context.targetRole,
+    });
 
     const research = await executeResearchAgent(event.context);
 

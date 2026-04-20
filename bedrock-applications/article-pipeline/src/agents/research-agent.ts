@@ -20,7 +20,7 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 
-import { runAgent, parseJsonResponse } from '../../../shared/src/index.js';
+import { runAgent, parseJsonResponse, log } from '../../../shared/src/index.js';
 import { RESEARCH_PERSONA_SYSTEM_PROMPT } from '../prompts/research-persona.js';
 import type {
     AgentConfig,
@@ -185,11 +185,11 @@ export function analyseComplexity(markdown: string): ComplexityAnalysis {
  */
 async function queryKnowledgeBase(query: string): Promise<KbPassage[]> {
     if (!KNOWLEDGE_BASE_ID) {
-        console.log('[research] KB retrieval skipped — no KNOWLEDGE_BASE_ID configured');
+        log('INFO', 'KB retrieval skipped — no KNOWLEDGE_BASE_ID configured', { agent: 'research' });
         return [];
     }
 
-    console.log(`[research] Querying KB '${KNOWLEDGE_BASE_ID}' with ${query.length} chars`);
+    log('INFO', 'Querying Knowledge Base', { agent: 'research', knowledgeBaseId: KNOWLEDGE_BASE_ID, queryLength: query.length });
 
     const command = new RetrieveCommand({
         knowledgeBaseId: KNOWLEDGE_BASE_ID,
@@ -214,7 +214,7 @@ async function queryKnowledgeBase(query: string): Promise<KbPassage[]> {
             sourceUri: r.location?.s3Location?.uri ?? 'unknown',
         }));
 
-    console.log(`[research] KB returned ${passages.length} passages (top score: ${passages[0]?.score.toFixed(3) ?? 'N/A'})`);
+    log('INFO', 'KB retrieval complete', { agent: 'research', passageCount: passages.length, topScore: passages[0]?.score ?? null });
 
     return passages;
 }
@@ -270,7 +270,7 @@ function extractAuthorDirection(draftContent: string): string {
         .filter(trimmed => trimmed && !trimmed.startsWith('#') && !/^[A-Za-z-]+:\s/.test(trimmed));
 
     const direction = directionLines.join(' ').trim();
-    console.log(`[research] Author direction extracted (${direction.length} chars)`);
+    log('INFO', 'Author direction extracted', { agent: 'research', directionLength: direction.length });
     return direction;
 }
 
@@ -292,17 +292,17 @@ async function fetchPreviousVersionContent(
     ctx: PipelineContext,
 ): Promise<string | undefined> {
     if (ctx.version <= 1) {
-        console.log('[research] Version 1 — no previous version to fetch');
+        log('INFO', 'Version 1 — no previous version to fetch', { agent: 'research' });
         return undefined;
     }
 
     if (!TABLE_NAME) {
-        console.warn('[research] PIPELINE_TABLE_NAME not set — skipping previous version lookup');
+        log('WARN', 'PIPELINE_TABLE_NAME not set — skipping previous version lookup', { agent: 'research' });
         return undefined;
     }
 
     const previousVersion = ctx.version - 1;
-    console.log(`[research] Fetching previous version content — VERSION#v${previousVersion}`);
+    log('INFO', 'Fetching previous version content', { agent: 'research', previousVersion });
 
     try {
         const result = await ddbClient.send(new GetCommand({
@@ -316,25 +316,22 @@ async function fetchPreviousVersionContent(
 
         const contentRef = result.Item?.contentRef as string | undefined;
         if (!contentRef) {
-            console.warn(`[research] No contentRef found for VERSION#v${previousVersion}`);
+            log('WARN', 'No contentRef found for previous version', { agent: 'research', previousVersion });
             return undefined;
         }
 
         // contentRef format: s3://bucket/review/v{n}/slug.mdx
         const s3Key = contentRef.replace(`s3://${ctx.bucket}/`, '');
-        console.log(`[research] Reading previous version from s3://${ctx.bucket}/${s3Key}`);
+        log('INFO', 'Reading previous version from S3', { agent: 'research', bucket: ctx.bucket, s3Key });
 
         const content = await readDraftFromS3(ctx.bucket, s3Key);
         const capped = content.substring(0, PREVIOUS_VERSION_CONTENT_CAP);
 
-        console.log(
-            `[research] Previous version loaded — ${content.length} chars ` +
-            `(capped to ${capped.length} chars)`,
-        );
+        log('INFO', 'Previous version loaded', { agent: 'research', originalLength: content.length, cappedLength: capped.length });
 
         return capped;
     } catch (error) {
-        console.warn(`[research] Failed to fetch previous version: ${String(error)}`);
+        log('WARN', 'Failed to fetch previous version', { agent: 'research', error: String(error) });
         return undefined;
     }
 }
@@ -453,21 +450,21 @@ export async function executeResearchAgent(
     ctx: PipelineContext,
 ): Promise<AgentResult<ResearchResult>> {
     // 1. Read draft from S3
-    console.log(`[research] Reading draft from s3://${ctx.bucket}/${ctx.sourceKey}`);
+    log('INFO', 'Reading draft from S3', { agent: 'research', bucket: ctx.bucket, sourceKey: ctx.sourceKey });
     const draftContent = await readDraftFromS3(ctx.bucket, ctx.sourceKey);
 
     // 2. Detect pipeline mode
     const mode: PipelineMode = draftContent.length <= KB_AUGMENTED_THRESHOLD
         ? 'kb-augmented'
         : 'legacy-transform';
-    console.log(`[research] Mode: ${mode} (draft length: ${draftContent.length} chars)`);
+    log('INFO', 'Pipeline mode detected', { agent: 'research', mode, draftLength: draftContent.length });
 
     // 3. Query Knowledge Base (for KB-augmented mode, or always for supplementary context)
     const kbPassages = await queryKnowledgeBase(draftContent);
 
     // 4. Perform local complexity analysis (fast, no LLM needed)
     const localComplexity = analyseComplexity(draftContent);
-    console.log(`[research] Local complexity: ${localComplexity.tier} — ${localComplexity.reason}`);
+    log('INFO', 'Local complexity analysis complete', { agent: 'research', tier: localComplexity.tier, reason: localComplexity.reason });
 
     // 5. Build user message and run agent
     const userMessage = buildResearchMessage(draftContent, kbPassages, mode);
@@ -505,10 +502,12 @@ export async function executeResearchAgent(
         pipelineContext: ctx,
     });
 
-    console.log(
-        `[research] Brief generated — title="${result.data.suggestedTitle}", ` +
-        `sections=${result.data.outline.length}, facts=${result.data.technicalFacts.length}`,
-    );
+    log('INFO', 'Research brief generated', {
+        agent: 'research',
+        suggestedTitle: result.data.suggestedTitle,
+        sectionCount: result.data.outline.length,
+        factCount: result.data.technicalFacts.length,
+    });
 
     return result;
 }

@@ -12,6 +12,7 @@
  */
 
 import { executeResearchAgent } from '../agents/research-agent.js';
+import { log } from '../../../shared/src/index.js';
 import type { ResearchHandlerInput, WriterHandlerInput } from '../../../shared/src/index.js';
 
 /**
@@ -21,7 +22,7 @@ import type { ResearchHandlerInput, WriterHandlerInput } from '../../../shared/s
  * @returns Updated context and research result for the Writer stage
  */
 export const handler = async (event: ResearchHandlerInput): Promise<WriterHandlerInput> => {
-    console.log(`[research-handler] Pipeline ${event.context.pipelineId} — slug: ${event.context.slug}`);
+    log('INFO', 'Research handler invoked', { handler: 'research', pipelineId: event.context.pipelineId, slug: event.context.slug });
 
     const research = await executeResearchAgent(event.context);
 

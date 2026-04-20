@@ -25,6 +25,8 @@ import type {
     StrategistAnalysisPersistInput,
 } from '../../../shared/src/index.js';
 
+import { log } from '../../../shared/src/index.js';
+
 // =============================================================================
 // ENVIRONMENT VALIDATION (fail-fast at cold start)
 // =============================================================================
@@ -56,10 +58,10 @@ export const handler = async (
         );
     }
 
-    console.log(
-        `[strategist-writer-handler] Pipeline ${event.context.pipelineId} ` +
-        `— generating analysis for "${event.context.targetRole}"`,
-    );
+    log('INFO', 'Generating analysis', {
+        handler: 'strategist-writer-handler', pipelineId: event.context.pipelineId,
+        targetRole: event.context.targetRole,
+    });
 
     const analysis = await executeStrategistAgent(event.context, event.research.data);
 
@@ -82,10 +84,10 @@ export const handler = async (
             Body: analysis.data.analysisXml,
             ContentType: 'application/xml',
         }));
-        console.log(
-            `[strategist-writer-handler] Offloaded analysisXml to S3 ` +
-            `(${(xmlBytes / 1024).toFixed(1)}KB → s3://${ASSETS_BUCKET}/${xmlS3Key})`,
-        );
+        log('INFO', 'Offloaded analysisXml to S3', {
+            handler: 'strategist-writer-handler', sizeKb: (xmlBytes / 1024).toFixed(1),
+            bucket: ASSETS_BUCKET, key: xmlS3Key,
+        });
     }
 
     // ─── Payload trimming ─────────────────────────────────────────
@@ -130,18 +132,16 @@ export const handler = async (
 
     const payload = { context: trimmedContext, research: trimmedResearch, analysis: trimmedAnalysis };
     const payloadSize = JSON.stringify(payload).length;
-    console.log(
-        `[strategist-writer-handler] Output payload size: ${(payloadSize / 1024).toFixed(1)}KB ` +
-        `(offloaded analysisXml: ${(xmlBytes / 1024).toFixed(1)}KB, ` +
-        `trimmed jobDescription: ${(event.context.jobDescription.length / 1024).toFixed(1)}KB, ` +
-        `trimmed kbContext: ${(event.research.data.kbContext.length / 1024).toFixed(1)}KB)`,
-    );
+    log('INFO', 'Output payload trimmed', {
+        handler: 'strategist-writer-handler',
+        payloadSizeKb: (payloadSize / 1024).toFixed(1),
+        xmlOffloadedKb: (xmlBytes / 1024).toFixed(1),
+    });
 
     if (payloadSize > 250 * 1024) {
-        console.warn(
-            `[strategist-writer-handler] ⚠️ Payload ${(payloadSize / 1024).toFixed(1)}KB ` +
-            `still near 256KB limit`,
-        );
+        log('WARN', 'Payload still near 256KB limit', {
+            handler: 'strategist-writer-handler', payloadSizeKb: (payloadSize / 1024).toFixed(1),
+        });
     }
 
     return payload;

@@ -17,6 +17,7 @@ import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
+import { log } from '../../../shared/src/index.js';
 import type { PipelineContext, ResearchHandlerInput } from '../../../shared/src/index.js';
 
 // =============================================================================
@@ -57,7 +58,7 @@ const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  */
 async function resolveNextVersion(slug: string): Promise<number> {
     if (!TABLE_NAME) {
-        console.warn('[trigger] TABLE_NAME not set — defaulting to version 1');
+        log('WARN', 'TABLE_NAME not set — defaulting to version 1', { handler: 'trigger' });
         return 1;
     }
 
@@ -80,12 +81,12 @@ async function resolveNextVersion(slug: string): Promise<number> {
         const versionMatch = versionRegex.exec(latestSk);
         if (versionMatch) {
             const latestVersion = Number.parseInt(versionMatch[1], 10);
-            console.log(`[trigger] Latest version for "${slug}": v${latestVersion} → next: v${latestVersion + 1}`);
+            log('INFO', 'Resolved latest version', { handler: 'trigger', slug, latestVersion, nextVersion: latestVersion + 1 });
             return latestVersion + 1;
         }
     }
 
-    console.log(`[trigger] No existing versions for "${slug}" — starting at v1`);
+    log('INFO', 'No existing versions — starting at v1', { handler: 'trigger', slug });
     return 1;
 }
 
@@ -112,14 +113,14 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
         const slugRegex = /^drafts\/(.+)\.md$/;
         const slugMatch = slugRegex.exec(key);
         if (!slugMatch) {
-            console.warn(`[trigger] Ignoring non-draft key: ${key}`);
+            log('WARN', 'Ignoring non-draft key', { handler: 'trigger', key });
             continue;
         }
         const slug = slugMatch[1];
         const now = new Date().toISOString();
         const datePrefix = now.slice(0, 10); // YYYY-MM-DD
 
-        console.log(`[trigger] New draft detected — slug="${slug}", key="${key}"`);
+        log('INFO', 'New draft detected', { handler: 'trigger', slug, key });
 
         // =================================================================
         // Resolve next version number
@@ -161,7 +162,7 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
         // =================================================================
         if (TABLE_NAME) {
             const versionSk = `VERSION#v${version}`;
-            console.log(`[trigger] Writing processing record: ARTICLE#${slug} / ${versionSk}`);
+            log('INFO', 'Writing processing record', { handler: 'trigger', slug, versionSk });
             await ddbClient.send(new PutCommand({
                 TableName: TABLE_NAME,
                 Item: {
@@ -181,13 +182,13 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
                 },
             }));
         } else {
-            console.warn('[trigger] TABLE_NAME not set — skipping DynamoDB write');
+            log('WARN', 'TABLE_NAME not set — skipping DynamoDB write', { handler: 'trigger' });
         }
 
         // =================================================================
         // Start Step Functions execution
         // =================================================================
-        console.log(`[trigger] Starting execution: ${executionName} (version: v${version})`);
+        log('INFO', 'Starting Step Functions execution', { handler: 'trigger', executionName, version });
 
         // Build Step Functions input
         const sfnInput: ResearchHandlerInput = {
@@ -200,9 +201,11 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
             input: JSON.stringify(sfnInput),
         }));
 
-        console.log(
-            `[trigger] Execution started — arn=${result.executionArn ?? 'unknown'}, ` +
-            `slug="${slug}", version=v${version}`,
-        );
+        log('INFO', 'Execution started', {
+            handler: 'trigger',
+            executionArn: result.executionArn ?? 'unknown',
+            slug,
+            version,
+        });
     }
 };

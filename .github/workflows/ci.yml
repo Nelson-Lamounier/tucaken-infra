@@ -58,7 +58,7 @@ jobs:
       any-src: ${{ steps.filter.outputs.any-src }}
       any-tests: ${{ steps.filter.outputs.any-tests }}
       k8s-content: ${{ steps.filter.outputs.k8s-content }}
-      frontend-ops: ${{ steps.filter.outputs.frontend-ops }}
+      scripts-ops: ${{ steps.filter.outputs.scripts-ops }}
       kb-content: ${{ steps.filter.outputs.kb-content }}
       # Computed: should we run all tests?
       run-all: ${{ steps.compute.outputs.run-all }}
@@ -94,8 +94,8 @@ jobs:
               - 'kubernetes-app/platform/charts/**/chart/**'
               - 'kubernetes-app/workloads/charts/**/chart/**'
               - 'kubernetes-app/k8s-bootstrap/**'
-            frontend-ops:
-              - 'frontend-ops/**'
+            scripts-ops:
+              - 'scripts/**'
               - '.github/workflows/deploy-frontend.yml'
               - '.github/workflows/_sync-assets.yml'
             kb-content:
@@ -105,7 +105,6 @@ jobs:
 
               - 'bedrock-applications/**'
               - 'mcp-servers/**'
-              - 'frontend-ops/**'
               - 'scripts/**'
               - '.github/workflows/**'
 
@@ -363,7 +362,7 @@ jobs:
       image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
     timeout-minutes: 10
     if: |
-      needs.detect-changes.outputs.frontend-ops == 'true' ||
+      needs.detect-changes.outputs.scripts-ops == 'true' ||
       needs.detect-changes.outputs.run-all == 'true'
 
     steps:
@@ -376,7 +375,7 @@ jobs:
           node-version: ${{ needs.setup.outputs.node-version }}
 
       # Runs sync-static-to-s3 unit tests and deploy-frontend workflow validation.
-      # Recipe: justfile → test-frontend-ops → npx jest --config frontend-ops/jest.config.js
+      # Recipe: justfile → test-frontend-ops → npx jest --config scripts/jest.config.js
       - name: Run Frontend Ops Tests
         run: just test-frontend-ops
 

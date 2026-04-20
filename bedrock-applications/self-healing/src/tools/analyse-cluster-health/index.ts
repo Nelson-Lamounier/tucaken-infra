@@ -34,6 +34,8 @@ import {
     GetCommandInvocationCommand,
 } from '@aws-sdk/client-ssm';
 
+import { log } from '../../../../shared/src/index.js';
+
 const ec2 = new EC2Client({});
 const ssm = new SSMClient({});
 
@@ -173,15 +175,11 @@ async function ssmExec(
 
             if (invocation.Status === 'Failed' || invocation.Status === 'Cancelled') {
                 const stderr = invocation.StandardErrorContent?.trim() ?? 'unknown error';
-                console.error(
-                    JSON.stringify({
-                        level: 'ERROR',
-                        message: 'SSM command failed',
-                        commandId,
-                        status: invocation.Status,
-                        stderr,
-                    }),
-                );
+                log('ERROR', 'SSM command failed', {
+                    commandId,
+                    status: invocation.Status,
+                    stderr,
+                });
                 return undefined;
             }
         } catch {
@@ -189,14 +187,10 @@ async function ssmExec(
         }
     }
 
-    console.error(
-        JSON.stringify({
-            level: 'ERROR',
-            message: 'SSM command timed out',
-            commandId,
-            timeoutMs: SSM_POLL_TIMEOUT_MS,
-        }),
-    );
+    log('ERROR', 'SSM command timed out', {
+        commandId,
+        timeoutMs: SSM_POLL_TIMEOUT_MS,
+    });
     return undefined;
 }
 
@@ -327,14 +321,10 @@ function parseKubectlFallback(raw: string): ClusterIssue[] {
 export async function handler(event: AnalyseClusterHealthInput): Promise<ClusterHealthReport> {
     const { namespace, filters } = event;
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Analysing cluster health',
-            namespace: namespace ?? 'all',
-            filters: filters ?? 'default',
-        }),
-    );
+    log('INFO', 'Analysing cluster health', {
+        namespace: namespace ?? 'all',
+        filters: filters ?? 'default',
+    });
 
     // Step 1: Resolve control plane instance
     let controlPlaneId: string;
@@ -365,13 +355,7 @@ export async function handler(event: AnalyseClusterHealthInput): Promise<Cluster
         };
     }
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Control plane instance resolved',
-            instanceId: controlPlaneId,
-        }),
-    );
+    log('INFO', 'Control plane instance resolved', { instanceId: controlPlaneId });
 
     // Step 2: Try K8sGPT first, fall back to kubectl
     let analysisMethod: 'k8sgpt' | 'kubectl-fallback' = 'k8sgpt';
@@ -386,7 +370,7 @@ export async function handler(event: AnalyseClusterHealthInput): Promise<Cluster
     const k8sgptAvailable = checkInstalled?.includes('INSTALLED') ?? false;
 
     if (k8sgptAvailable) {
-        console.log(JSON.stringify({ level: 'INFO', message: 'K8sGPT is installed, running analysis' }));
+        log('INFO', 'K8sGPT is installed, running analysis');
 
         const k8sgptCmd = buildK8sGPTCommand(namespace, filters);
         const rawOutput = await ssmExec(controlPlaneId, k8sgptCmd);
@@ -395,21 +379,17 @@ export async function handler(event: AnalyseClusterHealthInput): Promise<Cluster
             try {
                 issues = parseK8sGPTOutput(rawOutput);
             } catch {
-                console.error(
-                    JSON.stringify({
-                        level: 'WARN',
-                        message: 'Failed to parse K8sGPT output, falling back to kubectl',
-                        rawSnippet: rawOutput.slice(0, 200),
-                    }),
-                );
+                log('WARN', 'Failed to parse K8sGPT output, falling back to kubectl', {
+                    rawSnippet: rawOutput.slice(0, 200),
+                });
                 analysisMethod = 'kubectl-fallback';
             }
         } else {
-            console.error(JSON.stringify({ level: 'WARN', message: 'K8sGPT returned no output, falling back to kubectl' }));
+            log('WARN', 'K8sGPT returned no output, falling back to kubectl');
             analysisMethod = 'kubectl-fallback';
         }
     } else {
-        console.log(JSON.stringify({ level: 'INFO', message: 'K8sGPT not installed, using kubectl fallback' }));
+        log('INFO', 'K8sGPT not installed, using kubectl fallback');
         analysisMethod = 'kubectl-fallback';
     }
 
@@ -458,17 +438,13 @@ export async function handler(event: AnalyseClusterHealthInput): Promise<Cluster
         analysisMethod,
     };
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Cluster health analysis complete',
-            healthy: report.healthy,
-            totalIssues: report.totalIssues,
-            criticalIssues: report.criticalIssues,
-            analysisMethod: report.analysisMethod,
-            issueNames: issues.map((i) => `${i.kind}/${i.namespace}/${i.name}`),
-        }),
-    );
+    log('INFO', 'Cluster health analysis complete', {
+        healthy: report.healthy,
+        totalIssues: report.totalIssues,
+        criticalIssues: report.criticalIssues,
+        analysisMethod: report.analysisMethod,
+        issueNames: issues.map((i) => `${i.kind}/${i.namespace}/${i.name}`),
+    });
 
     return report;
 }

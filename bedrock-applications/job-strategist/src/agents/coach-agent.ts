@@ -12,7 +12,7 @@
  * Pipeline position: API → Research → Strategist → **Coach** → DynamoDB
  */
 
-import { runAgent, parseJsonResponse } from '../../../shared/src/index.js';
+import { BaseAgent, parseJsonResponse, log } from '../../../shared/src/index.js';
 import { COACH_PERSONA_SYSTEM_PROMPT } from '../prompts/coach-persona.js';
 import type {
     AgentConfig,
@@ -21,6 +21,20 @@ import type {
     StrategistAnalysisResult,
     InterviewCoachResult,
 } from '../../../shared/src/index.js';
+
+// =============================================================================
+// INPUT TYPE
+// =============================================================================
+
+/**
+ * Typed input for the Interview Coach Agent.
+ *
+ * Contains the Strategist Agent's full XML analysis output.
+ */
+export interface CoachAgentInput {
+    /** Strategist Agent's analysis containing the full XML */
+    readonly analysis: StrategistAnalysisResult;
+}
 
 // =============================================================================
 // CONFIGURATION
@@ -80,12 +94,10 @@ function buildCoachMessage(
 }
 
 // =============================================================================
-// AGENT EXECUTION
+// COACH AGENT CLASS
 // =============================================================================
 
-/**
- * Agent configuration for the Interview Coach Agent.
- */
+/** Agent configuration for the Interview Coach Agent. */
 const COACH_CONFIG: AgentConfig = {
     agentName: 'strategist-coach',
     modelId: EFFECTIVE_MODEL_ID,
@@ -95,10 +107,112 @@ const COACH_CONFIG: AgentConfig = {
 };
 
 /**
+ * Interview Coach Agent — Stage-specific interview preparation.
+ *
+ * Extends {@link BaseAgent} to encapsulate the Coach lifecycle:
+ * - Receives the Strategist's full XML analysis
+ * - Produces targeted coaching for the current interview stage
+ * - Uses Haiku 4.5 for fast, conversational output
+ *
+ * @example
+ * ```typescript
+ * const result = await coachAgent.execute({ analysis }, ctx);
+ * ```
+ */
+class CoachAgent extends BaseAgent<CoachAgentInput, InterviewCoachResult, StrategistPipelineContext> {
+    protected readonly agentName = 'strategist-coach' as const;
+
+    /**
+     * Build coach configuration.
+     *
+     * @returns Static coach agent configuration
+     */
+    protected getConfig(): AgentConfig {
+        return COACH_CONFIG;
+    }
+
+    /**
+     * Build the user message for interview coaching.
+     *
+     * @param input - Coach input with analysis result
+     * @param ctx   - Pipeline context with interview stage
+     * @returns Formatted user message for Bedrock
+     */
+    protected buildUserMessage(input: CoachAgentInput, ctx: StrategistPipelineContext): string {
+        return buildCoachMessage(input.analysis, ctx);
+    }
+
+    /**
+     * Parse the raw LLM text into a typed InterviewCoachResult.
+     *
+     * Uses `ctx.interviewStage` to inject the stage into the parsed
+     * result — previously achieved via a closure.
+     *
+     * @param responseText - Raw text response from Bedrock
+     * @param _input       - Unused (coach doesn't need input in parser)
+     * @param ctx          - Pipeline context for interview stage
+     * @returns Validated coaching result
+     */
+    protected parseResponse(
+        responseText: string,
+        _input: CoachAgentInput,
+        ctx: StrategistPipelineContext,
+    ): InterviewCoachResult {
+        const parsed = parseJsonResponse<InterviewCoachResult>(responseText, 'strategist-coach');
+
+        return {
+            ...parsed,
+            stage: ctx.interviewStage,
+            technicalQuestions: Array.isArray(parsed.technicalQuestions) ? parsed.technicalQuestions : [],
+            behaviouralQuestions: Array.isArray(parsed.behaviouralQuestions) ? parsed.behaviouralQuestions : [],
+            difficultQuestions: Array.isArray(parsed.difficultQuestions) ? parsed.difficultQuestions : [],
+            technicalPrepChecklist: Array.isArray(parsed.technicalPrepChecklist) ? parsed.technicalPrepChecklist : [],
+            questionsToAsk: Array.isArray(parsed.questionsToAsk) ? parsed.questionsToAsk : [],
+        };
+    }
+
+    /**
+     * Pre-execution hook — logs coaching context.
+     *
+     * @param _input - Unused
+     * @param ctx    - Pipeline context
+     */
+    protected override beforeExecute(_input: CoachAgentInput, ctx: StrategistPipelineContext): void {
+        log('INFO', 'Preparing coaching', {
+            agent: 'strategist-coach',
+            pipelineId: ctx.pipelineId,
+            interviewStage: ctx.interviewStage,
+            targetRole: ctx.targetRole,
+        });
+    }
+
+    /**
+     * Post-execution hook — logs coaching output.
+     *
+     * @param result - Coach agent result
+     */
+    protected override afterExecute(result: AgentResult<InterviewCoachResult>): void {
+        log('INFO', 'Coaching prepared', {
+            agent: 'strategist-coach',
+            stage: result.data.stage,
+            technical: result.data.technicalQuestions.length,
+            behavioural: result.data.behaviouralQuestions.length,
+            difficult: result.data.difficultQuestions.length,
+        });
+    }
+}
+
+/** Module-level singleton — re-used across Lambda invocations. */
+const coachAgent = new CoachAgent();
+
+/** Export the agent instance for direct usage. */
+export { coachAgent, CoachAgent };
+
+/**
  * Execute the Interview Coach Agent.
  *
- * Receives the Strategist's analysis and produces targeted
- * interview preparation for the current stage.
+ * Backward-compatible wrapper that delegates to the
+ * {@link CoachAgent} class instance.
  *
  * @param ctx - Pipeline context with interview stage
  * @param analysis - Strategist Agent's analysis output
@@ -108,50 +222,5 @@ export async function executeCoachAgent(
     ctx: StrategistPipelineContext,
     analysis: StrategistAnalysisResult,
 ): Promise<AgentResult<InterviewCoachResult>> {
-    console.log(
-        `[strategist-coach] Pipeline ${ctx.pipelineId} — preparing "${ctx.interviewStage}" stage ` +
-        `coaching for "${ctx.targetRole}"`,
-    );
-
-    const userMessage = buildCoachMessage(analysis, ctx);
-
-    const result = await runAgent<InterviewCoachResult>({
-        config: COACH_CONFIG,
-        userMessage,
-        parseResponse: (text) => {
-            const parsed = parseJsonResponse<InterviewCoachResult>(text, 'strategist-coach');
-
-            // Ensure arrays are always arrays
-            return {
-                ...parsed,
-                stage: ctx.interviewStage,
-                technicalQuestions: Array.isArray(parsed.technicalQuestions) ? parsed.technicalQuestions : [],
-                behaviouralQuestions: Array.isArray(parsed.behaviouralQuestions) ? parsed.behaviouralQuestions : [],
-                difficultQuestions: Array.isArray(parsed.difficultQuestions) ? parsed.difficultQuestions : [],
-                technicalPrepChecklist: Array.isArray(parsed.technicalPrepChecklist) ? parsed.technicalPrepChecklist : [],
-                questionsToAsk: Array.isArray(parsed.questionsToAsk) ? parsed.questionsToAsk : [],
-            };
-        },
-        pipelineContext: {
-            pipelineId: ctx.pipelineId,
-            slug: ctx.applicationSlug,
-            sourceKey: '',
-            bucket: ctx.bucket,
-            environment: ctx.environment,
-            version: 0, // Coach pipeline has no article versioning; sentinel value
-            cumulativeTokens: ctx.cumulativeTokens,
-            cumulativeCostUsd: ctx.cumulativeCostUsd,
-            retryAttempt: 0,
-            startedAt: ctx.startedAt,
-        },
-    });
-
-    console.log(
-        `[strategist-coach] Coaching prepared — stage="${result.data.stage}", ` +
-        `technical=${result.data.technicalQuestions.length}, ` +
-        `behavioural=${result.data.behaviouralQuestions.length}, ` +
-        `difficult=${result.data.difficultQuestions.length}`,
-    );
-
-    return result;
+    return coachAgent.execute({ analysis }, ctx);
 }

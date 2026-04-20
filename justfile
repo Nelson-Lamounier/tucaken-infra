@@ -516,7 +516,7 @@ test-golden-ami environment *ARGS:
 # Usage: just test-frontend-ops
 [group('test')]
 test-frontend-ops *ARGS:
-    npx jest --config frontend-ops/jest.config.js {{ARGS}}
+    npx jest --config scripts/jest.config.js {{ARGS}}
 
 # =============================================================================
 # CODE QUALITY

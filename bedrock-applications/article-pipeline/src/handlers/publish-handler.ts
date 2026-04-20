@@ -36,6 +36,8 @@ import {
     GetCommand,
 } from '@aws-sdk/lib-dynamodb';
 
+import { log } from '../../../shared/src/index.js';
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -118,7 +120,7 @@ const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * @param destKey - Destination object key
  */
 async function copyS3Object(bucket: string, sourceKey: string, destKey: string): Promise<void> {
-    console.log(`[publish] S3 copy: ${sourceKey} → ${destKey}`);
+    log('INFO', 'S3 copy', { handler: 'publish', sourceKey, destKey });
     await s3Client.send(new CopyObjectCommand({
         Bucket: bucket,
         CopySource: `${bucket}/${sourceKey}`,
@@ -133,7 +135,7 @@ async function copyS3Object(bucket: string, sourceKey: string, destKey: string):
  * @param key - Object key to delete
  */
 async function deleteS3Object(bucket: string, key: string): Promise<void> {
-    console.log(`[publish] S3 delete: ${key}`);
+    log('INFO', 'S3 delete', { handler: 'publish', key });
     await s3Client.send(new DeleteObjectCommand({
         Bucket: bucket,
         Key: key,
@@ -161,7 +163,7 @@ async function updateVersionStatus(
     const now = new Date().toISOString();
     const versionSk = `VERSION#v${version}`;
 
-    console.log(`[publish] DynamoDB update: ARTICLE#${slug} / ${versionSk} → status=${status}`);
+    log('INFO', 'DynamoDB version status update', { handler: 'publish', slug, versionSk, status });
 
     await ddbClient.send(new UpdateCommand({
         TableName: TABLE_NAME,
@@ -211,10 +213,9 @@ async function promoteVersionToMetadata(
     const vr = versionRecord.Item;
 
     if (!vr) {
-        console.warn(
-            `[publish] VERSION#v${version} not found for "${slug}" — ` +
-            `METADATA will be updated without article fields`,
-        );
+        log('WARN', 'VERSION record not found — METADATA will be updated without article fields', {
+            handler: 'publish', slug, version,
+        });
     }
 
     // Find any currently published VERSION record to supersede
@@ -236,7 +237,7 @@ async function promoteVersionToMetadata(
         for (const item of existingPublished.Items) {
             const oldSk = item.sk as string;
             if (oldSk !== `VERSION#v${version}`) {
-                console.log(`[publish] Superseding: ${oldSk}`);
+                log('INFO', 'Superseding previous version', { handler: 'publish', oldSk });
                 await ddbClient.send(new UpdateCommand({
                     TableName: TABLE_NAME,
                     Key: { pk, sk: oldSk },
@@ -253,10 +254,12 @@ async function promoteVersionToMetadata(
 
     // Update METADATA record — promote version to published state
     // and copy consumer-facing fields from the VERSION record.
-    console.log(
-        `[publish] Updating METADATA → published, version=v${version}, ` +
-        `title="${String(vr?.title ?? slug)}"`,
-    );
+    log('INFO', 'Updating METADATA to published', {
+        handler: 'publish',
+        slug,
+        version,
+        title: String(vr?.title ?? slug),
+    });
     await ddbClient.send(new UpdateCommand({
         TableName: TABLE_NAME,
         Key: { pk, sk: 'METADATA' },
@@ -318,19 +321,19 @@ async function promoteVersionToMetadata(
  */
 async function triggerIsrRevalidation(slug: string): Promise<void> {
     if (!ISR_ENDPOINT) {
-        console.log('[publish] ISR revalidation skipped — no ISR_ENDPOINT configured');
+        log('INFO', 'ISR revalidation skipped — no ISR_ENDPOINT configured', { handler: 'publish' });
         return;
     }
 
     const url = `${ISR_ENDPOINT}?path=/articles/${slug}`;
-    console.log(`[publish] Triggering ISR revalidation: ${url}`);
+    log('INFO', 'Triggering ISR revalidation', { handler: 'publish', url });
 
     try {
         const response = await fetch(url, { method: 'POST' });
-        console.log(`[publish] ISR response: ${response.status}`);
+        log('INFO', 'ISR response received', { handler: 'publish', statusCode: response.status });
     } catch (error) {
         // ISR failure is non-fatal — the page will be regenerated on next request
-        console.warn(`[publish] ISR revalidation failed (non-fatal): ${String(error)}`);
+        log('WARN', 'ISR revalidation failed (non-fatal)', { handler: 'publish', error: String(error) });
     }
 }
 
@@ -349,10 +352,13 @@ async function triggerIsrRevalidation(slug: string): Promise<void> {
 export const handler = async (event: PublishHandlerInput): Promise<PublishHandlerOutput> => {
     const { slug, version, action, pipelineId } = event;
 
-    console.log(
-        `[publish] ${action.toUpperCase()} article "${slug}" v${version} ` +
-        `(pipelineId: ${pipelineId ?? 'N/A'})`,
-    );
+    log('INFO', `${action.toUpperCase()} article`, {
+        handler: 'publish',
+        slug,
+        version,
+        action,
+        pipelineId: pipelineId ?? 'N/A',
+    });
 
     // Version-scoped review key
     const reviewKey = `${REVIEW_PREFIX}v${version}/${slug}.mdx`;
@@ -446,7 +452,7 @@ export const handler = async (event: PublishHandlerInput): Promise<PublishHandle
         }
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
-        console.error(`[publish] Failed to ${action} article "${slug}" v${version}: ${err.message}`);
+        log('ERROR', `Failed to ${action} article`, { handler: 'publish', slug, version, error: err.message });
 
         return {
             success: false,

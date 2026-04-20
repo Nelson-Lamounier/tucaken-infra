@@ -12,7 +12,7 @@
  * Pipeline position: Research → **Writer** → QA → Review
  */
 
-import { runAgent, parseJsonResponse } from '../../../shared/src/index.js';
+import { BaseAgent, parseJsonResponse, log } from '../../../shared/src/index.js';
 import { BLOG_PERSONA_SYSTEM_PROMPT } from '../prompts/blog-persona.js';
 import type {
     AgentConfig,
@@ -24,6 +24,21 @@ import type {
     SuggestedReference,
     WriterResult,
 } from '../../../shared/src/index.js';
+
+// =============================================================================
+// INPUT TYPE
+// =============================================================================
+
+/**
+ * Typed input for the Writer Agent.
+ *
+ * Contains the Research Agent's output which provides the
+ * structured brief, complexity classification, and KB context.
+ */
+export interface WriterAgentInput {
+    /** Research Agent's structured output */
+    readonly research: ResearchResult;
+}
 
 // =============================================================================
 // CONFIGURATION
@@ -288,18 +303,120 @@ function parseWriterResponse(responseText: string): WriterResult {
 }
 
 // =============================================================================
-// WRITER AGENT EXECUTION
+// WRITER AGENT CLASS
 // =============================================================================
+
+/**
+ * Writer Agent — MDX article generation via Bedrock Converse API.
+ *
+ * Extends {@link BaseAgent} to encapsulate the Writer's lifecycle:
+ * - Dynamic thinking budget based on Research Agent's complexity tier
+ * - Full MDX article generation with frontmatter and visual directives
+ * - Structured metadata and shot list extraction
+ *
+ * @example
+ * ```typescript
+ * const result = await writerAgent.execute({ research }, ctx);
+ * ```
+ */
+class WriterAgent extends BaseAgent<WriterAgentInput, WriterResult, PipelineContext> {
+    protected readonly agentName = 'writer' as const;
+
+    /**
+     * Build writer configuration with dynamic thinking budget.
+     *
+     * The thinking budget is capped at {@link DEFAULT_THINKING_BUDGET}
+     * but scaled down for simpler content based on the Research Agent's
+     * complexity classification.
+     *
+     * @param input - Writer input with research complexity tier
+     * @returns Agent config with adaptive thinking budget
+     */
+    protected getConfig(input: WriterAgentInput): AgentConfig {
+        const thinkingBudget = Math.min(
+            input.research.complexity.budgetTokens,
+            DEFAULT_THINKING_BUDGET,
+        );
+
+        return {
+            agentName: 'writer',
+            modelId: EFFECTIVE_MODEL_ID,
+            maxTokens: WRITER_MAX_TOKENS,
+            thinkingBudget,
+            systemPrompt: BLOG_PERSONA_SYSTEM_PROMPT,
+        };
+    }
+
+    /**
+     * Build the user message from the research brief.
+     *
+     * @param input - Writer input with research result
+     * @param ctx   - Pipeline context for retry/version info
+     * @returns Formatted user message for Bedrock
+     */
+    protected buildUserMessage(input: WriterAgentInput, ctx: PipelineContext): string {
+        return buildWriterMessage(input.research, ctx.retryAttempt, ctx.version);
+    }
+
+    /**
+     * Parse the raw LLM text into a typed WriterResult.
+     *
+     * @param responseText - Raw text response from Bedrock
+     * @returns Validated WriterResult
+     */
+    protected parseResponse(responseText: string): WriterResult {
+        return parseWriterResponse(responseText);
+    }
+
+    /**
+     * Pre-execution hook — logs complexity and retry context.
+     *
+     * @param input - Writer input
+     * @param ctx   - Pipeline context
+     */
+    protected override beforeExecute(input: WriterAgentInput, ctx: PipelineContext): void {
+        const thinkingBudget = Math.min(
+            input.research.complexity.budgetTokens,
+            DEFAULT_THINKING_BUDGET,
+        );
+
+        log('INFO', 'Generating article', {
+            agent: 'writer',
+            complexity: input.research.complexity.tier,
+            thinkingBudget,
+            retryAttempt: ctx.retryAttempt,
+        });
+    }
+
+    /**
+     * Post-execution hook — logs article metadata.
+     *
+     * @param result - Writer agent result
+     */
+    protected override afterExecute(result: AgentResult<WriterResult>): void {
+        log('INFO', 'Article generated', {
+            agent: 'writer',
+            title: result.data.metadata.title,
+            slug: result.data.metadata.slug,
+            readingTime: result.data.metadata.readingTime,
+            confidence: result.data.metadata.technicalConfidence,
+            shotListCount: result.data.shotList.length,
+        });
+    }
+}
+
+/** Module-level singleton — re-used across Lambda invocations. */
+const writerAgent = new WriterAgent();
+
+/** Export the agent instance for direct usage. */
+export { writerAgent, WriterAgent };
 
 /**
  * Execute the Writer Agent.
  *
- * Takes the Research Agent's structured brief and generates a
- * complete MDX article with frontmatter, visual directives, and
- * structured metadata.
- *
- * The thinking budget is dynamically set based on the Research
- * Agent's complexity classification.
+ * Backward-compatible wrapper that delegates to the
+ * {@link WriterAgent} class instance. Handlers can use this
+ * without any import path changes.
  *
  * @param ctx - Pipeline context
  * @param research - Research result from the first agent
@@ -309,40 +426,5 @@ export async function executeWriterAgent(
     ctx: PipelineContext,
     research: ResearchResult,
 ): Promise<AgentResult<WriterResult>> {
-    // Dynamic thinking budget based on complexity
-    const thinkingBudget = Math.min(
-        research.complexity.budgetTokens,
-        DEFAULT_THINKING_BUDGET,
-    );
-
-    const writerConfig: AgentConfig = {
-        agentName: 'writer',
-        modelId: EFFECTIVE_MODEL_ID,
-        maxTokens: WRITER_MAX_TOKENS,
-        thinkingBudget,
-        systemPrompt: BLOG_PERSONA_SYSTEM_PROMPT,
-    };
-
-    const userMessage = buildWriterMessage(research, ctx.retryAttempt, ctx.version);
-
-    console.log(
-        `[writer] Generating article — complexity=${research.complexity.tier}, ` +
-        `thinkingBudget=${thinkingBudget}, retryAttempt=${ctx.retryAttempt}`,
-    );
-
-    const result = await runAgent<WriterResult>({
-        config: writerConfig,
-        userMessage,
-        parseResponse: parseWriterResponse,
-        pipelineContext: ctx,
-    });
-
-    console.log(
-        `[writer] Article generated — title="${result.data.metadata.title}", ` +
-        `slug="${result.data.metadata.slug}", readingTime=${result.data.metadata.readingTime}min, ` +
-        `confidence=${result.data.metadata.technicalConfidence}, ` +
-        `shotListCount=${result.data.shotList.length}`,
-    );
-
-    return result;
+    return writerAgent.execute({ research }, ctx);
 }

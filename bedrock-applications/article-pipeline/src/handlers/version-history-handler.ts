@@ -16,6 +16,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
+import { log } from '../../../shared/src/index.js';
 import type { ArticleVersionRecord } from '../../../shared/src/index.js';
 
 // =============================================================================
@@ -82,10 +83,10 @@ export const handler = async (event: VersionHistoryInput): Promise<VersionHistor
     const { slug } = event;
     const limit = Math.min(event.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
 
-    console.log(`[version-history] Querying versions for slug="${slug}", limit=${limit}`);
+    log('INFO', 'Querying version history', { handler: 'version-history', slug, limit });
 
     if (!TABLE_NAME) {
-        console.error('[version-history] TABLE_NAME not configured');
+        log('ERROR', 'TABLE_NAME not configured', { handler: 'version-history' });
         return {
             success: false,
             slug,
@@ -109,9 +110,7 @@ export const handler = async (event: VersionHistoryInput): Promise<VersionHistor
 
         const versions = (result.Items ?? []) as ArticleVersionRecord[];
 
-        console.log(
-            `[version-history] Found ${versions.length} version(s) for "${slug}"`,
-        );
+        log('INFO', 'Version history query complete', { handler: 'version-history', slug, count: versions.length });
 
         return {
             success: true,
@@ -121,7 +120,7 @@ export const handler = async (event: VersionHistoryInput): Promise<VersionHistor
         };
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
-        console.error(`[version-history] Query failed for "${slug}": ${err.message}`);
+        log('ERROR', 'Version history query failed', { handler: 'version-history', slug, error: err.message });
 
         return {
             success: false,

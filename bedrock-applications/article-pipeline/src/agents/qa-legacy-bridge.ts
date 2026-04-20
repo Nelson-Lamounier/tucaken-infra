@@ -16,6 +16,7 @@ import {
 
 import { QA_PERSONA_SYSTEM_PROMPT } from '../prompts/qa-persona.js';
 import { estimateInvocationCost } from '../../../shared/src/metrics.js';
+import { log } from '../../../shared/src/index.js';
 import type { TokenUsage } from '../../../shared/src/metrics.js';
 
 // Re-export types for the monolith
@@ -188,7 +189,7 @@ export async function validateArticle(
         thinkingTokens: 0,
     };
     const cost = estimateInvocationCost(QA_MODEL, usage);
-    console.log(`[qa-legacy] Validation complete — score=${parsed.overallScore}, cost=$${cost.toFixed(6)}`);
+    log('INFO', 'Legacy QA validation complete', { agent: 'qa-legacy', overallScore: parsed.overallScore, cost });
 
     return parsed;
 }

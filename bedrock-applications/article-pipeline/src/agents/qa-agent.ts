@@ -20,7 +20,7 @@
  * Pipeline position: Research → Writer → **QA** → Review/Flagged
  */
 
-import { runAgent, parseJsonResponse } from '../../../shared/src/index.js';
+import { BaseAgent, parseJsonResponse, log } from '../../../shared/src/index.js';
 import { QA_PERSONA_SYSTEM_PROMPT } from '../prompts/qa-persona.js';
 import type {
     AgentConfig,
@@ -32,6 +32,25 @@ import type {
     QaValidationResult,
     WriterResult,
 } from '../../../shared/src/index.js';
+
+// =============================================================================
+// INPUT TYPE
+// =============================================================================
+
+/**
+ * Typed input for the QA Agent.
+ *
+ * Contains the Writer Agent's output for validation, plus
+ * cross-referencing context from the Research Agent.
+ */
+export interface QaAgentInput {
+    /** Writer Agent's output to validate */
+    readonly writer: WriterResult;
+    /** Technical facts from Research Agent for cross-referencing */
+    readonly technicalFacts: string[];
+    /** Pipeline mode (kb-augmented or legacy-transform) */
+    readonly mode: string;
+}
 
 // =============================================================================
 // CONFIGURATION
@@ -191,7 +210,7 @@ function parseQaResponse(responseText: string): QaValidationResult {
 }
 
 // =============================================================================
-// QA AGENT EXECUTION
+// AGENT CONFIGURATION
 // =============================================================================
 
 /**
@@ -205,12 +224,106 @@ const QA_CONFIG: AgentConfig = {
     systemPrompt: QA_PERSONA_SYSTEM_PROMPT,
 };
 
+// =============================================================================
+// QA AGENT CLASS
+// =============================================================================
+
+/**
+ * QA Agent — Quality assurance and technical accuracy validation.
+ *
+ * Extends {@link BaseAgent} to encapsulate the QA lifecycle:
+ * - Independent review across 5 quality dimensions
+ * - Cross-referencing against Research Agent's technical facts
+ * - Publish/revise/reject recommendation
+ *
+ * @example
+ * ```typescript
+ * const result = await qaAgent.execute({ writer, technicalFacts, mode }, ctx);
+ * ```
+ */
+class QaAgent extends BaseAgent<QaAgentInput, QaValidationResult, PipelineContext> {
+    protected readonly agentName = 'qa' as const;
+
+    /**
+     * Build QA configuration.
+     *
+     * @returns Static QA agent configuration
+     */
+    protected getConfig(): AgentConfig {
+        return QA_CONFIG;
+    }
+
+    /**
+     * Build the user message for QA validation.
+     *
+     * @param input - QA input with writer result and tech facts
+     * @returns Formatted user message for Bedrock
+     */
+    protected buildUserMessage(input: QaAgentInput): string {
+        return buildQaMessage(input.writer, input.technicalFacts, input.mode);
+    }
+
+    /**
+     * Parse the raw LLM text into a typed QaValidationResult.
+     *
+     * @param responseText - Raw text response from Bedrock
+     * @returns Validated QA result
+     */
+    protected parseResponse(responseText: string): QaValidationResult {
+        return parseQaResponse(responseText);
+    }
+
+    /**
+     * Pre-execution hook — logs validation context.
+     *
+     * @param input - QA input
+     */
+    protected override beforeExecute(input: QaAgentInput): void {
+        log('INFO', 'Validating article', {
+            agent: 'qa',
+            slug: input.writer.metadata.slug,
+            contentLength: input.writer.content.length,
+            writerConfidence: input.writer.metadata.technicalConfidence,
+        });
+    }
+
+    /**
+     * Post-execution hook — logs QA verdict and issue counts.
+     *
+     * @param result - QA agent result
+     * @param input  - Original QA input for writer confidence comparison
+     */
+    protected override afterExecute(result: AgentResult<QaValidationResult>, input: QaAgentInput): void {
+        const totalIssues = Object.values(result.data.dimensions)
+            .reduce((sum, dim) => sum + dim.issues.length, 0);
+        const errorCount = Object.values(result.data.dimensions)
+            .reduce((sum, dim) => sum + dim.issues.filter((i) => i.severity === 'error').length, 0);
+
+        log('INFO', 'QA review complete', {
+            agent: 'qa',
+            overallScore: result.data.overallScore,
+            recommendation: result.data.recommendation,
+            confidenceOverride: result.data.confidenceOverride,
+            writerConfidence: input.writer.metadata.technicalConfidence,
+            totalIssues,
+            errorCount,
+            passed: result.data.overallScore >= QA_PASS_THRESHOLD,
+        });
+    }
+}
+
+/** Module-level singleton — re-used across Lambda invocations. */
+const qaAgent = new QaAgent();
+
+/** Export the agent instance for direct usage. */
+export { qaAgent, QaAgent };
+
 /**
  * Execute the QA Agent.
  *
- * Performs independent quality validation of the Writer's output.
- * Returns a structured result with scores across 5 dimensions
- * and a publish/revise/reject recommendation.
+ * Backward-compatible wrapper that delegates to the
+ * {@link QaAgent} class instance. Handlers can use this
+ * without any import path changes.
  *
  * @param ctx - Pipeline context
  * @param writer - Writer result to validate
@@ -224,35 +337,5 @@ export async function executeQaAgent(
     technicalFacts: string[],
     mode: string,
 ): Promise<AgentResult<QaValidationResult>> {
-    const userMessage = buildQaMessage(writer, technicalFacts, mode);
-
-    console.log(
-        `[qa] Validating article "${writer.metadata.slug}" — ` +
-        `contentLength=${writer.content.length} chars, ` +
-        `writerConfidence=${writer.metadata.technicalConfidence}`,
-    );
-
-    const result = await runAgent<QaValidationResult>({
-        config: QA_CONFIG,
-        userMessage,
-        parseResponse: parseQaResponse,
-        pipelineContext: ctx,
-    });
-
-    // Count issues
-    const totalIssues = Object.values(result.data.dimensions)
-        .reduce((sum, dim) => sum + dim.issues.length, 0);
-    const errorCount = Object.values(result.data.dimensions)
-        .reduce((sum, dim) => sum + dim.issues.filter((i) => i.severity === 'error').length, 0);
-
-    console.log(
-        `[qa] Review complete — score=${result.data.overallScore}, ` +
-        `recommendation=${result.data.recommendation}, ` +
-        `confidenceOverride=${result.data.confidenceOverride} ` +
-        `(writer rated: ${writer.metadata.technicalConfidence}), ` +
-        `issues=${totalIssues} (${errorCount} errors), ` +
-        `passed=${result.data.overallScore >= QA_PASS_THRESHOLD}`,
-    );
-
-    return result;
+    return qaAgent.execute({ writer, technicalFacts, mode }, ctx);
 }

@@ -119,22 +119,4 @@ export interface ChatbotInvocationResult {
     readonly durationMs: number;
 }
 
-// =============================================================================
-// SECURITY TYPES
-// =============================================================================
 
-/**
- * Result of input sanitisation check.
- *
- * @property sanitised - The normalised prompt text (empty if blocked)
- * @property blocked - Whether the input was blocked by a pattern match
- * @property matchedPattern - The label of the matched pattern, if blocked
- */
-export interface SanitiseInputResult {
-    /** The sanitised (trimmed, normalised) prompt text */
-    readonly sanitised: string;
-    /** Whether the input was blocked by a pattern match */
-    readonly blocked: boolean;
-    /** The label of the matched pattern, if blocked */
-    readonly matchedPattern?: string;
-}

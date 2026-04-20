@@ -82,7 +82,7 @@ jobs:
           echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          npx tsx frontend-ops/dynamodb/migrate-articles-to-dynamodb.ts \
+          npx tsx scripts/dynamodb/migrate-articles-to-dynamodb.ts \
             --env "${{ inputs.environment }}" \
             --region "${{ env.AWS_REGION }}" 2>&1 | tee /tmp/migration-output.txt
 
@@ -93,7 +93,7 @@ jobs:
 
       - name: Verify Migration
         run: |
-          npx tsx frontend-ops/dynamodb/verify-migration.ts \
+          npx tsx scripts/dynamodb/verify-migration.ts \
             --env "${{ inputs.environment }}" \
             --region "${{ env.AWS_REGION }}" 2>&1 | tee /tmp/verify-output.txt
 

@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # Builds a Next.js Docker image from the private frontend-portfolio repo
-# and pushes it to ECR using frontend-ops/push-to-ecr.ts.
+# and pushes it to ECR using scripts/push-to-ecr.ts.
 #
 # Two-job architecture:
 #   1. Build — checks out frontend-portfolio, builds Docker image, caches
@@ -122,7 +122,7 @@ jobs:
           echo "- **Image Size**: $IMAGE_SIZE" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
-  # Job 2: Push to ECR via frontend-ops/push-to-ecr.ts
+  # Job 2: Push to ECR via scripts/push-to-ecr.ts
   # ===========================================================================
   push:
     name: Push to Registries
@@ -137,7 +137,7 @@ jobs:
 
     steps:
       # ----------------------------------------------------------------
-      # Checkout cdk-monitoring (owns frontend-ops/push-to-ecr.ts)
+      # Checkout cdk-monitoring (owns scripts/push-to-ecr.ts)
       # ----------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -197,7 +197,7 @@ jobs:
         run: |
           ECR_URL="${{ steps.resolve-ecr.outputs.ecr-url }}"
 
-          npx tsx frontend-ops/push-to-ecr.ts \
+          npx tsx scripts/push-to-ecr.ts \
             --env "${{ inputs.environment }}" \
             --tag "${{ inputs.image-tag }}" \
             --ecr-url "$ECR_URL" \

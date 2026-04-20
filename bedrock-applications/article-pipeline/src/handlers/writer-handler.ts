@@ -12,6 +12,7 @@
  */
 
 import { executeWriterAgent } from '../agents/writer-agent.js';
+import { log } from '../../../shared/src/index.js';
 import type { QaHandlerInput, WriterHandlerInput } from '../../../shared/src/index.js';
 
 /**
@@ -21,10 +22,12 @@ import type { QaHandlerInput, WriterHandlerInput } from '../../../shared/src/ind
  * @returns Updated context, research, and writer result for the QA stage
  */
 export const handler = async (event: WriterHandlerInput): Promise<QaHandlerInput> => {
-    console.log(
-        `[writer-handler] Pipeline ${event.context.pipelineId} — ` +
-        `slug: ${event.context.slug}, complexity: ${event.research.data.complexity.tier}`,
-    );
+    log('INFO', 'Writer handler invoked', {
+        handler: 'writer',
+        pipelineId: event.context.pipelineId,
+        slug: event.context.slug,
+        complexity: event.research.data.complexity.tier,
+    });
 
     const writer = await executeWriterAgent(event.context, event.research.data);
 

@@ -19,10 +19,27 @@ import {
 } from '@aws-sdk/client-bedrock-agent-runtime';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
-import { runAgent, parseJsonResponse } from '../../../shared/src/index.js';
+import { runAgent, parseJsonResponse, InputSanitiser, log } from '../../../shared/src/index.js';
+import type { PiiPattern } from '../../../shared/src/index.js';
 import { formatResumeForPrompt } from '../services/resume-service.js';
 import { RESEARCH_PERSONA_SYSTEM_PROMPT } from '../prompts/research-persona.js';
-import { sanitiseInput } from '../security/input-sanitiser.js';
+
+/**
+ * PII patterns specific to job description inputs.
+ * Flags (warns) without redacting — JDs may legitimately contain recruiter contact info.
+ */
+const STRATEGIST_PII_PATTERNS: ReadonlyArray<PiiPattern> = [
+    { regex: /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g, label: 'phone-number' },
+    { regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, label: 'email-address' },
+    { regex: /\b\d{3}-\d{2}-\d{4}\b/g, label: 'ssn-like-pattern' },
+];
+
+/** Module-scoped sanitiser with strategist-specific length and PII config */
+const inputSanitiser = new InputSanitiser({
+    minLength: 50,
+    maxLength: 50_000,
+    piiPatterns: STRATEGIST_PII_PATTERNS,
+});
 import type {
     AgentConfig,
     AgentResult,
@@ -93,7 +110,7 @@ async function querySingleKb(query: string): Promise<string[]> {
         return [];
     }
 
-    console.log(`[strategist-research] Querying KB with: "${query.substring(0, 80)}..."`);
+    log('INFO', 'Querying KB', { agent: 'strategist-research', queryPreview: query.substring(0, 80) });
 
     const command = new RetrieveCommand({
         knowledgeBaseId: KNOWLEDGE_BASE_ID,
@@ -143,9 +160,7 @@ function deduplicatePassages(passages: string[]): string {
         return true;
     });
 
-    console.log(
-        `[strategist-research] Deduplicated ${passages.length} passages → ${unique.length} unique`,
-    );
+    log('INFO', 'Deduplicated passages', { agent: 'strategist-research', total: passages.length, unique: unique.length });
 
     return unique.length > 0 ? unique.join('\n\n---\n\n') : '';
 }
@@ -190,7 +205,7 @@ async function getWikiMcpConstraints(): Promise<string> {
     if (!WIKI_MCP_URL || !authHeader) {
         return '';
     }
-    console.log('[strategist-research] Fetching resume constraints from wiki-mcp REST API');
+    log('INFO', 'Fetching resume constraints from wiki-mcp REST API', { agent: 'strategist-research' });
     const base = WIKI_MCP_URL.endsWith('/') ? WIKI_MCP_URL : `${WIKI_MCP_URL}/`;
     const url = new URL('api/constraints', base);
     try {
@@ -199,22 +214,22 @@ async function getWikiMcpConstraints(): Promise<string> {
             signal: AbortSignal.timeout(15_000),
         });
         if (!response.ok) {
-            console.warn(
-                `[strategist-research] wiki-mcp /api/constraints returned HTTP ${response.status} — continuing without constraints`,
-            );
+            log('WARN', 'wiki-mcp /api/constraints returned non-OK status — continuing without constraints', {
+                agent: 'strategist-research', statusCode: response.status,
+            });
             return '';
         }
         // TypeScript wiki-mcp returns JSON { content: string } — extract the content field
         const json = await response.json() as { content?: string };
         const text = json.content ?? '';
-        console.log(
-            `[strategist-research] wiki-mcp constraints fetched: ${(text.length / 1024).toFixed(1)}KB`,
-        );
+        log('INFO', 'wiki-mcp constraints fetched', {
+            agent: 'strategist-research', sizeKb: (text.length / 1024).toFixed(1),
+        });
         return text;
     } catch (err) {
-        console.warn(
-            `[strategist-research] wiki-mcp fetch failed (${(err as Error).message}) — continuing without constraints`,
-        );
+        log('WARN', 'wiki-mcp fetch failed — continuing without constraints', {
+            agent: 'strategist-research', error: (err as Error).message,
+        });
         return '';
     }
 }
@@ -332,14 +347,14 @@ export async function executeResearchAgent(
     ctx: StrategistPipelineContext,
 ): Promise<AgentResult<StrategistResearchResult>> {
     // 1. Sanitise input
-    console.log(`[strategist-research] Pipeline ${ctx.pipelineId} — analysing JD for "${ctx.targetRole}"`);
-    const { sanitised, warnings, injectionDetected } = sanitiseInput(ctx.jobDescription);
+    log('INFO', 'Analysing JD', { agent: 'strategist-research', pipelineId: ctx.pipelineId, targetRole: ctx.targetRole });
+    const { sanitised, warnings, injectionDetected } = inputSanitiser.sanitiseWithWarnings(ctx.jobDescription);
 
     if (injectionDetected) {
-        console.warn(`[strategist-research] Injection attempt detected — proceeding with sanitised input`);
+        log('WARN', 'Injection attempt detected — proceeding with sanitised input', { agent: 'strategist-research' });
     }
     for (const warning of warnings) {
-        console.warn(`[strategist-research] ${warning}`);
+        log('WARN', warning, { agent: 'strategist-research' });
     }
 
     // 2. Query Knowledge Base + wiki-mcp constraints in parallel
@@ -380,7 +395,7 @@ export async function executeResearchAgent(
 
         // Fallback: wiki-mcp not configured → retrieve constraints from Pinecone instead
         if (!resumeConstraints && hasKb) {
-            console.log('[strategist-research] wiki-mcp not configured — falling back to Pinecone for constraints');
+            log('INFO', 'wiki-mcp not configured — falling back to Pinecone for constraints', { agent: 'strategist-research' });
             const [agentRules, gapBoundaries, voiceLibrary] = await Promise.all([
                 querySingleKb(
                     'resume generation agent instructions confidence thresholds STRONG PARTIAL ABSENT hard rules',
@@ -396,22 +411,22 @@ export async function executeResearchAgent(
             resumeConstraints = deduplicatePassages(allConstraintPassages);
         }
 
-        console.log(
-            `[strategist-research] Retrieval complete — ` +
-            `factual=${kbContext.length > 0 ? `${(kbContext.length / 1024).toFixed(1)}KB` : 'empty'}, ` +
-            `constraints=${resumeConstraints.length > 0 ? `${(resumeConstraints.length / 1024).toFixed(1)}KB` : 'empty'} ` +
-            `(source: ${hasWikiMcp ? 'wiki-mcp' : 'pinecone'})`,
-        );
+        log('INFO', 'Retrieval complete', {
+            agent: 'strategist-research',
+            factualSizeKb: kbContext.length > 0 ? (kbContext.length / 1024).toFixed(1) : 'empty',
+            constraintsSizeKb: resumeConstraints.length > 0 ? (resumeConstraints.length / 1024).toFixed(1) : 'empty',
+            constraintSource: hasWikiMcp ? 'wiki-mcp' : 'pinecone',
+        });
     } else {
-        console.log('[strategist-research] Retrieval skipped — no KNOWLEDGE_BASE_ID or WIKI_MCP_URL configured');
+        log('INFO', 'Retrieval skipped — no KNOWLEDGE_BASE_ID or WIKI_MCP_URL configured', { agent: 'strategist-research' });
     }
 
     // 3. Read resume from pipeline context (fetched at trigger time)
     const resumeData = ctx.resumeData;
     if (!resumeData) {
-        console.log('[strategist-research] No resume data — build-from-scratch mode, KB is sole evidence source');
+        log('INFO', 'No resume data — build-from-scratch mode', { agent: 'strategist-research' });
     } else {
-        console.log(`[strategist-research] Resume loaded from context: ${resumeData.profile.name}`);
+        log('INFO', 'Resume loaded from context', { agent: 'strategist-research', profileName: resumeData.profile.name });
     }
 
     // 4. Build user message
@@ -460,24 +475,19 @@ export async function executeResearchAgent(
         },
         pipelineContext: {
             pipelineId: ctx.pipelineId,
-            slug: ctx.applicationSlug,
-            sourceKey: '',
-            bucket: ctx.bucket,
             environment: ctx.environment,
-            version: 0, // Strategist pipeline — not versioned
             cumulativeTokens: ctx.cumulativeTokens,
             cumulativeCostUsd: ctx.cumulativeCostUsd,
-            retryAttempt: 0,
-            startedAt: ctx.startedAt,
         },
     });
 
-    console.log(
-        `[strategist-research] Brief generated — fit="${result.data.overallFitRating}", ` +
-        `verified=${result.data.verifiedMatches.length}, ` +
-        `partial=${result.data.partialMatches.length}, ` +
-        `gaps=${result.data.gaps.length}`,
-    );
+    log('INFO', 'Brief generated', {
+        agent: 'strategist-research',
+        fitRating: result.data.overallFitRating,
+        verified: result.data.verifiedMatches.length,
+        partial: result.data.partialMatches.length,
+        gaps: result.data.gaps.length,
+    });
 
     return result;
 }

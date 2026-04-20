@@ -29,6 +29,8 @@ import {
     GetCommandInvocationCommand,
 } from '@aws-sdk/client-ssm';
 
+import { log } from '../../../../shared/src/index.js';
+
 const ec2 = new EC2Client({});
 const ssm = new SSMClient({});
 
@@ -199,15 +201,11 @@ async function ssmExec(
 
             if (invocation.Status === 'Failed' || invocation.Status === 'Cancelled') {
                 const stderr = invocation.StandardErrorContent?.trim() ?? 'unknown error';
-                console.error(
-                    JSON.stringify({
-                        level: 'ERROR',
-                        message: 'SSM command failed',
-                        commandId,
-                        status: invocation.Status,
-                        stderr,
-                    }),
-                );
+                log('ERROR', 'SSM command failed', {
+                    commandId,
+                    status: invocation.Status,
+                    stderr,
+                });
                 return undefined;
             }
         } catch {
@@ -215,14 +213,10 @@ async function ssmExec(
         }
     }
 
-    console.error(
-        JSON.stringify({
-            level: 'ERROR',
-            message: 'SSM command timed out',
-            commandId,
-            timeoutMs: SSM_POLL_TIMEOUT_MS,
-        }),
-    );
+    log('ERROR', 'SSM command timed out', {
+        commandId,
+        timeoutMs: SSM_POLL_TIMEOUT_MS,
+    });
     return undefined;
 }
 
@@ -271,13 +265,9 @@ function getNodeStatus(conditions: K8sNodeCondition[]): 'Ready' | 'NotReady' | '
 export async function handler(event: CheckNodeHealthInput): Promise<NodeHealthReport> {
     const { nodeNameFilter } = event;
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Checking node health',
-            nodeNameFilter: nodeNameFilter ?? 'all',
-        }),
-    );
+    log('INFO', 'Checking node health', {
+        nodeNameFilter: nodeNameFilter ?? 'all',
+    });
 
     // Step 1: Resolve control plane instance
     let controlPlaneId: string;
@@ -306,13 +296,7 @@ export async function handler(event: CheckNodeHealthInput): Promise<NodeHealthRe
         };
     }
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Control plane instance resolved',
-            instanceId: controlPlaneId,
-        }),
-    );
+    log('INFO', 'Control plane instance resolved', { instanceId: controlPlaneId });
 
     // Step 2: Run kubectl get nodes via SSM
     const kubectlCommand = 'export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl get nodes -o json';
@@ -399,16 +383,12 @@ export async function handler(event: CheckNodeHealthInput): Promise<NodeHealthRe
         nodes,
     };
 
-    console.log(
-        JSON.stringify({
-            level: 'INFO',
-            message: 'Node health check complete',
-            totalNodes: report.totalNodes,
-            readyNodes: report.readyNodes,
-            notReadyNodes: report.notReadyNodes,
-            nodeNames: nodes.map((n) => n.name),
-        }),
-    );
+    log('INFO', 'Node health check complete', {
+        totalNodes: report.totalNodes,
+        readyNodes: report.readyNodes,
+        notReadyNodes: report.notReadyNodes,
+        nodeNames: nodes.map((n) => n.name),
+    });
 
     return report;
 }

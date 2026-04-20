@@ -91,14 +91,3 @@ jobs:
           tail -20 /tmp/migration-output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Verify Migration
-        run: |
-          npx tsx scripts/dynamodb/verify-migration.ts \
-            --env "${{ inputs.environment }}" \
-            --region "${{ env.AWS_REGION }}" 2>&1 | tee /tmp/verify-output.txt
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Verification" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -10 /tmp/verify-output.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY

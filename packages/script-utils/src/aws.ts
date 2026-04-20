@@ -150,8 +150,8 @@ export function exec(
       stdio: options?.silent ? 'pipe' : ['pipe', 'pipe', 'pipe'],
     })
     return result.trim()
-  } catch (error: any) {
-    if (error.stderr) {
+  } catch (error: unknown) {
+    if (error instanceof Error && 'stderr' in error && error.stderr) {
       throw new Error(`Command failed: ${command}\n${error.stderr}`)
     }
     throw error

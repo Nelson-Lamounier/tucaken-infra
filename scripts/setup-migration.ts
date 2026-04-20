@@ -104,9 +104,10 @@ async function listProfiles(): Promise<void> {
       } catch {
         console.log(`  Region: not set`)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.log(`  Status: ✗ Invalid or expired`)
-      console.log(`  Error: ${error.message?.split('\n')[0]}`)
+      console.log(`  Error: ${msg.split('\n')[0]}`)
     }
     console.log('')
   }

@@ -185,8 +185,9 @@ async function main(): Promise<void> {
       )
       exec(`docker rm ${containerId}`, { silent: true })
       logger.success('Extracted static assets from Docker image')
-    } catch (error: any) {
-      logger.warn(`Failed to extract static assets: ${error.message}`)
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.warn(`Failed to extract static assets: ${msg}`)
     }
 
     // Delegate to sync script

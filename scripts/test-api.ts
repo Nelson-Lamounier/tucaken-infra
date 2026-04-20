@@ -93,10 +93,11 @@ async function testEndpoint(
       passed: response.ok,
       status: response.status,
     }
-  } catch (error: any) {
-    console.log(chalk.red(`Error: ${error.message}`))
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.log(chalk.red(`Error: ${msg}`))
     console.log('')
-    return { name, passed: false, detail: error.message }
+    return { name, passed: false, detail: msg }
   }
 }
 

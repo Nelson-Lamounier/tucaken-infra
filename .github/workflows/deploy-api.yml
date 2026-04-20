@@ -1,39 +1,31 @@
 # =============================================================================
-# Orchestrator: Deploy BFF API Services (Development)
+# Orchestrator: Deploy Admin API (Development)
 # =============================================================================
 #
-# CI/CD pipeline for the Node.js BFF services that live in this repo:
-#   api/admin-api/  — Cognito-protected write API (articles, assets, lambdas)
-#   api/public-api/ — Public read API (article listing, slugs, healthcheck)
+# CI/CD pipeline for the Cognito-protected admin API:
+#   api/admin-api/ — Cognito JWT auth + admin CRUD (articles, assets, drafts,
+#                    content, pipelines, resumes, finops, comments)
 #
-# Unlike deploy-frontend.yml, both services are built FROM THIS REPO (no
-# cross-repo checkout required — there is no CROSS_REPO_PAT dependency).
+# Used exclusively by the start-admin application running on the K8s cluster.
+#
+# Public API (articles, chatbot proxy, tags, resumes) has been moved to Lambda
+# in the ai-applications repo and is deployed via deploy-bedrock.yml there.
 #
 # Trigger methods:
-#   1. Push to develop with changes under api/admin-api/** or api/public-api/**
-#   2. Manual: workflow_dispatch — choose which service(s) to redeploy
-#   3. Called by _deploy-kubernetes.yml (future: post-infra-bootstrap)
+#   1. Push to develop with changes under api/admin-api/**
+#   2. Manual: workflow_dispatch
 #
-# Parallel deployment paths:
-#   ┌── build-admin-api → push-admin-api → deploy-admin-api ─────┐
-#   │                                                             ├── summary
-#   └── build-public-api → push-public-api → deploy-public-api ──┘
-#        (independent — no ordering between the two services)
+# Deployment path:
+#   build-admin-api → push-admin-api → deploy-admin-api
 #
-# ECR repos (created by CDK SharedVpcStack):
-#   admin-api  → SSM: /shared/ecr-admin-api/{env}/repository-uri
-#   public-api → SSM: /shared/ecr-public-api/{env}/repository-uri
+# ECR repo (created by CDK SharedVpcStack):
+#   admin-api → SSM: /shared/ecr-admin-api/{env}/repository-uri
 #
-# ArgoCD sync (via SSM image-uri parameters):
-#   admin-api  → /admin-api/{env}/image-uri
-#   public-api → /public-api/{env}/image-uri
-#
-# Note: The BFF services use plain Deployments (not Argo Rollouts), so there
-# is no promote step. ArgoCD detects the new image-uri and rolling-updates
-# the Deployment directly.
+# ArgoCD sync (via SSM image-uri parameter):
+#   admin-api → /admin-api/{env}/image-uri
 # =============================================================================
 
-name: "Deploy BFF APIs (Dev)"
+name: "Deploy Admin API (Dev)"
 
 on:
   push:
@@ -41,19 +33,8 @@ on:
       - develop
     paths:
       - "api/admin-api/**"
-      - "api/public-api/**"
 
   workflow_dispatch:
-    inputs:
-      apps:
-        description: "Which BFF services to deploy (both | admin-api | public-api)"
-        required: false
-        default: "both"
-        type: choice
-        options:
-          - both
-          - admin-api
-          - public-api
 
 permissions:
   id-token: write
@@ -63,101 +44,18 @@ env:
   ENVIRONMENT: development
   AWS_REGION: "eu-west-1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Composite tag prevents ECR overwrites on pipeline retries
   IMAGE_TAG: "${{ github.sha }}-r${{ github.run_attempt }}"
 
-# ===========================================================================
-# Concurrency: only one API deployment per ref at a time.
-# ===========================================================================
 concurrency:
-  group: deploy-api-${{ github.ref }}
+  group: deploy-admin-api-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # ===========================================================================
-  # Resolve which services to deploy based on trigger + changed paths
-  # ===========================================================================
-  resolve-targets:
-    name: Resolve Deploy Targets
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    outputs:
-      deploy-admin-api: ${{ steps.targets.outputs.deploy-admin-api }}
-      deploy-public-api: ${{ steps.targets.outputs.deploy-public-api }}
-
-    steps:
-      - name: Guard — develop branch only
-        if: github.ref != 'refs/heads/develop'
-        run: |
-          echo "::error::This workflow only runs on the develop branch (got: ${{ github.ref }})"
-          exit 1
-
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 2 # Need parent commit to detect which paths changed
-
-      - name: Compute targets
-        id: targets
-        run: |
-          APPS="${{ github.event.inputs.apps || 'both' }}"
-
-          # For push events with path filters: apply changed-path logic.
-          # For workflow_dispatch: honour the explicit `apps` input.
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
-            echo "Changed files:"
-            echo "$CHANGED"
-
-            # If anything under api/admin-api changed, include it
-            if echo "$CHANGED" | grep -q "^api/admin-api/"; then
-              DEPLOY_ADMIN_API="true"
-            else
-              DEPLOY_ADMIN_API="false"
-            fi
-
-            # If anything under api/public-api changed, include it
-            if echo "$CHANGED" | grep -q "^api/public-api/"; then
-              DEPLOY_PUBLIC_API="true"
-            else
-              DEPLOY_PUBLIC_API="false"
-            fi
-          else
-            # Manual trigger — honour apps input
-            case "$APPS" in
-              admin-api)
-                DEPLOY_ADMIN_API="true"
-                DEPLOY_PUBLIC_API="false"
-                ;;
-              public-api)
-                DEPLOY_ADMIN_API="false"
-                DEPLOY_PUBLIC_API="true"
-                ;;
-              *)
-                DEPLOY_ADMIN_API="true"
-                DEPLOY_PUBLIC_API="true"
-                ;;
-            esac
-          fi
-
-          echo "deploy-admin-api=$DEPLOY_ADMIN_API" >> $GITHUB_OUTPUT
-          echo "deploy-public-api=$DEPLOY_PUBLIC_API" >> $GITHUB_OUTPUT
-          echo "Deploy targets: admin-api=$DEPLOY_ADMIN_API, public-api=$DEPLOY_PUBLIC_API"
-
-  # ===========================================================================
-  # ── ADMIN-API ───────────────────────────────────────────────────────────────
-  # ===========================================================================
-
-  # ---------------------------------------------------------------------------
   # Job: Build admin-api Docker image
-  # Build context is the REPO ROOT so that `yarn workspaces focus` can locate
-  # the workspace root package.json. The Dockerfile uses `WORKDIR /app` and
-  # COPY paths relative to the repo root.
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   build-admin-api:
     name: "[Admin API] Build Docker Image"
-    needs: [resolve-targets]
-    if: needs.resolve-targets.outputs.deploy-admin-api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ vars.ENVIRONMENT || 'development' }}
@@ -172,8 +70,6 @@ jobs:
       - name: Build Docker Image (admin-api)
         uses: docker/build-push-action@v6
         with:
-          # Build context MUST be the repo root — the Dockerfile references
-          # workspace root manifests (package.json, yarn.lock, .yarn/).
           context: .
           file: api/admin-api/Dockerfile
           push: false
@@ -198,13 +94,12 @@ jobs:
           echo "- **Size**: $IMAGE_SIZE" >> $GITHUB_STEP_SUMMARY
           echo "- **Dockerfile**: api/admin-api/Dockerfile" >> $GITHUB_STEP_SUMMARY
 
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   # Job: Push admin-api image to ECR
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
   push-admin-api:
     name: "[Admin API] Push to ECR"
-    needs: [resolve-targets, build-admin-api]
-    if: needs.resolve-targets.outputs.deploy-admin-api == 'true'
+    needs: [build-admin-api]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: ${{ vars.ENVIRONMENT || 'development' }}
@@ -231,23 +126,18 @@ jobs:
           fail-on-cache-miss: true
 
       - name: Load Docker Image
-        run: |
-          docker load -i /tmp/admin-api-image.tar
-          echo "[PASS] admin-api image loaded"
+        run: docker load -i /tmp/admin-api-image.tar
 
       - name: Resolve ECR URL (admin-api)
         id: resolve-ecr
         run: |
-          # SSM path created by CDK SharedVpcStack AdminApiEcrRepository block:
-          #   /shared/ecr-admin-api/{env}/repository-uri
           ECR_URL=$(aws ssm get-parameter \
             --name "/shared/ecr-admin-api/${{ env.ENVIRONMENT }}/repository-uri" \
             --query 'Parameter.Value' \
             --output text)
 
           if [ -z "$ECR_URL" ] || [ "$ECR_URL" = "None" ]; then
-            echo "::error::admin-api ECR URL not found at /shared/ecr-admin-api/${{ env.ENVIRONMENT }}/repository-uri"
-            echo "::error::Ensure the CDK VPC stack has been deployed with createAdminApiEcrRepository=true"
+            echo "::error::admin-api ECR URL not found — deploy CDK SharedVpcStack first"
             exit 1
           fi
 
@@ -265,20 +155,17 @@ jobs:
           docker tag "admin-api:${TAG}" "${ECR_URL}:${TAG}"
           docker push "${ECR_URL}:${TAG}"
 
-          echo "[PASS] admin-api image pushed: ${ECR_URL}:${TAG}"
-
       - name: Push Summary
         run: |
           echo "## [Admin API] ECR Push" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag**: ${{ env.IMAGE_TAG }} ✅" >> $GITHUB_STEP_SUMMARY
 
-  # ---------------------------------------------------------------------------
-  # Job: Write image URI to SSM so ArgoCD Image Updater picks it up
-  # ---------------------------------------------------------------------------
+  # ===========================================================================
+  # Job: Write image URI to SSM + apply K8s resources via in-cluster runner
+  # ===========================================================================
   deploy-admin-api:
     name: "[Admin API] Update SSM → ArgoCD"
-    needs: [resolve-targets, push-admin-api]
-    if: needs.resolve-targets.outputs.deploy-admin-api == 'true'
+    needs: [push-admin-api]
     runs-on: k8s-runner
     timeout-minutes: 10
     environment: development
@@ -292,7 +179,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure AWS Credentials
         uses: ./.github/actions/configure-aws
@@ -307,7 +193,6 @@ jobs:
             --name "/shared/ecr-admin-api/${{ env.ENVIRONMENT }}/repository-uri" \
             --query 'Parameter.Value' \
             --output text)
-
           IMAGE_URI="${ECR_URL}:${{ env.IMAGE_TAG }}"
           echo "::add-mask::$ECR_URL"
           echo "::add-mask::$IMAGE_URI"
@@ -315,37 +200,12 @@ jobs:
 
       - name: Write Image URI to SSM
         run: |
-          # ArgoCD Image Updater polls this SSM parameter for the admin-api app.
-          # The parameter name matches the annotation in the admin-api ArgoCD Application:
-          #   argocd-image-updater.argoproj.io/image-list: admin-api=<ecr-uri>
           aws ssm put-parameter \
             --name "/admin-api/${{ env.ENVIRONMENT }}/image-uri" \
             --value "${{ steps.resolve.outputs.image-uri }}" \
             --type String \
             --overwrite
 
-          echo "[PASS] admin-api image URI written to SSM — ArgoCD will rolling-update the Deployment"
-
-
-
-      # -------------------------------------------------------------------------
-      # Apply admin-api K8s resources directly from the runner (in-cluster).
-      #
-      # The runner pod runs inside the cluster — no SSM hop, no S3 sync,
-      # no pip install on the control-plane node.
-      #
-      # deploy.py creates (sole owner — ArgoCD never touches these):
-      #   admin-api-secrets  (Opaque Secret)  — Cognito auth creds
-      #   admin-api-config   (ConfigMap)      — DynamoDB, S3, Lambda refs
-      #   admin-api          (IngressRoute)   — Traefik routing rule
-      #
-      # Kubeconfig fetched from SSM (/k8s/{env}/kubeconfig — SecureString
-      # published by control-plane bootstrap on every kubeadm init/restore).
-      # Server URL rewritten from 127.0.0.1:6443 (SSM tunnel) to
-      # kubernetes.default.svc:443 (in-cluster DNS). Same CA cert validates both.
-      #
-      # kubectl required by admin-api/deploy.py for IngressRoute apply (subprocess).
-      # -------------------------------------------------------------------------
       - name: Set up in-cluster kubeconfig
         run: |
           aws ssm get-parameter \
@@ -358,7 +218,7 @@ jobs:
             > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
 
-      - name: Apply admin-api K8s resources (Secret + ConfigMap + IngressRoute)
+      - name: Apply admin-api K8s resources
         env:
           KUBECONFIG: /tmp/kubeconfig
           AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
@@ -377,274 +237,5 @@ jobs:
       - name: Deploy Summary
         run: |
           echo "## [Admin API] Kubernetes Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "- **SSM Parameter**: \`/admin-api/${{ env.ENVIRONMENT }}/image-uri\` ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **SSM**: \`/admin-api/${{ env.ENVIRONMENT }}/image-uri\` ✅" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag**: ${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ArgoCD Image Updater will detect the new tag and rolling-update the admin-api Deployment." >> $GITHUB_STEP_SUMMARY
-
-  # ===========================================================================
-  # ── PUBLIC-API ──────────────────────────────────────────────────────────────
-  # ===========================================================================
-
-  # ---------------------------------------------------------------------------
-  # Job: Build public-api Docker image
-  # ---------------------------------------------------------------------------
-  build-public-api:
-    name: "[Public API] Build Docker Image"
-    needs: [resolve-targets]
-    if: needs.resolve-targets.outputs.deploy-public-api == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: ${{ vars.ENVIRONMENT || 'development' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image (public-api)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: api/public-api/Dockerfile
-          push: false
-          load: false
-          tags: public-api:${{ env.IMAGE_TAG }}
-          cache-from: type=gha,scope=public-api
-          cache-to: type=gha,mode=max,scope=public-api
-          provenance: false
-          outputs: type=docker,dest=/tmp/public-api-image.tar
-
-      - name: Cache Public-API Image
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          path: /tmp/public-api-image.tar
-          key: public-api-image-${{ env.ENVIRONMENT }}-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Build Summary
-        run: |
-          IMAGE_SIZE=$(du -sh /tmp/public-api-image.tar | cut -f1)
-          echo "## [Public API] Docker Build" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag**: ${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Size**: $IMAGE_SIZE" >> $GITHUB_STEP_SUMMARY
-          echo "- **Dockerfile**: api/public-api/Dockerfile" >> $GITHUB_STEP_SUMMARY
-
-  # ---------------------------------------------------------------------------
-  # Job: Push public-api image to ECR
-  # ---------------------------------------------------------------------------
-  push-public-api:
-    name: "[Public API] Push to ECR"
-    needs: [resolve-targets, build-public-api]
-    if: needs.resolve-targets.outputs.deploy-public-api == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: ${{ vars.ENVIRONMENT || 'development' }}
-
-    permissions:
-      id-token: write
-      contents: write   # Required: commits .argocd-source-public-api.yaml back to develop
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 1
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure AWS Credentials
-        uses: ./.github/actions/configure-aws
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Restore Public-API Image from Cache
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          path: /tmp/public-api-image.tar
-          key: public-api-image-${{ env.ENVIRONMENT }}-${{ github.run_id }}-${{ github.run_attempt }}
-          fail-on-cache-miss: true
-
-      - name: Load Docker Image
-        run: |
-          docker load -i /tmp/public-api-image.tar
-          echo "[PASS] public-api image loaded"
-
-      - name: Resolve ECR URL (public-api)
-        id: resolve-ecr
-        run: |
-          # SSM path created by CDK SharedVpcStack PublicApiEcrRepository block:
-          #   /shared/ecr-public-api/{env}/repository-uri
-          ECR_URL=$(aws ssm get-parameter \
-            --name "/shared/ecr-public-api/${{ env.ENVIRONMENT }}/repository-uri" \
-            --query 'Parameter.Value' \
-            --output text)
-
-          if [ -z "$ECR_URL" ] || [ "$ECR_URL" = "None" ]; then
-            echo "::error::public-api ECR URL not found at /shared/ecr-public-api/${{ env.ENVIRONMENT }}/repository-uri"
-            echo "::error::Ensure the CDK VPC stack has been deployed with createPublicApiEcrRepository=true"
-            exit 1
-          fi
-
-          echo "::add-mask::$ECR_URL"
-          echo "ecr-url=$ECR_URL" >> $GITHUB_OUTPUT
-
-      - name: Push Public-API Image to ECR
-        run: |
-          ECR_URL="${{ steps.resolve-ecr.outputs.ecr-url }}"
-          TAG="${{ env.IMAGE_TAG }}"
-
-          aws ecr get-login-password --region "${{ env.AWS_REGION }}" \
-            | docker login --username AWS --password-stdin "$ECR_URL"
-
-          docker tag "public-api:${TAG}" "${ECR_URL}:${TAG}"
-          docker push "${ECR_URL}:${TAG}"
-
-          echo "[PASS] public-api image pushed: ${ECR_URL}:${TAG}"
-
-      - name: Push Summary
-        run: |
-          echo "## [Public API] ECR Push" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag**: ${{ env.IMAGE_TAG }} ✅" >> $GITHUB_STEP_SUMMARY
-
-  # ---------------------------------------------------------------------------
-  # Job: Write image URI to SSM so ArgoCD Image Updater picks it up
-  # ---------------------------------------------------------------------------
-  deploy-public-api:
-    name: "[Public API] Update SSM → ArgoCD"
-    needs: [resolve-targets, push-public-api]
-    if: needs.resolve-targets.outputs.deploy-public-api == 'true'
-    runs-on: k8s-runner
-    timeout-minutes: 10
-    environment: development
-
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 1
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure AWS Credentials
-        uses: ./.github/actions/configure-aws
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Resolve Image URI
-        id: resolve
-        run: |
-          ECR_URL=$(aws ssm get-parameter \
-            --name "/shared/ecr-public-api/${{ env.ENVIRONMENT }}/repository-uri" \
-            --query 'Parameter.Value' \
-            --output text)
-
-          IMAGE_URI="${ECR_URL}:${{ env.IMAGE_TAG }}"
-          echo "::add-mask::$ECR_URL"
-          echo "::add-mask::$IMAGE_URI"
-          echo "image-uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-
-      - name: Write Image URI to SSM
-        run: |
-          aws ssm put-parameter \
-            --name "/public-api/${{ env.ENVIRONMENT }}/image-uri" \
-            --value "${{ steps.resolve.outputs.image-uri }}" \
-            --type String \
-            --overwrite
-
-          echo "[PASS] public-api image URI written to SSM — ArgoCD will rolling-update the Deployment"
-
-
-
-      # -------------------------------------------------------------------------
-      # Apply public-api K8s resources directly from the runner (in-cluster).
-      #
-      # The runner pod runs inside the cluster — no SSM hop, no S3 sync.
-      #
-      # deploy.py creates (sole owner — ArgoCD never touches these):
-      #   public-api-config  (ConfigMap)    — DynamoDB table names, region
-      #   public-api         (IngressRoute) — Traefik /api/* routing rule
-      #
-      # Kubeconfig fetched from SSM with server URL rewritten for in-cluster
-      # routing (127.0.0.1:6443 → kubernetes.default.svc:443).
-      #
-      # public-api/deploy.py uses the Python kubernetes client only (no kubectl
-      # subprocess) — kubectl is only needed here for the ArgoCD sync trigger.
-      # -------------------------------------------------------------------------
-      - name: Set up in-cluster kubeconfig
-        run: |
-          aws ssm get-parameter \
-            --name "/k8s/${{ env.ENVIRONMENT }}/kubeconfig" \
-            --with-decryption \
-            --region "${{ env.AWS_REGION }}" \
-            --query 'Parameter.Value' \
-            --output text \
-            | sed 's|https://127.0.0.1:6443|https://kubernetes.default.svc:443|g' \
-            > /tmp/kubeconfig
-          chmod 600 /tmp/kubeconfig
-
-      - name: Apply public-api K8s resources (ConfigMap + IngressRoute)
-        env:
-          KUBECONFIG: /tmp/kubeconfig
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
-          PYTHONPATH: kubernetes-app/k8s-bootstrap
-        run: |
-          python3 -m venv /tmp/deploy-venv
-          /tmp/deploy-venv/bin/pip install -q -r kubernetes-app/k8s-bootstrap/deploy_helpers/requirements.txt
-          /tmp/deploy-venv/bin/python3 kubernetes-app/workloads/charts/public-api/deploy.py
-
-      - name: Trigger ArgoCD Sync
-        run: |
-          kubectl annotate application public-api -n argocd \
-            argocd.argoproj.io/refresh=hard --overwrite \
-            --kubeconfig /tmp/kubeconfig
-
-      - name: Deploy Summary
-        run: |
-          echo "## [Public API] Kubernetes Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "- **SSM Parameter**: \`/public-api/${{ env.ENVIRONMENT }}/image-uri\` ✅" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag**: ${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ArgoCD Image Updater will detect the new tag and rolling-update the public-api Deployment." >> $GITHUB_STEP_SUMMARY
-
-  # ===========================================================================
-  # Summary
-  # ===========================================================================
-  summary:
-    name: "Deployment Summary"
-    needs:
-      - resolve-targets
-      - deploy-admin-api
-      - deploy-public-api
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Final Summary
-        run: |
-          echo "# BFF API Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-
-          ADMIN_STATUS="${{ needs.deploy-admin-api.result }}"
-          PUBLIC_STATUS="${{ needs.deploy-public-api.result }}"
-
-          [[ "$ADMIN_STATUS" == "success" ]] && ADMIN_ICON="✅" || ADMIN_ICON="⏭️ (skipped or failed)"
-          [[ "$PUBLIC_STATUS" == "success" ]] && PUBLIC_ICON="✅" || PUBLIC_ICON="⏭️ (skipped or failed)"
-
-          echo "| admin-api  | ${ADMIN_ICON} ${ADMIN_STATUS} |" >> $GITHUB_STEP_SUMMARY
-          echo "| public-api | ${PUBLIC_ICON} ${PUBLIC_STATUS} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image tag**: \`${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ Prerequisite: CDK VPC stack must be deployed with BFF ECR repos enabled." >> $GITHUB_STEP_SUMMARY
-          echo "Expected SSM paths:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`/shared/ecr-admin-api/development/repository-uri\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`/shared/ecr-public-api/development/repository-uri\`" >> $GITHUB_STEP_SUMMARY

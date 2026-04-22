@@ -4,11 +4,9 @@
 # Single-trigger workflow that deploys the entire K8s platform from scratch.
 # Chains all existing reusable workflows in dependency order:
 #
-#   Phase 1: Foundation     →  Shared VPC + Security + FinOps  (_deploy-stack.yml × 3)
-#   Phase 2: K8s Infra      →  10-stack K8s deployment   (_deploy-kubernetes.yml)
-#   Phase 3: SSM Bootstrap  →  Bootstrap + secrets          (_deploy-ssm-automation.yml)
-#   Phase 4: GitOps         →  Validate + ArgoCD sync    (gitops-k8s.yml)
-#   Phase 5: Summary        →  Aggregated results        (inline)
+#   Phase 1: Foundation  →  Shared VPC + Security + FinOps  (_deploy-stack.yml × 3)
+#   Phase 2: K8s Infra   →  9-stack K8s deployment          (_deploy-kubernetes.yml)
+#   Phase 3: Summary     →  Aggregated results               (inline)
 #
 # Each phase is gated on the previous phase's success.
 # Each phase is independently toggleable via workflow_dispatch inputs.
@@ -41,16 +39,6 @@ on:
         default: true
       deploy-kubernetes:
         description: "Phase 2: Deploy K8s Infrastructure"
-        required: false
-        type: boolean
-        default: true
-      deploy-ssm:
-        description: "Phase 3: Deploy SSM Automation + Bootstrap"
-        required: false
-        type: boolean
-        default: true
-      deploy-gitops:
-        description: "Phase 4: GitOps Validation + ArgoCD Sync"
         required: false
         type: boolean
         default: true
@@ -119,8 +107,6 @@ jobs:
           echo "| **Environment** | $ENV |" >> $GITHUB_STEP_SUMMARY
           echo "| **Deploy Shared** | ${{ inputs.deploy-shared }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Deploy K8s** | ${{ inputs.deploy-kubernetes }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Deploy SSM** | ${{ inputs.deploy-ssm }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Deploy GitOps** | ${{ inputs.deploy-gitops }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Skip Verification** | ${{ inputs.skip-verification }} |" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
@@ -173,9 +159,9 @@ jobs:
       AWS_OIDC_ROLE: ${{ secrets.AWS_OIDC_ROLE }}
 
   # ===========================================================================
-  # Phase 2: K8s Infrastructure — 10-Stack Deployment
+  # Phase 2: K8s Infrastructure — 9-Stack Deployment
   #
-  # Internally orchestrates: Data → Base → GoldenAmi → SSM → Compute → Workers → AppIam → Edge
+  # Internally orchestrates: Data → Base → ControlPlane → GeneralPool → MonitoringPool → AppIam → Api → Edge → Observability
   # See _deploy-kubernetes.yml for the full internal graph.
   # ===========================================================================
   deploy-kubernetes:
@@ -196,48 +182,11 @@ jobs:
     secrets: inherit
 
   # ===========================================================================
-  # Phase 3: SSM Bootstrap — Sync Scripts + Trigger Bootstrap
-  #
-  # Syncs bootstrap scripts to S3, triggers SSM Automation on all nodes
-  # (control-plane first, then workers), and deploys app secrets.
-  # SSM Automation CDK stack was already deployed in Phase 2.
-  # ===========================================================================
-  deploy-ssm:
-    name: "Phase 3: SSM Bootstrap"
-    needs: [gate, deploy-kubernetes]
-    if: >-
-      always()
-      && inputs.deploy-ssm
-      && (needs.deploy-kubernetes.result == 'success' || needs.deploy-kubernetes.result == 'skipped')
-    uses: ./.github/workflows/_deploy-ssm-automation.yml
-    with:
-      environment: ${{ inputs.environment }}
-      cdk-environment: ${{ needs.gate.outputs.cdk-environment }}
-      trigger-bootstrap: true
-    secrets: inherit
-
-  # ===========================================================================
-  # Phase 4: GitOps — Validate Charts + Verify ArgoCD Sync
-  #
-  # Validates Helm charts and YAML, then polls ArgoCD API to confirm
-  # all Applications reached Synced + Healthy state.
-  # ===========================================================================
-  deploy-gitops:
-    name: "Phase 4: GitOps"
-    needs: [gate, deploy-ssm]
-    if: >-
-      always()
-      && inputs.deploy-gitops
-      && (needs.deploy-ssm.result == 'success' || needs.deploy-ssm.result == 'skipped')
-    uses: ./.github/workflows/gitops-k8s.yml
-    secrets: inherit
-
-  # ===========================================================================
-  # Phase 5: Orchestration Summary
+  # Phase 3: Orchestration Summary
   # ===========================================================================
   summary:
     name: "Orchestration Summary"
-    needs: [gate, deploy-shared, deploy-security, deploy-finops, deploy-kubernetes, deploy-ssm, deploy-gitops]
+    needs: [gate, deploy-shared, deploy-security, deploy-finops, deploy-kubernetes]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
@@ -253,9 +202,7 @@ jobs:
           echo "| 1a. Foundation | Shared VPC + ECR | \`${{ needs.deploy-shared.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 1b. Foundation | Security Baseline | \`${{ needs.deploy-security.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| 1c. Foundation | FinOps | \`${{ needs.deploy-finops.result }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 2. K8s Infra | 10-Stack Deploy | \`${{ needs.deploy-kubernetes.result }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 3. SSM Bootstrap | Bootstrap + Secrets | \`${{ needs.deploy-ssm.result }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 4. GitOps | Validate + ArgoCD Sync | \`${{ needs.deploy-gitops.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2. K8s Infra | 9-Stack Deploy | \`${{ needs.deploy-kubernetes.result }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Overall verdict
@@ -263,9 +210,7 @@ jobs:
             && [[ "${{ needs.deploy-shared.result }}" =~ ^(success|skipped)$ ]] \
             && [[ "${{ needs.deploy-security.result }}" =~ ^(success|skipped)$ ]] \
             && [[ "${{ needs.deploy-finops.result }}" =~ ^(success|skipped)$ ]] \
-            && [[ "${{ needs.deploy-kubernetes.result }}" =~ ^(success|skipped)$ ]] \
-            && [[ "${{ needs.deploy-ssm.result }}" =~ ^(success|skipped)$ ]] \
-            && [[ "${{ needs.deploy-gitops.result }}" =~ ^(success|skipped)$ ]]; then
+            && [[ "${{ needs.deploy-kubernetes.result }}" =~ ^(success|skipped)$ ]]; then
             echo "### ✅ Day-1 Orchestration Complete" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "All phases completed successfully for **${{ inputs.environment }}**." >> $GITHUB_STEP_SUMMARY

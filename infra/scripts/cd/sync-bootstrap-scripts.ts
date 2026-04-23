@@ -6,10 +6,7 @@
  * bootstrap / deploy scripts to S3.
  *
  * Sync targets:
- *   1. k8s-bootstrap/     → s3://{bucket}/k8s-bootstrap/
- *   2. workloads/charts/nextjs/      → s3://{bucket}/app-deploy/nextjs/      (excl. chart/, nextjs-values.yaml)
- *   3. platform/charts/monitoring/   → s3://{bucket}/app-deploy/monitoring/  (excl. chart/)
- *   4. workloads/charts/start-admin/ → s3://{bucket}/app-deploy/start-admin/ (excl. chart/, start-admin-values.yaml)
+ *   1. k8s-bootstrap/ → s3://{bucket}/k8s-bootstrap/
  *
  * Usage:
  *   npx tsx sync-bootstrap-scripts.ts \
@@ -104,48 +101,6 @@ const SYNC_TARGETS: SyncTarget[] = [
         s3Prefix: 'k8s-bootstrap/',
         excludes: [],
         optional: false,
-    },
-    {
-        label: 'Next.js App Deploy Scripts',
-        sourceDir: 'kubernetes-app/workloads/charts/nextjs',
-        s3Prefix: 'app-deploy/nextjs/',
-        excludes: ['chart/*', 'nextjs-values.yaml', '__pycache__/*'],
-        optional: true,
-    },
-    {
-        label: 'Monitoring Deploy Scripts',
-        sourceDir: 'kubernetes-app/platform/charts/monitoring',
-        s3Prefix: 'app-deploy/monitoring/',
-        excludes: ['chart/*', '__pycache__/*'],
-        optional: true,
-    },
-    {
-        label: 'Start-Admin Deploy Scripts',
-        sourceDir: 'kubernetes-app/workloads/charts/start-admin',
-        s3Prefix: 'app-deploy/start-admin/',
-        excludes: ['chart/*', 'start-admin-values.yaml', '__pycache__/*'],
-        optional: true,
-    },
-    {
-        label: 'Admin-API Deploy Scripts',
-        sourceDir: 'kubernetes-app/workloads/charts/admin-api',
-        s3Prefix: 'app-deploy/admin-api/',
-        excludes: ['chart/*', '__pycache__/*'],
-        optional: true,
-    },
-    {
-        label: 'Public-API Deploy Scripts',
-        sourceDir: 'kubernetes-app/workloads/charts/public-api',
-        s3Prefix: 'app-deploy/public-api/',
-        excludes: ['chart/*', '__pycache__/*'],
-        optional: true,
-    },
-    {
-        label: 'Wiki-MCP Deploy Scripts',
-        sourceDir: 'kubernetes-app/workloads/charts/wiki-mcp',
-        s3Prefix: 'app-deploy/wiki-mcp/',
-        excludes: ['chart/*', 'wiki-mcp-values.yaml', '__pycache__/*'],
-        optional: true,
     },
 ];
 

@@ -12,13 +12,6 @@
   "files": [],
   "references": [
     { "path": "infra" },
-    { "path": "bedrock-applications/shared" },
-    { "path": "bedrock-applications/article-pipeline" },
-    { "path": "bedrock-applications/self-healing" },
-    { "path": "bedrock-applications/chatbot" },
     { "path": "packages/cdk-governance-aspects" },
-    { "path": "mcp-servers/mcp-infra-server" },
-    { "path": "mcp-servers/mcp-portfolio-docs" },
-    { "path": "mcp-servers/mcp-infra-diagram" }
   ]
 }

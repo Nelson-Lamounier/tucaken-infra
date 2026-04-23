@@ -13,6 +13,10 @@
 # This file is the single CLI entry point for local development.
 # CI/CD pipelines also use 'just' for code quality tasks (lint, build, typecheck).
 
+# CDK project root (infra/ contains cdk.json) — used by @nelson-lamounier/cdk-deploy-scripts
+export CDK_PROJECT_ROOT := "infra"
+export CDK_STACKS_CONFIG := justfile_directory() + "/infra/scripts/shared/stacks.js"
+
 # Default recipe — show help
 default:
     @just --list --unsorted
@@ -343,63 +347,63 @@ ci-synth-validate:
 # Called by: .github/workflows/_deploy-kubernetes.yml → setup job
 [group('ci')]
 ci-pipeline-setup:
-    npx tsx infra/scripts/ci/pipeline-setup.ts
+    npx cdk-pipeline-setup
 
 # CI synth: synthesize + output stack names (e.g., just ci-synth kubernetes development)
 # Used by deployment pipelines to get ordered stack names for targeted deploys.
 # Called by: .github/workflows/_deploy-kubernetes.yml
 [group('ci')]
 ci-synth project environment:
-    npx tsx infra/scripts/ci/synthesize.ts {{project}} {{environment}}
+    npx cdk-synthesize {{project}} {{environment}}
 
 # CI preflight: validate inputs, verify credentials and bootstrap
 [group('ci')]
 ci-preflight *ARGS:
-    npx tsx infra/scripts/ci/preflight-checks.ts {{ARGS}}
+    npx cdk-preflight {{ARGS}}
 
 # CI rescue: detect and import orphaned CloudFormation resources before deploy
 [group('ci')]
 ci-cfn-rescue *ARGS:
-    npx tsx infra/scripts/ci/cfn-import-rescue.ts {{ARGS}}
+    npx cdk-cfn-rescue {{ARGS}}
 
 # CI deploy: deploy a specific stack (e.g., just ci-deploy ControlPlane-development)
 [group('ci')]
 ci-deploy *ARGS:
-    npx tsx infra/scripts/cd/deploy.ts {{ARGS}}
+    npx cdk-deploy {{ARGS}}
 
 # CI rollback: rollback a failed deployment
 [group('ci')]
 ci-rollback *ARGS:
-    npx tsx infra/scripts/cd/diagnose-rollback.ts {{ARGS}} --mode rollback
+    npx cdk-diagnose {{ARGS}} --mode rollback
 
 # CI drift detection
 [group('ci')]
 ci-drift *ARGS:
-    npx tsx infra/scripts/ci/drift-detection.ts {{ARGS}}
+    npx cdk-drift {{ARGS}}
 
 # CI log group audit: find empty CloudWatch log groups (no streams)
 [group('ci')]
 ci-log-audit *ARGS:
-    npx tsx infra/scripts/ci/log-group-audit.ts {{ARGS}}
+    npx cdk-log-audit {{ARGS}}
 
 # CI security scan: run Checkov against synthesised CDK templates
 # Blocks on CRITICAL/HIGH findings. Use --soft-fail for advisory mode.
 # Called by: .github/workflows/ci.yml → iac-security-scan job
 [group('ci')]
 ci-security-scan *ARGS:
-    npx tsx infra/scripts/ci/security-scan.ts {{ARGS}}
+    npx cdk-security-scan {{ARGS}}
 
 
 
 # CI diagnose: diagnose a failed CloudFormation stack deployment
 [group('ci')]
 ci-diagnose *ARGS:
-    npx tsx infra/scripts/cd/diagnose-rollback.ts {{ARGS}} --mode diagnose
+    npx cdk-diagnose {{ARGS}} --mode diagnose
 
 # CI failure report: aggregate multi-stack diagnostics for failed deployment
 [group('ci')]
 ci-failure-report *ARGS:
-    npx tsx infra/scripts/cd/deployment-failure-report.ts {{ARGS}}
+    npx cdk-failure-report {{ARGS}}
 
 # CI sync-scripts: sync bootstrap and deploy scripts to S3
 [group('ci')]
@@ -437,13 +441,13 @@ ci-deploy-admin-secrets *ARGS:
 # CI finalize: collect outputs, write summary, save artifacts
 [group('ci')]
 ci-finalize-deployment *ARGS:
-    npx tsx infra/scripts/cd/finalize.ts {{ARGS}}
+    npx cdk-finalize {{ARGS}}
 
 # CI summary: generate pipeline-wide deployment summary
 # Usage: just ci-summary kubernetes development
 [group('ci')]
 ci-summary *ARGS:
-    npx tsx infra/scripts/cd/finalize.ts {{ARGS}} --mode pipeline-summary
+    npx cdk-finalize {{ARGS}} --mode pipeline-summary
 
 # CI verify ArgoCD: poll ArgoCD API for sync status
 # Usage: just ci-verify-argocd --environment development --region eu-west-1

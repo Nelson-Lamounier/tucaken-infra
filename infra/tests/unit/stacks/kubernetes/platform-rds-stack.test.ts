@@ -33,7 +33,7 @@ function createStack(overrides?: Partial<ConstructorParameters<typeof PlatformRd
 
 describe('PlatformRdsStack', () => {
     describe('RDS instance', () => {
-        it('creates a PostgreSQL 16 instance', () => {
+        it('should create a PostgreSQL 16 instance', () => {
             const { template } = createStack();
             template.hasResourceProperties('AWS::RDS::DBInstance', {
                 Engine: 'postgres',
@@ -44,14 +44,14 @@ describe('PlatformRdsStack', () => {
             });
         });
 
-        it('is NOT publicly accessible', () => {
+        it('should not be publicly accessible', () => {
             const { template } = createStack();
             template.hasResourceProperties('AWS::RDS::DBInstance', {
                 PubliclyAccessible: false,
             });
         });
 
-        it('has deletion protection disabled in development', () => {
+        it('should have deletion protection disabled in development', () => {
             const { template } = createStack();
             template.hasResourceProperties('AWS::RDS::DBInstance', {
                 DeletionProtection: false,
@@ -60,7 +60,7 @@ describe('PlatformRdsStack', () => {
     });
 
     describe('Security group', () => {
-        it('allows TCP 5432 inbound from VPC CIDR', () => {
+        it('should allow TCP 5432 inbound from VPC CIDR', () => {
             const { template } = createStack();
             template.hasResourceProperties('AWS::EC2::SecurityGroup', {
                 SecurityGroupIngress: Match.arrayWith([
@@ -85,7 +85,7 @@ describe('PlatformRdsStack', () => {
             '/k8s/development/platform-rds/sg-id',
         ];
 
-        it.each(ssmPaths)('publishes SSM parameter %s', (path) => {
+        it.each(ssmPaths)('should publish SSM parameter %s', (path) => {
             const { template } = createStack();
             template.hasResourceProperties('AWS::SSM::Parameter', {
                 Name: path,
@@ -95,7 +95,7 @@ describe('PlatformRdsStack', () => {
     });
 
     describe('Secrets Manager', () => {
-        it('creates a generated secret for the RDS credentials', () => {
+        it('should create a generated secret for the RDS credentials', () => {
             const { template } = createStack();
             template.hasResourceProperties('AWS::SecretsManager::Secret', {
                 Name: 'k8s-development/platform-rds/credentials',

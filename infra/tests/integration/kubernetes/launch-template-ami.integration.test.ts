@@ -45,15 +45,15 @@
  */
 
 import {
+    AutoScalingClient,
+    DescribeAutoScalingGroupsCommand,
+} from '@aws-sdk/client-auto-scaling';
+import {
     EC2Client,
     DescribeLaunchTemplateVersionsCommand,
     DescribeImagesCommand,
     type Image,
 } from '@aws-sdk/client-ec2';
-import {
-    AutoScalingClient,
-    DescribeAutoScalingGroupsCommand,
-} from '@aws-sdk/client-auto-scaling';
 import {
     SSMClient,
     GetParameterCommand,
@@ -135,7 +135,7 @@ const asg = new AutoScalingClient({ region: REGION });
  *
  * Falls back to "$Latest" if the ASG does not exist yet (Day-0).
  */
-async function getAsgLtVersion(asgName: string, ltName: string): Promise<string> {
+async function getAsgLtVersion(asgName: string, _ltName: string): Promise<string> {
     try {
         const { AutoScalingGroups } = await asg.send(
             new DescribeAutoScalingGroupsCommand({ AutoScalingGroupNames: [asgName] }),
@@ -285,11 +285,11 @@ describe('Launch Template — Golden AMI Consistency', () => {
         });
 
         it('should exist with a valid AMI ID format (vacuous pass on Day-0)', () => {
+            // eslint-disable-next-line jest/no-conditional-in-test
             if (ssmValue === VACUOUS) {
-                expect(ssmValue).toBe(VACUOUS);
-            } else {
-                expect(ssmValue).toMatch(/^ami-[0-9a-f]+$/);
+                return;
             }
+            expect(ssmValue).toMatch(/^ami-[0-9a-f]+$/);
         });
     });
 
@@ -323,28 +323,30 @@ describe('Launch Template — Golden AMI Consistency', () => {
     // =========================================================================
     describe('Launch Template AMI', () => {
         it.each(LAUNCH_TEMPLATES)(
-            '$label ($name) default version should use the current Golden AMI',
+            'should use the current Golden AMI — $label ($name)',
             ({ name, label }) => {
+                // eslint-disable-next-line jest/no-conditional-in-test
                 if (!goldenAmiId) {
                     // Vacuous pass — no Golden AMI yet
-                    expect(VACUOUS).toBe(VACUOUS);
                     return;
                 }
 
                 const ltAmiId = ltAmiIds.get(name);
 
+                // eslint-disable-next-line jest/no-conditional-in-test
                 if (ltAmiId === undefined) {
                     // LT not deployed yet — vacuous pass with warning
                     console.warn(
                         `Launch template '${name}' (${label}) not found — ` +
                         'stack may not be deployed yet. Skipping AMI check.',
                     );
-                    expect(VACUOUS).toBe(VACUOUS);
                     return;
                 }
 
+                // eslint-disable-next-line jest/no-conditional-in-test
                 const ltVersion = ltVersions.get(name) ?? '?';
                 expect(ltAmiId).toBe(goldenAmiId);
+                // eslint-disable-next-line jest/no-conditional-in-test
                 if (ltAmiId !== goldenAmiId) {
                     console.error(
                         `[${label}] LT ${name} v${ltVersion} → ${ltAmiId} ` +
@@ -355,17 +357,18 @@ describe('Launch Template — Golden AMI Consistency', () => {
         );
 
         it.each(LAUNCH_TEMPLATES)(
-            '$label ($name) should not reference a deregistered or missing AMI',
+            'should not reference a deregistered or missing AMI — $label ($name)',
             ({ name, label }) => {
                 const ltAmiId = ltAmiIds.get(name);
+                // eslint-disable-next-line jest/no-conditional-in-test
                 if (!ltAmiId) {
-                    expect(VACUOUS).toBe(VACUOUS);
                     return;
                 }
 
                 // State is pre-fetched in beforeAll via the bulk DescribeImages call
                 const state = ltAmiStates.get(name);
 
+                // eslint-disable-next-line jest/no-conditional-in-test
                 if (!state) {
                     console.warn(
                         `Launch template '${name}' (${label}) references AMI ${ltAmiId} ` +
@@ -373,6 +376,7 @@ describe('Launch Template — Golden AMI Consistency', () => {
                     );
                 }
 
+                // eslint-disable-next-line jest/no-conditional-in-test
                 expect(state ?? 'not-found').toBe('available');
             },
         );
@@ -403,7 +407,8 @@ describe('Launch Template — Golden AMI Consistency', () => {
             it.each(Object.entries(GOLDEN_AMI_FIXED_TAGS))(
                 'should have fixed tag %s=%s',
                 (key, expectedValue) => {
-                    if (!goldenAmiId) { expect(VACUOUS).toBe(VACUOUS); return; }
+                    // eslint-disable-next-line jest/no-conditional-in-test
+                    if (!goldenAmiId) { return; }
 
                     const actual = goldenAmiTags.get(key);
                     expect(actual).toBe(expectedValue);
@@ -413,7 +418,8 @@ describe('Launch Template — Golden AMI Consistency', () => {
             it.each(GOLDEN_AMI_REQUIRED_TAG_KEYS)(
                 'should have required tag key: %s',
                 (key) => {
-                    if (!goldenAmiId) { expect(VACUOUS).toBe(VACUOUS); return; }
+                    // eslint-disable-next-line jest/no-conditional-in-test
+                    if (!goldenAmiId) { return; }
 
                     expect(goldenAmiTags.has(key)).toBe(true);
                 },
@@ -432,20 +438,22 @@ describe('Launch Template — Golden AMI Consistency', () => {
             );
 
             it.each(ltFixedTagCases)(
-                '$label ($name) AMI should have tag $tagKey=$tagValue',
+                'should have tag $tagKey=$tagValue — $label ($name) AMI',
                 ({ name, label, tagKey, tagValue }) => {
-                    if (!goldenAmiId) { expect(VACUOUS).toBe(VACUOUS); return; }
+                    // eslint-disable-next-line jest/no-conditional-in-test
+                    if (!goldenAmiId) { return; }
 
                     const ltAmiId = ltAmiIds.get(name);
-                    if (!ltAmiId) { expect(VACUOUS).toBe(VACUOUS); return; }
+                    // eslint-disable-next-line jest/no-conditional-in-test
+                    if (!ltAmiId) { return; }
 
                     const tags = ltAmiTagMaps.get(name);
+                    // eslint-disable-next-line jest/no-conditional-in-test
                     if (!tags || tags.size === 0) {
                         console.warn(
                             `No tags found for AMI ${ltAmiId} in ${label} LT — ` +
                             'bulk describe may have failed.',
                         );
-                        expect(VACUOUS).toBe(VACUOUS);
                         return;
                     }
 
@@ -460,20 +468,22 @@ describe('Launch Template — Golden AMI Consistency', () => {
             );
 
             it.each(ltRequiredKeyCases)(
-                '$label ($name) AMI should have required tag key: $tagKey',
+                'should have required tag key: $tagKey — $label ($name) AMI',
                 ({ name, label, tagKey }) => {
-                    if (!goldenAmiId) { expect(VACUOUS).toBe(VACUOUS); return; }
+                    // eslint-disable-next-line jest/no-conditional-in-test
+                    if (!goldenAmiId) { return; }
 
                     const ltAmiId = ltAmiIds.get(name);
-                    if (!ltAmiId) { expect(VACUOUS).toBe(VACUOUS); return; }
+                    // eslint-disable-next-line jest/no-conditional-in-test
+                    if (!ltAmiId) { return; }
 
                     const tags = ltAmiTagMaps.get(name);
+                    // eslint-disable-next-line jest/no-conditional-in-test
                     if (!tags || tags.size === 0) {
                         console.warn(
                             `No tags found for AMI ${ltAmiId} in ${label} LT — ` +
                             'bulk describe may have failed.',
                         );
-                        expect(VACUOUS).toBe(VACUOUS);
                         return;
                     }
 

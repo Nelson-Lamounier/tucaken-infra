@@ -13,20 +13,20 @@
  * PgBouncer maintains ≤20 server connections to RDS, multiplexed to 200 clients.
  */
 
-import * as cdk from 'aws-cdk-lib/core';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as rds from 'aws-cdk-lib/aws-rds';
-
-import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
 
-import { SsmParameterStoreConstruct } from '../../constructs/ssm';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as rds from 'aws-cdk-lib/aws-rds';
+import * as cdk from 'aws-cdk-lib/core';
+
+import { Construct } from 'constructs';
 
 import {
     Environment,
-    isProductionEnvironment,
     environmentRemovalPolicy,
+    isProductionEnvironment,
 } from '../../config';
+import { SsmParameterStoreConstruct } from '../../constructs/ssm';
 
 // =============================================================================
 // PROPS

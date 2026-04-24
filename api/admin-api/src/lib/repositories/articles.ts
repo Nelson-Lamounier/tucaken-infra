@@ -19,6 +19,9 @@ export interface Article {
     updatedAt?:  Date | undefined;
 }
 
+const LIST_BY_STATUS_LIMIT = 100;
+const LIST_ALL_LIMIT = 200;
+
 function rowToArticle(row: Record<string, unknown>): Article {
     return {
         slug:        row['slug']         as string,
@@ -40,8 +43,8 @@ export async function upsertArticle(pool: Pool, article: Article): Promise<void>
     await pool.query(
         `INSERT INTO articles
              (slug, title, excerpt, content_md, tags, status, ai_generated, ai_model,
-              published_at, cover_image, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+              published_at, cover_image)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (slug) DO UPDATE SET
              title        = EXCLUDED.title,
              excerpt      = EXCLUDED.excerpt,
@@ -83,7 +86,7 @@ export async function listArticlesByStatus(pool: Pool, status: string): Promise<
     const result = await pool.query(
         `SELECT slug, title, excerpt, content_md, tags, status, ai_generated,
                 ai_model, published_at, cover_image, created_at, updated_at
-         FROM articles WHERE status = $1 ORDER BY updated_at DESC LIMIT 100`,
+         FROM articles WHERE status = $1 ORDER BY updated_at DESC LIMIT ${LIST_BY_STATUS_LIMIT}`,
         [status],
     );
     return (result.rows as Record<string, unknown>[]).map(rowToArticle);
@@ -93,7 +96,7 @@ export async function listAllArticles(pool: Pool): Promise<Article[]> {
     const result = await pool.query(
         `SELECT slug, title, excerpt, content_md, tags, status, ai_generated,
                 ai_model, published_at, cover_image, created_at, updated_at
-         FROM articles ORDER BY updated_at DESC LIMIT 200`,
+         FROM articles ORDER BY updated_at DESC LIMIT ${LIST_ALL_LIMIT}`,
     );
     return (result.rows as Record<string, unknown>[]).map(rowToArticle);
 }

@@ -116,7 +116,7 @@ export class PlatformRdsStack extends cdk.Stack {
         });
 
         // CDK-Nag suppressions
-        NagSuppressions.addResourceSuppressions(this.instance, [
+        const nagSuppressions = [
             {
                 id: 'AwsSolutions-RDS3',
                 reason: 'Multi-AZ disabled in non-production — enable in production config',
@@ -125,7 +125,16 @@ export class PlatformRdsStack extends cdk.Stack {
                 id: 'AwsSolutions-RDS11',
                 reason: 'Default PostgreSQL port 5432 — non-standard port adds no meaningful security',
             },
-        ], true);
+        ];
+
+        if (!isProduction) {
+            nagSuppressions.push({
+                id: 'AwsSolutions-RDS10',
+                reason: 'Deletion protection intentionally disabled in non-production for easy teardown',
+            });
+        }
+
+        NagSuppressions.addResourceSuppressions(this.instance, nagSuppressions, true);
 
         NagSuppressions.addResourceSuppressionsByPath(
             this,

@@ -202,7 +202,7 @@ const k8sStacks: StackConfig[] = [
     name: 'Platform RDS Stack',
     getStackName: (env) => getStackId(Project.KUBERNETES, 'platformRds', env),
     description:
-      'PostgreSQL 16 RDS instance for platform data (articles, identity, career) with PgBouncer via K8s',
+      'PostgreSQL 16.6 RDS instance for platform data (articles, identity, career) with PgBouncer via K8s',
     dependsOn: ['base'],
   },
 ];

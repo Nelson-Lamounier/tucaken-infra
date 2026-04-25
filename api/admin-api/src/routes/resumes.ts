@@ -41,6 +41,13 @@ import {
 import type { JWTPayload } from 'jose';
 import type { AdminApiConfig } from '../lib/config.js';
 import { docClient } from '../lib/dynamo.js';
+import { getPool } from '../lib/pg.js';
+import {
+  upsertResume,
+  getResume as pgGetResume,
+  deleteResume as pgDeleteResume,
+  setActiveResume,
+} from '../lib/repositories/resumes.js';
 
 /** Hono context variable bindings for authenticated routes. */
 type AdminApiBindings = {
@@ -276,6 +283,20 @@ export function createResumesRouter(config: AdminApiConfig): Hono<AdminApiBindin
       }),
     );
 
+    try {
+      await upsertResume(getPool(config), {
+        id:               entity.resumeId,
+        userId:           null,
+        jobApplicationId: null,
+        label:            entity.label,
+        isActive:         entity.isActive,
+        contentJson:      entity.data,
+        renderedHtml:     null,
+      });
+    } catch (pgErr) {
+      console.error('[resumes] PG shadow write failed', pgErr);
+    }
+
     return ctx.json({ resume: toFull(entity) }, 201);
   });
 
@@ -327,6 +348,19 @@ export function createResumesRouter(config: AdminApiConfig): Hono<AdminApiBindin
       return ctx.json({ error: `Resume not found: ${id}` }, 404);
     }
 
+    try {
+      const existingPg = await pgGetResume(getPool(config), id);
+      if (existingPg) {
+        await upsertResume(getPool(config), {
+          ...existingPg,
+          label:       body.label?.trim() ?? existingPg.label,
+          contentJson: body.data ?? existingPg.contentJson,
+        });
+      }
+    } catch (pgErr) {
+      console.error('[resumes] PG shadow update failed', pgErr);
+    }
+
     return ctx.json({ resume: toFull(result.Attributes as ResumeEntity) });
   });
 
@@ -363,6 +397,12 @@ export function createResumesRouter(config: AdminApiConfig): Hono<AdminApiBindin
         ConditionExpression: 'attribute_exists(pk)',
       }),
     );
+
+    try {
+      await pgDeleteResume(getPool(config), id);
+    } catch (pgErr) {
+      console.error('[resumes] PG shadow delete failed', pgErr);
+    }
 
     return ctx.json({ deleted: true, resumeId: id });
   });
@@ -409,6 +449,16 @@ export function createResumesRouter(config: AdminApiConfig): Hono<AdminApiBindin
 
     if (!result.Attributes) {
       return ctx.json({ error: `Resume not found: ${id}` }, 404);
+    }
+
+    try {
+      await setActiveResume(
+        getPool(config),
+        currentActive?.resumeId ?? null,
+        id,
+      );
+    } catch (pgErr) {
+      console.error('[resumes] PG shadow activate failed', pgErr);
     }
 
     return ctx.json({ resume: toFull(result.Attributes as ResumeEntity) });

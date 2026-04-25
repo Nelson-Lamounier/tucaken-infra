@@ -28,6 +28,11 @@ import {
   DescribeExecutionCommand,
 } from '@aws-sdk/client-sfn';
 import type { AdminApiConfig } from '../lib/config.js';
+import { getPool } from '../lib/pg.js';
+import {
+  updateApplicationStatus as pgUpdateStatus,
+  deleteApplication as pgDeleteApplication,
+} from '../lib/repositories/applications.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -348,6 +353,12 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono {
       }
     }
 
+    try {
+      await pgDeleteApplication(getPool(config), slug);
+    } catch (pgErr) {
+      console.error('[applications] PG shadow delete failed', pgErr);
+    }
+
     return ctx.json({ deleted: true, slug });
   });
 
@@ -403,6 +414,12 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono {
         ReturnValues: 'NONE',
       }),
     );
+
+    try {
+      await pgUpdateStatus(getPool(config), slug, status);
+    } catch (pgErr) {
+      console.error('[applications] PG shadow status update failed', pgErr);
+    }
 
     return ctx.json({ success: true, status });
   });

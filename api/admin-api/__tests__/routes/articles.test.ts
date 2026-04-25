@@ -57,12 +57,37 @@ jest.unstable_mockModule('@aws-sdk/client-lambda', () => {
   return { LambdaClient, InvokeCommand };
 });
 
+const pgUpsertMock = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
+jest.unstable_mockModule('../../src/lib/repositories/articles.js', () => ({
+    upsertArticle: pgUpsertMock,
+    deleteArticle: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    getArticleBySlug: jest.fn<() => Promise<null>>().mockResolvedValue(null),
+    listArticlesByStatus: jest.fn<() => Promise<never[]>>().mockResolvedValue([]),
+    listAllArticles: jest.fn<() => Promise<never[]>>().mockResolvedValue([]),
+}));
+
+jest.unstable_mockModule('../../src/lib/pg.js', () => ({
+    getPool: jest.fn(() => ({})),
+}));
+
 // ---------------------------------------------------------------------------
 // Dynamic imports — resolved AFTER mocks are registered
 // ---------------------------------------------------------------------------
 
 const { Hono } = await import('hono');
 const { createArticlesRouter } = await import('../../src/routes/articles.js');
+
+// Module-scope app used by PG shadow-write tests (mounts router at /api/admin/articles)
+const _appForPgTests = new Hono();
+_appForPgTests.use('*', async (ctx, next) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (ctx as any).set('jwtPayload', { sub: 'test-user-sub' });
+  await next();
+});
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+_appForPgTests.route('/api/admin/articles', createArticlesRouter({ dynamoTableName: 'test-articles', dynamoGsi1Name: 'gsi1-status-date', dynamoGsi2Name: 'gsi2-tag-date', assetsBucketName: 'test-bucket', publishLambdaArn: 'arn:aws:lambda:eu-west-1:123:function:publish', articleTriggerArn: 'arn:aws:lambda:eu-west-1:123:function:trigger', strategistTriggerArn: 'arn:aws:lambda:eu-west-1:123:function:strategist', strategistTableName: 'test-strategist', resumesTableName: 'test-strategist', cognitoUserPoolId: 'eu-west-1_TestPool', cognitoClientId: 'testClient', cognitoIssuerUrl: 'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_TestPool', awsRegion: 'eu-west-1', port: 3002, pgHost: 'pgbouncer.platform.svc.cluster.local', pgPort: 5432, pgDatabase: 'tucaken', pgUser: 'postgres', pgPassword: 'secret' } as any));
+const app = _appForPgTests;
 
 // ---------------------------------------------------------------------------
 // Test configuration
@@ -226,6 +251,7 @@ describe('PUT /:slug — update article', () => {
   beforeEach(() => {
     sendMock.mockReset();
     sendMock.mockResolvedValue({});
+    pgUpsertMock.mockClear();
   });
 
   it('returns 200 with updated: true on success', async () => {
@@ -285,6 +311,28 @@ describe('PUT /:slug — update article', () => {
       input: { ExpressionAttributeValues: Record<string, string> };
     };
     expect(callArg.input.ExpressionAttributeValues[':updatedAt']).toBeTruthy();
+  });
+
+  it('should attempt PG shadow write on successful DynamoDB update', async () => {
+    sendMock.mockResolvedValue({ Attributes: { slug: 'test-slug', title: 'Updated' } });
+    const res = await app.request('/api/admin/articles/test-slug', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Updated' }),
+    });
+    expect(res.status).toBe(200);
+    expect(pgUpsertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('should still return 200 when PG shadow write fails', async () => {
+    sendMock.mockResolvedValue({ Attributes: { slug: 'test-slug', title: 'Updated' } });
+    (pgUpsertMock as jest.Mock).mockRejectedValueOnce(new Error('PG timeout'));
+    const res = await app.request('/api/admin/articles/test-slug', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Updated' }),
+    });
+    expect(res.status).toBe(200);
   });
 });
 

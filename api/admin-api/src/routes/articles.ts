@@ -36,6 +36,8 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import type { JWTPayload } from 'jose';
 import type { AdminApiConfig } from '../lib/config.js';
 import { docClient } from '../lib/dynamo.js';
+import { getPool } from '../lib/pg.js';
+import { upsertArticle, deleteArticle as pgDeleteArticle } from '../lib/repositories/articles.js';
 
 /** Hono context variable bindings for admin-api authenticated routes. */
 type AdminApiBindings = {
@@ -223,6 +225,25 @@ export function createArticlesRouter(config: AdminApiConfig): Hono<AdminApiBindi
       }),
     );
 
+    // Shadow write to PG — non-fatal during dual-write period
+    try {
+        const pool = getPool(config);
+        await upsertArticle(pool, {
+            slug,
+            title:       (updates['title']       as string) ?? '',
+            excerpt:     (updates['excerpt']      as string | null) ?? null,
+            contentMd:   (updates['contentMd']    as string) ?? '',
+            tags:        (updates['tags']         as string[]) ?? [],
+            status:      (updates['status']       as string) ?? 'draft',
+            aiGenerated: (updates['aiGenerated']  as boolean) ?? false,
+            aiModel:     (updates['aiModel']      as string | null) ?? null,
+            publishedAt: updates['publishedAt']   ? new Date(updates['publishedAt'] as string) : null,
+            coverImage:  (updates['coverImage']   as string | null) ?? null,
+        });
+    } catch (pgErr: unknown) {
+        console.error(`[articles] PG shadow write failed — slug=${slug}`, pgErr);
+    }
+
     return ctx.json({ updated: true, slug });
   });
 
@@ -256,6 +277,13 @@ export function createArticlesRouter(config: AdminApiConfig): Hono<AdminApiBindi
         }),
       ),
     ]);
+
+    // Shadow delete from PG — non-fatal
+    try {
+        await pgDeleteArticle(getPool(config), slug);
+    } catch (pgErr: unknown) {
+        console.error(`[articles] PG shadow delete failed — slug=${slug}`, pgErr);
+    }
 
     return ctx.json({ deleted: true, slug });
   });

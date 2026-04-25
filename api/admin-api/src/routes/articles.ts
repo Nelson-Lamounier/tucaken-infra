@@ -233,17 +233,20 @@ export function createArticlesRouter(config: AdminApiConfig): Hono<AdminApiBindi
     if ('title' in updates && 'contentMd' in body) {
         try {
             const pool = getPool(config);
+            const contentMd   = typeof body['contentMd']   === 'string'  ? body['contentMd']   : '';
+            const aiGenerated = typeof body['aiGenerated'] === 'boolean' ? body['aiGenerated'] : false;
+            const aiModel     = typeof body['aiModel']     === 'string'  ? body['aiModel']     : null;
             await upsertArticle(pool, {
                 slug,
-                title:       (updates['title']       as string) ?? '',
-                excerpt:     (updates['excerpt']      as string | null) ?? null,
-                contentMd:   (body['contentMd']       as string) ?? '',
-                tags:        (updates['tags']         as string[]) ?? [],
-                status:      (updates['status']       as string) ?? 'draft',
-                aiGenerated: (body['aiGenerated']     as boolean) ?? false,
-                aiModel:     (body['aiModel']         as string | null) ?? null,
-                publishedAt: updates['publishedAt']   ? new Date(updates['publishedAt'] as string) : null,
-                coverImage:  (updates['coverImage']   as string | null) ?? null,
+                title:       (updates['title']      as string)            ?? '',
+                excerpt:     (updates['excerpt']     as string | null)     ?? null,
+                contentMd,
+                tags:        (updates['tags']        as string[])          ?? [],
+                status:      (updates['status']      as string)            ?? 'draft',
+                aiGenerated,
+                aiModel,
+                publishedAt: updates['publishedAt']  ? new Date(updates['publishedAt'] as string) : null,
+                coverImage:  (updates['coverImage']  as string | null)     ?? null,
             });
         } catch (pgErr: unknown) {
             console.error(`[articles] PG shadow write failed — slug=${slug}`, pgErr);

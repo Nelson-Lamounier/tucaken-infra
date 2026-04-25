@@ -335,6 +335,16 @@ describe('PUT /:slug — update article', () => {
     });
     expect(res.status).toBe(200);
   });
+
+  it('should NOT call pgUpsertMock when contentMd is absent from the body', async () => {
+    sendMock.mockResolvedValue({});
+    await app.request('/api/admin/articles/test-slug', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Title only, no contentMd' }),
+    });
+    expect(pgUpsertMock).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

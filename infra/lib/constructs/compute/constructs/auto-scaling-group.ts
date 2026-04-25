@@ -303,6 +303,14 @@ export class AutoScalingGroupConstruct extends Construct {
             ],
         });
 
+        // CDK escape hatch: override the pinned LT version CDK writes at synth time.
+        // The L2 AutoScalingGroup always resolves the LT version to a specific number,
+        // which means Lambda-created versions (from the AMI refresh workflow) are never
+        // picked up without a CDK redeploy. Setting $Latest here ensures new instances
+        // always launch with the most recent LT version — no CDK redeploy needed.
+        const cfnAsg = this.autoScalingGroup.node.defaultChild as autoscaling.CfnAutoScalingGroup;
+        cfnAsg.addPropertyOverride('LaunchTemplate.Version', '$Latest');
+
         // Configure scaling policy (unless disabled)
         if (!props.disableScalingPolicy) {
             this.configureScalingPolicy(props.scalingPolicy);

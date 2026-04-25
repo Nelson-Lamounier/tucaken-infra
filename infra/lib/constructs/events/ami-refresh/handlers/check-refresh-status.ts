@@ -24,6 +24,7 @@ export async function handler(
   ssmClient: SSMClient = new SSMClient({}),
 ): Promise<CheckRefreshStatusResult> {
   const env = event.paramName.split('/')[2];
+  if (!env) throw new Error(`Cannot extract env from paramName: ${event.paramName}`);
   const asgNames = await getAsgNames(env, event.role, ssmClient);
   const statuses = await Promise.all(asgNames.map(name => checkAsg(name, asgClient)));
 
@@ -43,7 +44,9 @@ async function checkAsg(
   const refresh = resp.InstanceRefreshes?.[0];
   if (!refresh) return { status: 'FAILED', detail: `No refresh found for ${asgName}` };
 
-  const elapsedMin = (Date.now() - new Date(refresh.StartTime!).getTime()) / 60_000;
+  const startTime = refresh.StartTime;
+  if (!startTime) return { status: 'IN_PROGRESS', detail: null };
+  const elapsedMin = (Date.now() - startTime.getTime()) / 60_000;
   if (elapsedMin > MAX_WAIT_MINUTES) {
     return {
       status: 'FAILED',

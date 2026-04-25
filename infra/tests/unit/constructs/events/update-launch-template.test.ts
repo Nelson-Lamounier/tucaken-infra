@@ -49,7 +49,7 @@ describe('update-launch-template', () => {
 
     expect(mockEc2Send).toHaveBeenCalledWith(
       expect.objectContaining({ input: expect.objectContaining({
-        LaunchTemplateId: 'lt-abc123',
+        LaunchTemplateName: 'lt-abc123',
         SourceVersion: '$Latest',
         LaunchTemplateData: { ImageId: 'ami-0newimage123' },
       })}),
@@ -68,7 +68,7 @@ describe('update-launch-template', () => {
 
     expect(mockEc2Send).toHaveBeenCalledWith(
       expect.objectContaining({ input: expect.objectContaining({
-        LaunchTemplateId: 'lt-abc123',
+        LaunchTemplateName: 'lt-abc123',
         DefaultVersion: '7',
       })}),
     );

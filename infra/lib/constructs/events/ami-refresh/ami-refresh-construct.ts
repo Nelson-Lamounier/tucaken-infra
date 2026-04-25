@@ -1,5 +1,7 @@
 import * as path from 'path';
 
+import { NagSuppressions } from 'cdk-nag';
+
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -93,6 +95,10 @@ export class AmiRefreshConstruct extends Construct {
       role: lambdaRole,
       bundling,
     });
+    NagSuppressions.addResourceSuppressions(updateLtFn, [{
+      id: 'AwsSolutions-L1',
+      reason: 'NODEJS_22_X is the latest Node.js runtime available in CDK; cdk-nag version-check is overly conservative',
+    }]);
 
     const startRefreshFn = new nodejs.NodejsFunction(this, 'StartRefreshFn', {
       entry: path.join(__dirname, 'handlers/start-instance-refresh.ts'),
@@ -103,6 +109,10 @@ export class AmiRefreshConstruct extends Construct {
       role: lambdaRole,
       bundling,
     });
+    NagSuppressions.addResourceSuppressions(startRefreshFn, [{
+      id: 'AwsSolutions-L1',
+      reason: 'NODEJS_22_X is the latest Node.js runtime available in CDK; cdk-nag version-check is overly conservative',
+    }]);
 
     const checkStatusFn = new nodejs.NodejsFunction(this, 'CheckStatusFn', {
       entry: path.join(__dirname, 'handlers/check-refresh-status.ts'),
@@ -114,6 +124,10 @@ export class AmiRefreshConstruct extends Construct {
       bundling,
       environment: { MAX_WAIT_MINUTES: '40' },
     });
+    NagSuppressions.addResourceSuppressions(checkStatusFn, [{
+      id: 'AwsSolutions-L1',
+      reason: 'NODEJS_22_X is the latest Node.js runtime available in CDK; cdk-nag version-check is overly conservative',
+    }]);
 
     // State machine — terminal states
     const workerRefreshFailed = new sfn.Fail(this, 'WorkerRefreshFailed', {

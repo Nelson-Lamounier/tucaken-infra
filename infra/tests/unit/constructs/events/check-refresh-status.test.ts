@@ -61,6 +61,40 @@ describe('check-refresh-status', () => {
     expect(result.detail).toContain('Failed');
   });
 
+  it('returns FAILED when a refresh has Cancelled status', async () => {
+    mockSend.mockResolvedValueOnce({
+      Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
+    });
+    mockSend.mockResolvedValueOnce({
+      InstanceRefreshes: [{
+        Status: 'Cancelled',
+        StatusReason: 'User cancelled',
+        StartTime: new Date(Date.now() - 3 * 60 * 1000),
+      }],
+    });
+
+    const result = await handler(event, mockAsg, mockSsm);
+    expect(result.status).toBe('FAILED');
+    expect(result.detail).toContain('Cancelled');
+  });
+
+  it('returns FAILED when a refresh has RollbackFailed status', async () => {
+    mockSend.mockResolvedValueOnce({
+      Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
+    });
+    mockSend.mockResolvedValueOnce({
+      InstanceRefreshes: [{
+        Status: 'RollbackFailed',
+        StatusReason: 'Rollback failed',
+        StartTime: new Date(Date.now() - 10 * 60 * 1000),
+      }],
+    });
+
+    const result = await handler(event, mockAsg, mockSsm);
+    expect(result.status).toBe('FAILED');
+    expect(result.detail).toContain('RollbackFailed');
+  });
+
   it('returns FAILED when refresh exceeds MAX_WAIT_MINUTES', async () => {
     mockSend.mockResolvedValueOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },

@@ -49,6 +49,7 @@ describe('start-instance-refresh', () => {
     const result = await handler(cpEvent, mockAsg, mockSsm);
 
     expect(result.refreshIds).toHaveLength(1);
+    expect(result.refreshIds[0]).toEqual({ asgName: 'asg-control-plane', refreshId: 'refresh-cp' });
     expect(mockSsmSend).toHaveBeenCalledWith(
       expect.objectContaining({ input: expect.objectContaining({
         Name: '/k8s/development/ami-refresh/control-plane/asg-name',

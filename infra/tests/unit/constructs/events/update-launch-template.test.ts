@@ -91,6 +91,13 @@ describe('update-launch-template', () => {
       cmd.constructor?.name === 'CreateLaunchTemplateVersionCommand',
     );
     expect(createCalls).toHaveLength(2);
+    const callOrder = mockEc2Send.mock.calls.map(([cmd]) => cmd.constructor?.name);
+    expect(callOrder).toEqual([
+      'CreateLaunchTemplateVersionCommand',
+      'ModifyLaunchTemplateCommand',
+      'CreateLaunchTemplateVersionCommand',
+      'ModifyLaunchTemplateCommand',
+    ]);
   });
 
   it('reads control-plane/lt-id (not array) when role is control-plane', async () => {

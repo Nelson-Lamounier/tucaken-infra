@@ -83,7 +83,7 @@ export class AmiRefreshConstruct extends Construct {
     }));
 
     // Lambda functions
-    const bundling: nodejs.BundlingOptions = { minify: true, sourceMap: false };
+    const bundling: nodejs.BundlingOptions = { minify: true, sourceMap: true, externalModules: ['@aws-sdk/*'] };
     const runtime = lambda.Runtime.NODEJS_22_X;
 
     const updateLtFn = new nodejs.NodejsFunction(this, 'UpdateLtFn', {
@@ -131,12 +131,12 @@ export class AmiRefreshConstruct extends Construct {
 
     // State machine — terminal states
     const workerRefreshFailed = new sfn.Fail(this, 'WorkerRefreshFailed', {
-      error: 'WorkerRefreshFailed',
-      cause: 'Worker ASG instance refresh failed — check Lambda logs in CloudWatch',
+      errorPath: '$.error.Error',
+      causePath: '$.error.Cause',
     });
     const controlPlaneFailed = new sfn.Fail(this, 'ControlPlaneRefreshFailed', {
-      error: 'ControlPlaneRefreshFailed',
-      cause: 'Control plane ASG instance refresh failed — check Lambda logs in CloudWatch',
+      errorPath: '$.error.Error',
+      causePath: '$.error.Cause',
     });
     const amiRefreshComplete = new sfn.Succeed(this, 'AmiRefreshComplete');
 
@@ -146,16 +146,18 @@ export class AmiRefreshConstruct extends Construct {
       payload: sfn.TaskInput.fromObject({ 'paramName.$': '$.paramName', role: 'workers' }),
       resultPath: sfn.JsonPath.DISCARD,
     });
+    updateWorkerTemplates.addRetry({ errors: ['TypeError', 'ReferenceError', 'SyntaxError'], maxAttempts: 0 });
     updateWorkerTemplates.addRetry({ maxAttempts: 3, interval: cdk.Duration.seconds(30), backoffRate: 1.5 });
-    updateWorkerTemplates.addCatch(workerRefreshFailed, { errors: ['States.ALL'], resultPath: sfn.JsonPath.DISCARD });
+    updateWorkerTemplates.addCatch(workerRefreshFailed, { errors: ['States.ALL'], resultPath: '$.error' });
 
     const startWorkerRefresh = new sfnTasks.LambdaInvoke(this, 'StartWorkerRefresh', {
       lambdaFunction: startRefreshFn,
       payload: sfn.TaskInput.fromObject({ 'paramName.$': '$.paramName', role: 'workers' }),
       resultPath: sfn.JsonPath.DISCARD,
     });
+    startWorkerRefresh.addRetry({ errors: ['TypeError', 'ReferenceError', 'SyntaxError'], maxAttempts: 0 });
     startWorkerRefresh.addRetry({ maxAttempts: 3, interval: cdk.Duration.seconds(30), backoffRate: 1.5 });
-    startWorkerRefresh.addCatch(workerRefreshFailed, { errors: ['States.ALL'], resultPath: sfn.JsonPath.DISCARD });
+    startWorkerRefresh.addCatch(workerRefreshFailed, { errors: ['States.ALL'], resultPath: '$.error' });
 
     const waitForWorkerRefresh = new sfn.Wait(this, 'WaitForWorkerRefresh', {
       time: sfn.WaitTime.duration(poll),
@@ -167,8 +169,9 @@ export class AmiRefreshConstruct extends Construct {
       resultSelector: { 'status.$': '$.Payload.status', 'detail.$': '$.Payload.detail' },
       resultPath: '$.workerStatus',
     });
+    checkWorkerRefreshStatus.addRetry({ errors: ['TypeError', 'ReferenceError', 'SyntaxError'], maxAttempts: 0 });
     checkWorkerRefreshStatus.addRetry({ maxAttempts: 3, interval: cdk.Duration.seconds(30), backoffRate: 1.5 });
-    checkWorkerRefreshStatus.addCatch(workerRefreshFailed, { errors: ['States.ALL'], resultPath: sfn.JsonPath.DISCARD });
+    checkWorkerRefreshStatus.addCatch(workerRefreshFailed, { errors: ['States.ALL'], resultPath: '$.error' });
 
     // Phase 2: Control Plane
     const updateControlPlaneTemplate = new sfnTasks.LambdaInvoke(this, 'UpdateControlPlaneTemplate', {
@@ -176,16 +179,18 @@ export class AmiRefreshConstruct extends Construct {
       payload: sfn.TaskInput.fromObject({ 'paramName.$': '$.paramName', role: 'control-plane' }),
       resultPath: sfn.JsonPath.DISCARD,
     });
+    updateControlPlaneTemplate.addRetry({ errors: ['TypeError', 'ReferenceError', 'SyntaxError'], maxAttempts: 0 });
     updateControlPlaneTemplate.addRetry({ maxAttempts: 3, interval: cdk.Duration.seconds(30), backoffRate: 1.5 });
-    updateControlPlaneTemplate.addCatch(controlPlaneFailed, { errors: ['States.ALL'], resultPath: sfn.JsonPath.DISCARD });
+    updateControlPlaneTemplate.addCatch(controlPlaneFailed, { errors: ['States.ALL'], resultPath: '$.error' });
 
     const startControlPlaneRefresh = new sfnTasks.LambdaInvoke(this, 'StartControlPlaneRefresh', {
       lambdaFunction: startRefreshFn,
       payload: sfn.TaskInput.fromObject({ 'paramName.$': '$.paramName', role: 'control-plane' }),
       resultPath: sfn.JsonPath.DISCARD,
     });
+    startControlPlaneRefresh.addRetry({ errors: ['TypeError', 'ReferenceError', 'SyntaxError'], maxAttempts: 0 });
     startControlPlaneRefresh.addRetry({ maxAttempts: 3, interval: cdk.Duration.seconds(30), backoffRate: 1.5 });
-    startControlPlaneRefresh.addCatch(controlPlaneFailed, { errors: ['States.ALL'], resultPath: sfn.JsonPath.DISCARD });
+    startControlPlaneRefresh.addCatch(controlPlaneFailed, { errors: ['States.ALL'], resultPath: '$.error' });
 
     const waitForControlPlaneRefresh = new sfn.Wait(this, 'WaitForControlPlaneRefresh', {
       time: sfn.WaitTime.duration(poll),
@@ -197,8 +202,9 @@ export class AmiRefreshConstruct extends Construct {
       resultSelector: { 'status.$': '$.Payload.status', 'detail.$': '$.Payload.detail' },
       resultPath: '$.cpStatus',
     });
+    checkControlPlaneStatus.addRetry({ errors: ['TypeError', 'ReferenceError', 'SyntaxError'], maxAttempts: 0 });
     checkControlPlaneStatus.addRetry({ maxAttempts: 3, interval: cdk.Duration.seconds(30), backoffRate: 1.5 });
-    checkControlPlaneStatus.addCatch(controlPlaneFailed, { errors: ['States.ALL'], resultPath: sfn.JsonPath.DISCARD });
+    checkControlPlaneStatus.addCatch(controlPlaneFailed, { errors: ['States.ALL'], resultPath: '$.error' });
 
     // Choice states (poll loops)
     const workersHealthy = new sfn.Choice(this, 'WorkersHealthy')

@@ -143,7 +143,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1001.0",
     "@aws-sdk/util-dynamodb": "^3.996.0",
     "@cdklabs/generative-ai-cdk-constructs": "^0.1.314",
-    "@nelsonlamounier/cdk-deploy-scripts": "^1.0.1",
+    "@nelsonlamounier/cdk-deploy-scripts": "^1.0.2",
     "@smithy/util-waiter": "^4.2.8",
     "aws-cdk-lib": "^2.232.1",
     "cdk-nag": "^2.37.55",

@@ -1181,9 +1181,7 @@ jobs:
         env:
           DEPLOY_DATA_RESULT: ${{ needs.deploy-data.result }}
           DEPLOY_CONTROLPLANE_RESULT: ${{ needs.deploy-controlplane.result }}
-          SMOKE_TEST_AMI_REFRESH_RESULT: ${{ needs.smoke-test-ami-refresh.result || 'skipped' }}
           DEPLOY_GENERAL_POOL_RESULT: ${{ needs.deploy-general-pool.result || 'skipped' }}
-
           DEPLOY_MON_POOL_RESULT: ${{ needs.deploy-monitoring-pool.result || 'skipped' }}
           DEPLOY_API_RESULT: ${{ needs.deploy-api.result || 'skipped' }}
           DEPLOY_EDGE_RESULT: ${{ needs.deploy-edge.result || 'skipped' }}
@@ -1191,7 +1189,7 @@ jobs:
           DEPLOY_OBSERVABILITY_RESULT: ${{ needs.deploy-observability.result || 'skipped' }}
           DEPLOY_PLATFORM_RDS_RESULT: ${{ needs.deploy-platform-rds.result || 'skipped' }}
           VERIFY_RESULT: "moved-to-ssm-pipeline"
-          SMOKE_TESTS_RESULT: "moved-to-ssm-pipeline"
+          SMOKE_TESTS_RESULT: ${{ needs.smoke-test-ami-refresh.result || 'skipped' }}
           ALERT_RESULT: ${{ needs.deployment-failure-alert.result || 'skipped' }}
           COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit-short-sha }}
         run: just ci-summary kubernetes ${{ inputs.cdk-environment }}

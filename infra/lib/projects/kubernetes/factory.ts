@@ -39,6 +39,7 @@ import { getK8sConfigs } from '../../config/kubernetes';
 import { getNextJsConfigs, nextjsResourceNames } from '../../config/nextjs';
 import { Project, getProjectConfig } from '../../config/projects';
 import { nextjsSsmPaths, k8sSsmPaths } from '../../config/ssm-paths';
+import { AmiRefreshConstruct } from '../../constructs/events/ami-refresh/ami-refresh-construct';
 import {
     IProjectFactory,
     ProjectFactoryContext,
@@ -54,7 +55,6 @@ import {
     KubernetesWorkerAsgStack,
     PlatformRdsStack,
 } from '../../stacks/kubernetes';
-import { AmiRefreshConstruct } from '../../constructs/events/ami-refresh/ami-refresh-construct';
 import { NextJsApiStack } from '../../stacks/kubernetes/api-stack';
 import { stackId, flatName } from '../../utilities/naming';
 

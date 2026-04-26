@@ -12,6 +12,7 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as cdk from 'aws-cdk-lib/core';
+
 import { Construct } from 'constructs';
 
 export interface AmiRefreshProps {

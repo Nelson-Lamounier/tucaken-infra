@@ -1,24 +1,24 @@
-import { mockClient } from 'aws-sdk-client-mock';
 import {
   AutoScalingClient,
   DescribeInstanceRefreshesCommand,
 } from '@aws-sdk/client-auto-scaling';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { mockClient } from 'aws-sdk-client-mock';
 
 import { handler } from '../../../../lib/constructs/events/ami-refresh/handlers/check-refresh-status';
 
 const ssmMock = mockClient(SSMClient);
 const asgMock = mockClient(AutoScalingClient);
 
-beforeEach(() => {
-  ssmMock.reset();
-  asgMock.reset();
-});
-
 describe('check-refresh-status', () => {
   const event = { paramName: '/k8s/development/golden-ami/latest', role: 'workers' as const };
 
-  it('returns COMPLETE when all ASG refreshes are Successful', async () => {
+  beforeEach(() => {
+    ssmMock.reset();
+    asgMock.reset();
+  });
+
+  it('should return COMPLETE when all ASG refreshes are Successful', async () => {
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
     });
@@ -30,10 +30,10 @@ describe('check-refresh-status', () => {
     });
 
     const result = await handler(event);
-    expect(result).toEqual({ status: 'COMPLETE', detail: null });
+    expect(result).toStrictEqual({ status: 'COMPLETE', detail: null });
   });
 
-  it('returns IN_PROGRESS when a refresh is still running', async () => {
+  it('should return IN_PROGRESS when a refresh is still running', async () => {
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
     });
@@ -48,7 +48,7 @@ describe('check-refresh-status', () => {
     expect(result.status).toBe('IN_PROGRESS');
   });
 
-  it('returns FAILED when a refresh has Failed status', async () => {
+  it('should return FAILED when a refresh has Failed status', async () => {
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
     });
@@ -65,7 +65,7 @@ describe('check-refresh-status', () => {
     expect(result.detail).toContain('Failed');
   });
 
-  it('returns FAILED when a refresh has Cancelled status', async () => {
+  it('should return FAILED when a refresh has Cancelled status', async () => {
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
     });
@@ -82,7 +82,7 @@ describe('check-refresh-status', () => {
     expect(result.detail).toContain('Cancelled');
   });
 
-  it('returns FAILED when a refresh has RollbackFailed status', async () => {
+  it('should return FAILED when a refresh has RollbackFailed status', async () => {
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
     });
@@ -99,14 +99,14 @@ describe('check-refresh-status', () => {
     expect(result.detail).toContain('RollbackFailed');
   });
 
-  it('returns FAILED when refresh exceeds MAX_WAIT_MINUTES', async () => {
+  it('should return FAILED when refresh exceeds MAX_WAIT_MINUTES', async () => {
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
     });
     asgMock.on(DescribeInstanceRefreshesCommand).resolvesOnce({
       InstanceRefreshes: [{
         Status: 'InProgress',
-        StartTime: new Date(Date.now() - 45 * 60 * 1000), // 45 min ago, over 40 min limit
+        StartTime: new Date(Date.now() - 45 * 60 * 1000),
       }],
     });
 
@@ -115,7 +115,7 @@ describe('check-refresh-status', () => {
     expect(result.detail).toContain('timed out');
   });
 
-  it('returns FAILED when no refreshes are found for an ASG', async () => {
+  it('should return FAILED when no refreshes are found for an ASG', async () => {
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: JSON.stringify(['k8s-development-general-asg']) },
     });
@@ -128,7 +128,7 @@ describe('check-refresh-status', () => {
     expect(result.detail).toContain('No refresh found');
   });
 
-  it('reads control-plane/asg-name (not array) when role is control-plane', async () => {
+  it('should read control-plane/asg-name (not array) when role is control-plane', async () => {
     const cpEvent = { paramName: '/k8s/development/golden-ami/latest', role: 'control-plane' as const };
     ssmMock.on(GetParameterCommand).resolvesOnce({
       Parameter: { Value: 'k8s-development-control-plane-asg' },

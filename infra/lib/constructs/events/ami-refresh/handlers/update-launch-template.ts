@@ -1,12 +1,12 @@
 import {
+  AutoScalingClient,
+  UpdateAutoScalingGroupCommand,
+} from '@aws-sdk/client-auto-scaling';
+import {
   CreateLaunchTemplateVersionCommand,
   EC2Client,
   ModifyLaunchTemplateCommand,
 } from '@aws-sdk/client-ec2';
-import {
-  AutoScalingClient,
-  UpdateAutoScalingGroupCommand,
-} from '@aws-sdk/client-auto-scaling';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 
 // Module-level singletons — reused across warm invocations and never

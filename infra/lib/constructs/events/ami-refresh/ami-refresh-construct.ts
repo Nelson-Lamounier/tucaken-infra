@@ -61,13 +61,26 @@ export class AmiRefreshConstruct extends Construct {
       ],
     });
     lambdaRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'Ec2LaunchTemplate',
+      sid: 'Ec2LaunchTemplateMutate',
       actions: [
         'ec2:CreateLaunchTemplateVersion',
         'ec2:ModifyLaunchTemplate',
-        'ec2:DescribeLaunchTemplateVersions',
       ],
       resources: [`arn:aws:ec2:${stack.region}:${stack.account}:launch-template/*`],
+    }));
+    // Describe* actions in EC2 don't support resource-level scoping — they
+    // must be granted on '*' or they evaluate as implicitDeny. AutoScaling's
+    // internal LT validation calls DescribeLaunchTemplates/Versions; if those
+    // are denied the whole UpdateAutoScalingGroup fails with the misleading
+    // "not authorized to use launch template" error (which sounds like an
+    // ec2:RunInstances issue but is actually an implicit deny on Describe).
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'Ec2DescribeLaunchTemplates',
+      actions: [
+        'ec2:DescribeLaunchTemplates',
+        'ec2:DescribeLaunchTemplateVersions',
+      ],
+      resources: ['*'],
     }));
     // UpdateAutoScalingGroup with a LaunchTemplate triggers an authorization
     // simulation: AWS internally evaluates ec2:RunInstances against ALL the

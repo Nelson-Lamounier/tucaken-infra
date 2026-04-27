@@ -61,15 +61,7 @@ const { createApplicationsRouter } = await import('../../src/routes/applications
 // ---------------------------------------------------------------------------
 
 const testConfig = {
-  dynamoTableName: 't',
-  dynamoGsi1Name: 'g1',
-  dynamoGsi2Name: 'g2',
   assetsBucketName: 'b',
-  publishLambdaArn: 'arn:p',
-  articleTriggerArn: 'arn:t',
-  strategistTriggerArn: 'arn:s',
-  strategistTableName: 's',
-  resumesTableName: 's',
   cognitoUserPoolId: 'eu-west-1_X',
   cognitoClientId: 'c',
   cognitoIssuerUrl: 'https://example.com',

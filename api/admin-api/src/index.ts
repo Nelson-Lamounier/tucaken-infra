@@ -26,9 +26,6 @@ import { createHealthRouter } from './routes/health.js';
 import { createArticlesRouter } from './routes/articles.js';
 import { createApplicationsRouter } from './routes/applications.js';
 import { createAssetsRouter } from './routes/assets.js';
-import { createCommentsRouter } from './routes/comments.js';
-import { createContentRouter } from './routes/content.js';
-import { createDraftsRouter } from './routes/drafts.js';
 import { createFinopsRouter } from './routes/finops.js';
 import { createIngestionRouter } from './routes/ingestion.js';
 import { createPipelinesRouter } from './routes/pipelines.js';
@@ -88,9 +85,6 @@ app.use('/api/admin/*', jwtMiddleware);
 app.route('/api/admin/articles', createArticlesRouter(config));
 app.route('/api/admin/applications', createApplicationsRouter(config));
 app.route('/api/admin/assets', createAssetsRouter(config));
-app.route('/api/admin/comments', createCommentsRouter(config));
-app.route('/api/admin/content', createContentRouter(config));
-app.route('/api/admin/drafts', createDraftsRouter(config));
 app.route('/api/admin/finops', createFinopsRouter(config));
 app.route('/api/admin/ingestion', createIngestionRouter(config));
 app.route('/api/admin/pipelines', createPipelinesRouter(config));
@@ -114,6 +108,5 @@ serve(
   (info) => {
     console.log(`[admin-api] Listening on http://0.0.0.0:${info.port}`);
     console.log(`[admin-api] Cognito pool: ${config.cognitoUserPoolId}`);
-    console.log(`[admin-api] DynamoDB table: ${config.dynamoTableName}`);
   },
 );

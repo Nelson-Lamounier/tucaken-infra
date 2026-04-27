@@ -1,35 +1,19 @@
 /**
  * @format
- * admin-api — Pipeline trigger routes.
+ * admin-api — Pipeline trigger routes (K8s Job-based).
  *
  * Routes (all protected by Cognito JWT middleware):
  *
- *   POST /api/admin/pipelines/article     — Re-trigger article generation for an existing slug
- *   POST /api/admin/pipelines/strategist  — Trigger the Strategist pipeline Lambda
+ *   POST /api/admin/pipelines/article-job/:slug — Trigger article-pipeline K8s Job
+ *   POST /api/admin/pipelines/strategist-job    — Trigger strategist-pipeline K8s Job
+ *   GET  /api/admin/pipelines/runs/:id          — Poll pipeline_runs row
  *
- * Design:
- *   All invocations use `InvocationType: 'Event'` (fire-and-forget async).
- *   The admin UI gets an immediate 202 Accepted response and polls the article
- *   status or dashboard to detect completion.
- *
- *   The article route builds a synthetic S3 event matching the S3Handler
- *   contract expected by the trigger Lambda (bedrock-*-pipeline-trigger).
- *   This is the same shape that drafts.ts constructs, ensuring consistent
- *   behaviour regardless of which route initiates the pipeline.
- *
- *   Note: The publish pipeline (MDX → S3 → DynamoDB) is exposed separately under
- *         POST /api/admin/articles/:slug/publish, which already exists on the
- *         articles router, because it is tightly coupled to a specific article slug.
- *
- * Environment config:
- *   ARTICLE_TRIGGER_ARN    — Lambda ARN for article pipeline trigger
- *   STRATEGIST_TRIGGER_ARN — Lambda ARN for Strategist pipeline
- *   ASSETS_BUCKET_NAME     — S3 bucket name (used to build the synthetic S3 event)
+ * The legacy Lambda-based article/strategist routes were removed in Phase 5;
+ * pipeline execution now runs entirely as Kubernetes Jobs.
  */
 
 import { randomUUID, createHash } from 'node:crypto';
 import { Hono } from 'hono';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import type { JWTPayload } from 'jose';
 import type { V1Job } from '@kubernetes/client-node';
 import type { AdminApiConfig } from '../lib/config.js';
@@ -100,100 +84,6 @@ type AdminApiBindings = {
   };
 };
 
-/** Singleton Lambda client — credentials from IMDS. */
-let _lambdaClient: LambdaClient | undefined;
-
-/**
- * Get or create the singleton Lambda client.
- *
- * @returns Singleton LambdaClient
- */
-function getLambdaClient(): LambdaClient {
-  if (!_lambdaClient) {
-    _lambdaClient = new LambdaClient({
-      region: process.env['AWS_REGION'] ?? process.env['AWS_DEFAULT_REGION'] ?? 'eu-west-1',
-    });
-  }
-  return _lambdaClient;
-}
-
-/**
- * Invoke a Lambda function asynchronously (fire-and-forget).
- *
- * @param functionArn - The Lambda ARN to invoke
- * @param payload - JSON-serialisable event payload
- */
-async function invokeAsync(
-  functionArn: string,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  await getLambdaClient().send(
-    new InvokeCommand({
-      FunctionName: functionArn,
-      InvocationType: 'Event', // async — does not wait for result
-      Payload: Buffer.from(JSON.stringify(payload)),
-    }),
-  );
-}
-
-/**
- * Invoke a Lambda function synchronously and return its parsed response body.
- *
- * The trigger Lambda is typed as an APIGatewayProxyEventV2 handler and returns
- * `{ statusCode, headers, body: JSON.stringify({...}) }`. We parse the outer
- * envelope and surface the inner `body` to the caller.
- *
- * Use this for routes that need to return data from the Lambda (e.g. applicationSlug).
- * The trigger Lambda is fast (<3 s): DynamoDB write + StartExecution — synchronous
- * invocation is safe.
- *
- * @param functionArn - The Lambda ARN to invoke
- * @param payload - JSON-serialisable event payload
- * @returns Parsed inner response body
- * @throws Error if the Lambda returns a non-2xx status or a FunctionError
- */
-async function invokeSync<T>(
-  functionArn: string,
-  payload: Record<string, unknown>,
-): Promise<T> {
-  const result = await getLambdaClient().send(
-    new InvokeCommand({
-      FunctionName: functionArn,
-      InvocationType: 'RequestResponse',
-      Payload: Buffer.from(JSON.stringify(payload)),
-    }),
-  );
-
-  // FunctionError indicates the Lambda threw an unhandled exception
-  if (result.FunctionError) {
-    let detail = '';
-    try {
-      const raw = result.Payload ? JSON.parse(Buffer.from(result.Payload).toString('utf-8')) : {};
-      detail = (raw as { errorMessage?: string }).errorMessage ?? JSON.stringify(raw);
-    } catch { /* ignore */ }
-    throw new Error(`Lambda function error: ${detail}`);
-  }
-
-  // Parse the API GW envelope the trigger Lambda wraps its response in
-  const envelope = result.Payload
-    ? (JSON.parse(Buffer.from(result.Payload).toString('utf-8')) as {
-        statusCode?: number;
-        body?: string;
-      })
-    : { statusCode: 500, body: '{}' };
-
-  const statusCode = envelope.statusCode ?? 500;
-  const body = envelope.body ? (JSON.parse(envelope.body) as Record<string, unknown>) : {};
-
-  if (statusCode < 200 || statusCode >= 300) {
-    const message = (body['error'] as string | undefined) ?? `Lambda returned ${statusCode}`;
-    const details = body['details'] ? ` — ${body['details'] as string}` : '';
-    throw new Error(`${message}${details}`);
-  }
-
-  return body as unknown as T;
-}
-
 /**
  * Create the pipelines admin router.
  *
@@ -202,116 +92,6 @@ async function invokeSync<T>(
  */
 export function createPipelinesRouter(config: AdminApiConfig): Hono<AdminApiBindings> {
   const router = new Hono<AdminApiBindings>();
-
-  // -------------------------------------------------------------------------
-  // POST /api/admin/pipelines/article
-  // Re-trigger article generation for an existing draft slug.
-  //
-  // Required body: { slug: string }
-  //   slug — the article slug whose source file already exists at
-  //          s3://<assetsBucket>/drafts/<slug>.md.
-  //
-  // The trigger Lambda (bedrock-*-pipeline-trigger) is typed as an S3Handler.
-  // It iterates event.Records[n].s3.object.key and extracts the slug via the
-  // regex /^drafts\/(.+)\.md$/. A flat payload (without a Records array) causes
-  // the handler to silently no-op — this was the original bug.
-  //
-  // This route constructs the same synthetic S3 event shape that drafts.ts uses,
-  // ensuring consistent Lambda invocation regardless of trigger origin.
-  //
-  // InvocationType: 'Event' — async fire-and-forget.
-  // The admin dashboard polls GET /api/admin/articles/:slug for status updates.
-  //
-  // Response: 202 { queued: true, pipeline: 'article', slug, key }
-  // -------------------------------------------------------------------------
-  router.post('/article', async (ctx) => {
-    const body = await ctx.req.json<{ slug?: string }>().catch(() => ({ slug: undefined }));
-
-    // slug is required — without it we cannot construct the S3 object key
-    if (!body.slug || typeof body.slug !== 'string' || body.slug.trim().length === 0) {
-      return ctx.json({ error: 'slug is required in the request body' }, 400);
-    }
-
-    const slug = body.slug.trim();
-    const key = `drafts/${slug}.md`;
-
-    // Build a synthetic S3 event matching the S3Handler / S3Event contract.
-    // The trigger Lambda reads event.Records[n].s3.bucket.name and
-    // event.Records[n].s3.object.key — these two fields are the minimum required.
-    const syntheticS3Event = {
-      Records: [
-        {
-          s3: {
-            bucket: { name: config.assetsBucketName },
-            object: { key },
-          },
-        },
-      ],
-    };
-
-    await invokeAsync(config.articleTriggerArn, syntheticS3Event as Record<string, unknown>);
-
-    console.log(`[pipelines] Article re-trigger queued — slug=${slug} key=${key}`);
-
-    return ctx.json({ queued: true, pipeline: 'article', slug, key }, 202);
-  });
-
-  // -------------------------------------------------------------------------
-  // POST /api/admin/pipelines/strategist
-  // Trigger the Strategist pipeline Lambda asynchronously.
-  //
-  // The Strategist trigger Lambda's handler is typed as APIGatewayProxyEventV2.
-  // It reads `event.body` as a JSON string and parses it through a Zod
-  // discriminated union that requires `{ operation, targetCompany, targetRole, ... }`.
-  //
-  // This route forwards the admin dashboard's request body by wrapping it in the
-  // correct APIGatewayProxyEventV2 envelope. A flat payload (without body/requestContext)
-  // would fail Zod validation inside the Lambda silently due to async invocation.
-  //
-  // Required body fields (forwarded verbatim):
-  //   operation     — 'analyse' | 'coach'
-  //   targetCompany — e.g. 'Acme Corp'
-  //   targetRole    — e.g. 'Senior Engineer'
-  //   jobDescription — full JD text
-  //   resumeId      — DynamoDB RESUME# record ID (for 'analyse')
-  //   applicationSlug — existing slug (for 'coach')
-  //   interviewStage — 'applied' | 'screening' | 'technical' | ... (for 'coach')
-  //
-  // InvocationType: 'Event' — async fire-and-forget.
-  // Response: 202 { queued: true, pipeline: 'strategist' }
-  // -------------------------------------------------------------------------
-  router.post('/strategist', async (ctx) => {
-    const body = await ctx.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
-
-    const operation = String(body['operation'] ?? 'unknown');
-
-    // The Strategist trigger Lambda is an APIGatewayProxyEventV2 handler.
-    // We wrap the request body in the correct APIGatewayProxyEventV2 envelope
-    // so the Lambda can parse it from event.body.
-    //
-    // We use synchronous invocation (RequestResponse) for the strategist route
-    // so we can capture the Lambda's response and return `applicationSlug` to the
-    // admin dashboard for real-time progress tracking. The trigger Lambda is fast
-    // (<3 s: DynamoDB write + StartExecution) — blocking is acceptable here.
-    const lambdaEvent = {
-      requestContext: {
-        http: { method: 'POST' },
-      },
-      body: JSON.stringify(body),
-    };
-
-    const result = await invokeSync<{
-      pipelineId: string;
-      applicationSlug: string;
-      operation: string;
-      status: string;
-      executionArn?: string;
-    }>(config.strategistTriggerArn, lambdaEvent as Record<string, unknown>);
-
-    console.log(`[pipelines] Strategist trigger complete — operation=${operation} slug=${result.applicationSlug}`);
-
-    return ctx.json(result, 200);
-  });
 
   // -------------------------------------------------------------------------
   // POST /api/admin/pipelines/article-job/:slug

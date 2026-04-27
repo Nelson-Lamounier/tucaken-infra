@@ -49,15 +49,6 @@ jest.unstable_mockModule('../../src/lib/repositories/applications.js', () => ({
 
 const testConfig = {
   assetsBucketName: 'test-assets-bucket',
-  articleTriggerArn: 'arn:aws:lambda:eu-west-1:1:function:trigger',
-  versionHistoryLambdaArn: 'arn:aws:lambda:eu-west-1:1:function:vh',
-  publishLambdaArn: 'arn:aws:lambda:eu-west-1:1:function:p',
-  strategistTriggerArn: 'arn:aws:lambda:eu-west-1:1:function:s',
-  dynamoTableName: 't',
-  dynamoGsi1Name: 'g1',
-  dynamoGsi2Name: 'g2',
-  strategistTableName: 's',
-  resumesTableName: 's',
   cognitoUserPoolId: 'eu-west-1_X',
   cognitoClientId: 'c',
   cognitoIssuerUrl: 'https://example.com',

@@ -32,16 +32,7 @@ const { createIngestionRouter } = await import('../../src/routes/ingestion.js');
 // ---------------------------------------------------------------------------
 
 const testConfig = {
-  dynamoTableName: 'test-articles',
-  dynamoGsi1Name: 'gsi1-status-date',
-  dynamoGsi2Name: 'gsi2-tag-date',
   assetsBucketName: 'test-bucket',
-  publishLambdaArn: 'arn:aws:lambda:eu-west-1:123:function:publish',
-  articleTriggerArn: 'arn:aws:lambda:eu-west-1:123:function:trigger',
-  versionHistoryLambdaArn: 'arn:aws:lambda:eu-west-1:123:function:version-history',
-  strategistTriggerArn: 'arn:aws:lambda:eu-west-1:123:function:strategist',
-  strategistTableName: 'test-strategist',
-  resumesTableName: 'test-strategist',
   cognitoUserPoolId: 'eu-west-1_TestPool',
   cognitoClientId: 'testClient',
   cognitoIssuerUrl: 'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_TestPool',

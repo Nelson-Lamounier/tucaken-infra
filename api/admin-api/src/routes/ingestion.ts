@@ -6,10 +6,12 @@
  * Lambda → Worker Lambda chain with a single in-cluster K8s Job.
  *
  * Routes:
- *   POST /api/admin/ingestion/trigger — accepts { userId, repoFullName, forceReindex? }
+ *   POST /api/admin/ingestion/trigger — accepts { repoFullName, forceReindex? }
+ *                                       (userId is sourced from the JWT subject)
  *                                       creates a Job in the ingestion namespace,
  *                                       returns 202 { status, jobName }.
  */
+import { createHash } from 'node:crypto';
 import { Hono } from 'hono';
 import type { JWTPayload } from 'jose';
 import type { V1Job } from '@kubernetes/client-node';
@@ -21,9 +23,13 @@ type AdminApiBindings = {
 };
 
 const REPO_FULL_NAME_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+const MAX_NAME_LEN = 63;
+
+function sanitizeLabel(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, MAX_NAME_LEN);
+}
 
 interface TriggerBody {
-    readonly userId?:        string;
     readonly repoFullName?:  string;
     readonly forceReindex?:  boolean;
 }
@@ -35,8 +41,12 @@ function buildJobSpec(
     forceReindex: boolean,
     timestamp: number,
 ): V1Job {
-    const repoSlug = repoFullName.replace('/', '-').toLowerCase();
-    const jobName  = `ingestion-${userId}-${repoSlug}-${timestamp}`.toLowerCase();
+    const safeUserId = sanitizeLabel(userId);
+    const repoSlug   = sanitizeLabel(repoFullName.replace('/', '-'));
+    const suffix     = createHash('sha1').update(`${userId}:${repoFullName}:${timestamp}`).digest('hex').slice(0, 8);
+    // 'ingestion-' (10) + suffix (8) + 2 hyphens = 20 fixed chars; 43 left for slug
+    const slugPart   = sanitizeLabel(`${safeUserId}-${repoSlug}`).slice(0, 43);
+    const jobName    = `ingestion-${slugPart}-${suffix}`.slice(0, MAX_NAME_LEN);
 
     return {
         apiVersion: 'batch/v1',
@@ -46,7 +56,7 @@ function buildJobSpec(
             namespace: cfg.ingestionNamespace,
             labels: {
                 app:      'ingestion-worker',
-                userId,
+                userId:   safeUserId,
                 repoSlug,
             },
         },
@@ -55,7 +65,7 @@ function buildJobSpec(
             backoffLimit:            2,
             activeDeadlineSeconds:   900,
             template: {
-                metadata: { labels: { app: 'ingestion-worker', userId, repoSlug } },
+                metadata: { labels: { app: 'ingestion-worker', userId: safeUserId, repoSlug } },
                 spec: {
                     restartPolicy:      'Never',
                     serviceAccountName: cfg.ingestionServiceAccount,
@@ -87,6 +97,10 @@ export function createIngestionRouter(config: AdminApiConfig): Hono<AdminApiBind
     const router = new Hono<AdminApiBindings>();
 
     router.post('/trigger', async (ctx) => {
+        const jwtPayload = ctx.get('jwtPayload');
+        const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : '';
+        if (!userId) return ctx.json({ error: 'Authenticated subject missing' }, 401);
+
         let body: TriggerBody;
         try {
             body = await ctx.req.json<TriggerBody>();
@@ -94,11 +108,9 @@ export function createIngestionRouter(config: AdminApiConfig): Hono<AdminApiBind
             return ctx.json({ error: 'Body must be valid JSON' }, 400);
         }
 
-        const userId       = body.userId?.trim();
         const repoFullName = body.repoFullName?.trim();
         const forceReindex = body.forceReindex ?? false;
 
-        if (!userId)                                 return ctx.json({ error: '"userId" is required' }, 400);
         if (!repoFullName)                           return ctx.json({ error: '"repoFullName" is required' }, 400);
         if (!REPO_FULL_NAME_RE.test(repoFullName))   return ctx.json({ error: '"repoFullName" must match owner/repo' }, 400);
 

@@ -65,7 +65,7 @@ function buildApp() {
   const app = new Hono();
   app.use('*', async (ctx, next) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ctx as any).set('jwtPayload', { sub: 'test-user-sub' });
+    (ctx as any).set('jwtPayload', { sub: 'test-user' });
     await next();
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,23 +95,11 @@ describe('POST /trigger — create ingestion Job', () => {
     expect(createNamespacedJobMock).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when userId is missing', async () => {
-    const res = await buildApp().request('/trigger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repoFullName: 'owner/repo' }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toMatch(/userId/);
-    expect(createNamespacedJobMock).not.toHaveBeenCalled();
-  });
-
   it('returns 400 when repoFullName is missing', async () => {
     const res = await buildApp().request('/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'user-123' }),
+      body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
@@ -123,7 +111,7 @@ describe('POST /trigger — create ingestion Job', () => {
     const res = await buildApp().request('/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'user-123', repoFullName: 'invalid' }),
+      body: JSON.stringify({ repoFullName: 'invalid' }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
@@ -135,7 +123,7 @@ describe('POST /trigger — create ingestion Job', () => {
     const res = await buildApp().request('/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'user-123', repoFullName: 'octocat/hello-world', forceReindex: true }),
+      body: JSON.stringify({ repoFullName: 'octocat/hello-world', forceReindex: true }),
     });
 
     expect(res.status).toBe(202);
@@ -147,8 +135,9 @@ describe('POST /trigger — create ingestion Job', () => {
       forceReindex: boolean;
     };
     expect(body.status).toBe('queued');
-    expect(body.jobName).toMatch(/^ingestion-user-123-octocat-hello-world-\d+$/);
-    expect(body.userId).toBe('user-123');
+    expect(body.jobName).toMatch(/^ingestion-test-user-octocat-hello-world-[0-9a-f]{8}$/);
+    expect(body.jobName.length).toBeLessThanOrEqual(63);
+    expect(body.userId).toBe('test-user');
     expect(body.repoFullName).toBe('octocat/hello-world');
     expect(body.forceReindex).toBe(true);
 
@@ -158,7 +147,7 @@ describe('POST /trigger — create ingestion Job', () => {
 
     const env = callArgs[1].spec.template.spec.containers[0]!.env;
     const envMap = Object.fromEntries(env.map((e) => [e.name, e.value]));
-    expect(envMap['USER_ID']).toBe('user-123');
+    expect(envMap['USER_ID']).toBe('test-user');
     expect(envMap['REPO_FULL_NAME']).toBe('octocat/hello-world');
     expect(envMap['FORCE_REINDEX']).toBe('true');
   });
@@ -167,11 +156,25 @@ describe('POST /trigger — create ingestion Job', () => {
     const res = await buildApp().request('/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'user-123', repoFullName: 'octocat/hello-world' }),
+      body: JSON.stringify({ repoFullName: 'octocat/hello-world' }),
     });
     expect(res.status).toBe(202);
     const body = (await res.json()) as { forceReindex: boolean };
     expect(body.forceReindex).toBe(false);
+  });
+
+  it('caps the Job name at 63 chars even for very long repoFullName', async () => {
+    const longRepo = `${'a'.repeat(100)}/${'b'.repeat(100)}`;
+    const res = await buildApp().request('/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoFullName: longRepo }),
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { jobName: string };
+    expect(body.jobName.length).toBeLessThanOrEqual(63);
+    expect(body.jobName).toMatch(/^ingestion-/);
+    expect(body.jobName).toMatch(/-[0-9a-f]{8}$/);
   });
 
   it('returns 502 when the K8s API rejects', async () => {
@@ -181,7 +184,7 @@ describe('POST /trigger — create ingestion Job', () => {
     const res = await buildApp().request('/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'user-123', repoFullName: 'octocat/hello-world' }),
+      body: JSON.stringify({ repoFullName: 'octocat/hello-world' }),
     });
 
     expect(res.status).toBe(502);

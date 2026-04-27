@@ -84,6 +84,24 @@ export interface AdminApiConfig {
 
   /** ServiceAccount the ingestion Job pod runs as. */
   readonly ingestionServiceAccount: string;
+
+  /** Kubernetes namespace where article-pipeline Jobs are created. */
+  readonly articlePipelineNamespace: string;
+
+  /** Container image for the article pipeline runner. */
+  readonly articlePipelineImage: string;
+
+  /** ServiceAccount the article-pipeline Job pod runs as. */
+  readonly articlePipelineServiceAccount: string;
+
+  /** Kubernetes namespace where strategist-pipeline Jobs are created. */
+  readonly strategistPipelineNamespace: string;
+
+  /** Container image for the strategist pipeline runner. */
+  readonly strategistPipelineImage: string;
+
+  /** ServiceAccount the strategist-pipeline Job pod runs as. */
+  readonly strategistPipelineServiceAccount: string;
 }
 
 /**
@@ -116,6 +134,8 @@ export function loadConfig(): AdminApiConfig {
     PG_USER: process.env['PG_USER'],
     PG_PASSWORD: process.env['PG_PASSWORD'],
     INGESTION_IMAGE: process.env['INGESTION_IMAGE'],
+    ARTICLE_PIPELINE_IMAGE: process.env['ARTICLE_PIPELINE_IMAGE'],
+    STRATEGIST_PIPELINE_IMAGE: process.env['STRATEGIST_PIPELINE_IMAGE'],
   };
 
   const missing = Object.entries(required)
@@ -153,5 +173,11 @@ export function loadConfig(): AdminApiConfig {
     ingestionNamespace: process.env['INGESTION_NAMESPACE'] ?? 'ingestion',
     ingestionImage: required['INGESTION_IMAGE']!,
     ingestionServiceAccount: process.env['INGESTION_SERVICE_ACCOUNT'] ?? 'ingestion-sa',
+    articlePipelineNamespace: process.env['ARTICLE_PIPELINE_NAMESPACE'] ?? 'article-pipeline',
+    articlePipelineImage: required['ARTICLE_PIPELINE_IMAGE']!,
+    articlePipelineServiceAccount: process.env['ARTICLE_PIPELINE_SERVICE_ACCOUNT'] ?? 'article-pipeline-sa',
+    strategistPipelineNamespace: process.env['STRATEGIST_PIPELINE_NAMESPACE'] ?? 'job-strategist',
+    strategistPipelineImage: required['STRATEGIST_PIPELINE_IMAGE']!,
+    strategistPipelineServiceAccount: process.env['STRATEGIST_PIPELINE_SERVICE_ACCOUNT'] ?? 'job-strategist-sa',
   };
 }

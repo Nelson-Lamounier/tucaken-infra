@@ -96,6 +96,12 @@ const testConfig = {
   ingestionNamespace: 'ingestion',
   ingestionImage: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/ingestion:latest',
   ingestionServiceAccount: 'ingestion-sa',
+  articlePipelineNamespace: 'article-pipeline',
+  articlePipelineImage: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/article-pipeline:latest',
+  articlePipelineServiceAccount: 'article-pipeline-sa',
+  strategistPipelineNamespace: 'job-strategist',
+  strategistPipelineImage: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/strategist-pipeline:latest',
+  strategistPipelineServiceAccount: 'job-strategist-sa',
 };
 
 // ---------------------------------------------------------------------------

@@ -36,6 +36,8 @@ const VALID_ENV: Record<string, string> = {
   PG_USER: 'postgres',
   PG_PASSWORD: 'secret',
   INGESTION_IMAGE: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/ingestion:latest',
+  ARTICLE_PIPELINE_IMAGE: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/article-pipeline:latest',
+  STRATEGIST_PIPELINE_IMAGE: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/strategist-pipeline:latest',
 };
 
 // ---------------------------------------------------------------------------
@@ -113,6 +115,46 @@ describe('loadConfig()', () => {
     it('throws the admin-api service prefix in the error message', () => {
       unsetEnv(Object.keys(VALID_ENV));
       expect(() => loadConfig()).toThrow('[admin-api] Missing required environment variables');
+    });
+  });
+
+  describe('pipeline config', () => {
+    it('throws when ARTICLE_PIPELINE_IMAGE is missing', () => {
+      delete process.env['ARTICLE_PIPELINE_IMAGE'];
+      expect(() => loadConfig()).toThrow(/ARTICLE_PIPELINE_IMAGE/);
+    });
+
+    it('throws when STRATEGIST_PIPELINE_IMAGE is missing', () => {
+      delete process.env['STRATEGIST_PIPELINE_IMAGE'];
+      expect(() => loadConfig()).toThrow(/STRATEGIST_PIPELINE_IMAGE/);
+    });
+
+    it('defaults pipeline namespaces and SAs when env unset', () => {
+      delete process.env['ARTICLE_PIPELINE_NAMESPACE'];
+      delete process.env['ARTICLE_PIPELINE_SERVICE_ACCOUNT'];
+      delete process.env['STRATEGIST_PIPELINE_NAMESPACE'];
+      delete process.env['STRATEGIST_PIPELINE_SERVICE_ACCOUNT'];
+      const cfg = loadConfig();
+      expect(cfg.articlePipelineNamespace).toBe('article-pipeline');
+      expect(cfg.articlePipelineServiceAccount).toBe('article-pipeline-sa');
+      expect(cfg.strategistPipelineNamespace).toBe('job-strategist');
+      expect(cfg.strategistPipelineServiceAccount).toBe('job-strategist-sa');
+    });
+
+    it('overrides pipeline namespaces and SAs when env set', () => {
+      process.env['ARTICLE_PIPELINE_NAMESPACE'] = 'custom-article';
+      process.env['ARTICLE_PIPELINE_SERVICE_ACCOUNT'] = 'custom-article-sa';
+      process.env['STRATEGIST_PIPELINE_NAMESPACE'] = 'custom-strategist';
+      process.env['STRATEGIST_PIPELINE_SERVICE_ACCOUNT'] = 'custom-strategist-sa';
+      const cfg = loadConfig();
+      expect(cfg.articlePipelineNamespace).toBe('custom-article');
+      expect(cfg.articlePipelineServiceAccount).toBe('custom-article-sa');
+      expect(cfg.strategistPipelineNamespace).toBe('custom-strategist');
+      expect(cfg.strategistPipelineServiceAccount).toBe('custom-strategist-sa');
+      delete process.env['ARTICLE_PIPELINE_NAMESPACE'];
+      delete process.env['ARTICLE_PIPELINE_SERVICE_ACCOUNT'];
+      delete process.env['STRATEGIST_PIPELINE_NAMESPACE'];
+      delete process.env['STRATEGIST_PIPELINE_SERVICE_ACCOUNT'];
     });
   });
 

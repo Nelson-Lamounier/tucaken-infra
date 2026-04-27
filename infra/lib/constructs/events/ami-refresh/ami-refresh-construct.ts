@@ -2,12 +2,17 @@ import * as path from 'path';
 
 import { NagSuppressions } from 'cdk-nag';
 
+import * as cw from 'aws-cdk-lib/aws-cloudwatch';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as sns_subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -24,6 +29,14 @@ export interface AmiRefreshProps {
   readonly controlPlaneLtName: string;
   readonly controlPlaneAsgName: string;
   readonly pollInterval?: cdk.Duration;
+  /**
+   * Email subscribed to a dedicated SNS topic that fires when the AMI refresh
+   * state machine enters FAILED. Without this, AMI bake → AMI refresh
+   * regressions go silent (as happened 2026-04-25 → 2026-04-27 when
+   * IAM was missing ec2:CreateTags). Optional — when undefined, the alarm
+   * is still created (visible in CloudWatch) but has no notification action.
+   */
+  readonly notificationEmail?: string;
 }
 
 export class AmiRefreshConstruct extends Construct {
@@ -293,6 +306,45 @@ export class AmiRefreshConstruct extends Construct {
       timeout: cdk.Duration.hours(2),
       tracingEnabled: true,
       logs: { destination: sfnLogGroup, level: sfn.LogLevel.ALL, includeExecutionData: true },
+    });
+
+    // ─── Failure alarm ─────────────────────────────────────────────────────
+    //
+    // Fires when ANY ami-refresh execution enters FAILED. Wired to SNS so
+    // operators get an email. Without this guard the construct can rot
+    // silently — AMI bakes succeed, golden-ami SSM updates, but the state
+    // machine fails its IAM/auth check and ASG $Default never advances.
+    // That is exactly the failure mode that survived undetected for ~48h
+    // before manual investigation surfaced it.
+    const alertsTopic = new sns.Topic(this, 'AmiRefreshAlertsTopic', {
+      topicName: `${props.ssmPrefix.replace(/\//g, '-').replace(/^-/, '')}-ami-refresh-alerts`,
+      displayName: 'AMI Refresh Failure Alerts',
+      enforceSSL: true,
+      masterKey: kms.Alias.fromAliasName(this, 'AmiRefreshAlertsKey', 'alias/aws/sns'),
+    });
+    if (props.notificationEmail) {
+      alertsTopic.addSubscription(new sns_subscriptions.EmailSubscription(props.notificationEmail));
+    }
+
+    new cw.Alarm(this, 'AmiRefreshFailedAlarm', {
+      alarmName: `${props.ssmPrefix.replace(/\//g, '-').replace(/^-/, '')}-ami-refresh-failed`,
+      alarmDescription:
+        'AMI refresh state machine execution FAILED. Check the latest execution: ' +
+        'aws stepfunctions list-executions --state-machine-arn <ARN> --status-filter FAILED. ' +
+        'Common causes: IAM missing ec2:CreateTags / ec2:RunInstances / iam:PassRole; ' +
+        'launch-template version drift; ASG instance refresh timeout.',
+      metric: this.stateMachine.metricFailed({ period: cdk.Duration.minutes(5), statistic: 'Sum' }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cw.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    }).addAlarmAction(new cwActions.SnsAction(alertsTopic));
+
+    new ssm.StringParameter(this, 'AmiRefreshAlertsTopicArnParam', {
+      parameterName: `${props.ssmPrefix}/ami-refresh/alerts-topic-arn`,
+      stringValue: alertsTopic.topicArn,
+      description: 'SNS topic for AMI refresh state-machine FAILED notifications',
     });
 
     // EventBridge rule

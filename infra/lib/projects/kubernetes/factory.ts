@@ -585,6 +585,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             ],
             controlPlaneLtName: controlPlaneStack.launchTemplateName,
             controlPlaneAsgName: controlPlaneStack.concreteAsgName,
+            notificationEmail: emailConfig.notificationEmail,
         });
 
         cdk.Annotations.of(scope).addInfo(

@@ -72,31 +72,26 @@ export class AmiRefreshConstruct extends Construct {
     // UpdateAutoScalingGroup with a LaunchTemplate triggers an authorization
     // simulation: AWS internally evaluates ec2:RunInstances against ALL the
     // resources the LT references (AMI, subnet, SG, network-interface, volume,
-    // instance, key-pair). Granting only on launch-template/* causes the
-    // simulation to fail with "not authorized to use launch template".
+    // instance, key-pair) AND iam:PassRole on the LT's instance profile.
     //
-    // Scope the broad RunInstances/PassRole grants with aws:CalledVia so they
-    // only succeed when invoked transitively by Auto Scaling — never if the
-    // Lambda itself calls ec2:RunInstances directly.
+    // The simulation runs in the principal's identity context, NOT as a chained
+    // service call — aws:CalledVia is empty during the check, so a CalledVia
+    // condition makes the policy never match.
+    //
+    // Mitigation: the only AWS calls this Lambda makes (per source) are
+    // CreateLaunchTemplateVersion, ModifyLaunchTemplate, UpdateAutoScalingGroup,
+    // StartInstanceRefresh, DescribeInstanceRefreshes, GetParameter. The Lambda
+    // never calls ec2:RunInstances or iam:PassRole directly — these grants
+    // exist solely so the AutoScaling-side simulation can succeed.
     lambdaRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'Ec2RunInstancesViaAsg',
+      sid: 'Ec2RunInstancesForAsgValidation',
       actions: ['ec2:RunInstances'],
       resources: ['*'],
-      conditions: {
-        'ForAnyValue:StringEquals': {
-          'aws:CalledVia': ['autoscaling.amazonaws.com'],
-        },
-      },
     }));
     lambdaRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'IamPassRoleViaAsg',
+      sid: 'IamPassRoleForAsgValidation',
       actions: ['iam:PassRole'],
       resources: ['*'],
-      conditions: {
-        'ForAnyValue:StringEquals': {
-          'aws:CalledVia': ['autoscaling.amazonaws.com'],
-        },
-      },
     }));
     lambdaRole.addToPolicy(new iam.PolicyStatement({
       sid: 'AsgRefresh',

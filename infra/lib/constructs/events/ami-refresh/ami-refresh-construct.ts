@@ -83,22 +83,30 @@ export class AmiRefreshConstruct extends Construct {
       resources: ['*'],
     }));
     // UpdateAutoScalingGroup with a LaunchTemplate triggers an authorization
-    // simulation: AWS internally evaluates ec2:RunInstances against ALL the
-    // resources the LT references (AMI, subnet, SG, network-interface, volume,
-    // instance, key-pair) AND iam:PassRole on the LT's instance profile.
+    // simulation: AWS internally evaluates ec2:RunInstances + ec2:CreateTags
+    // (because the LT carries TagSpecifications) AND iam:PassRole on the
+    // LT's instance profile role.
     //
     // The simulation runs in the principal's identity context, NOT as a chained
     // service call — aws:CalledVia is empty during the check, so a CalledVia
     // condition makes the policy never match.
     //
+    // The misleading error "not authorized to use launch template" is what
+    // AutoScaling returns when ANY of these checks fail (RunInstances,
+    // CreateTags, or PassRole), not just RunInstances. Granting RunInstances
+    // alone is insufficient when the LT has TagSpecifications.
+    //
     // Mitigation: the only AWS calls this Lambda makes (per source) are
     // CreateLaunchTemplateVersion, ModifyLaunchTemplate, UpdateAutoScalingGroup,
     // StartInstanceRefresh, DescribeInstanceRefreshes, GetParameter. The Lambda
-    // never calls ec2:RunInstances or iam:PassRole directly — these grants
-    // exist solely so the AutoScaling-side simulation can succeed.
+    // never calls ec2:RunInstances, ec2:CreateTags, or iam:PassRole directly —
+    // these grants exist solely so the AutoScaling-side simulation can succeed.
     lambdaRole.addToPolicy(new iam.PolicyStatement({
-      sid: 'Ec2RunInstancesForAsgValidation',
-      actions: ['ec2:RunInstances'],
+      sid: 'Ec2LtSimulationGrants',
+      actions: [
+        'ec2:RunInstances',
+        'ec2:CreateTags',
+      ],
       resources: ['*'],
     }));
     lambdaRole.addToPolicy(new iam.PolicyStatement({

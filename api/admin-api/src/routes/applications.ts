@@ -13,7 +13,9 @@
  *   POST /:slug/status     — update application status (and optionally interviewStage)
  */
 
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
+import type { JWTPayload } from 'jose';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
@@ -28,7 +30,10 @@ import {
   DescribeExecutionCommand,
 } from '@aws-sdk/client-sfn';
 import type { AdminApiConfig } from '../lib/config.js';
+import { getBatchApi } from '../lib/k8s.js';
+import { buildPipelineJob, sanitizeLabel } from '../lib/k8s-job-builder.js';
 import { getPool } from '../lib/pg.js';
+import { insertPipelineRun } from '../lib/repositories/pipeline-runs.js';
 import {
   listApplications,
   updateApplicationStatus as pgUpdateStatus,
@@ -113,8 +118,12 @@ function selectLatest(current: DynamoRecord | null, candidate: DynamoRecord): Dy
  * @param config - Validated admin-api configuration
  * @returns Hono router instance
  */
-export function createApplicationsRouter(config: AdminApiConfig): Hono {
-  const app = new Hono();
+type AdminApiBindings = {
+  Variables: { jwtPayload: JWTPayload };
+};
+
+export function createApplicationsRouter(config: AdminApiConfig): Hono<AdminApiBindings> {
+  const app = new Hono<AdminApiBindings>();
   const TABLE = config.strategistTableName;
 
   // ── GET / — list applications ─────────────────────────────────────────────
@@ -464,6 +473,149 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono {
     const stageId = currentStateName ? (SFN_STATE_TO_STAGE[currentStateName] ?? null) : null;
 
     return ctx.json({ sfnStatus, stageId, currentStateName, startDate, elapsedMs });
+  });
+
+  // ── POST /:slug/coach — schedule the coach K8s Job ───────────────────────
+  /**
+   * Phase 4 Task 5: synchronous Job + polling, mirroring the article and
+   * strategist K8s Job patterns. Inserts a pipeline_runs row (type='coach')
+   * and creates a Job in the `job-strategist` namespace which runs the
+   * Coach entrypoint (dist/run-coach.js).
+   *
+   * The admin polls GET /:slug/coaching/:stage to detect completion.
+   */
+  app.post('/:slug/coach', async (ctx) => {
+    const slug = ctx.req.param('slug');
+    const jwtPayload = ctx.get('jwtPayload');
+    const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : '';
+    if (!userId) return ctx.json({ error: 'Authenticated subject missing' }, 401);
+
+    let body: {
+      strategistPipelineRunId?: string;
+      interviewStage?:          string;
+      applicationId?:           string;
+      targetCompany?:           string;
+      targetRole?:              string;
+      jobDescription?:          string;
+      mode?:                    string;
+    };
+    try { body = await ctx.req.json(); }
+    catch { return ctx.json({ error: 'Body must be valid JSON' }, 400); }
+
+    const f = {
+      strategistPipelineRunId: body.strategistPipelineRunId?.trim(),
+      interviewStage:          body.interviewStage?.trim(),
+      applicationId:           body.applicationId?.trim(),
+      targetCompany:           body.targetCompany?.trim(),
+      targetRole:              body.targetRole?.trim(),
+      jobDescription:          body.jobDescription?.trim(),
+    };
+    for (const [k, v] of Object.entries(f)) {
+      if (!v) return ctx.json({ error: `"${k}" is required` }, 400);
+    }
+    const mode = body.mode?.trim() || 'standard';
+
+    const coachPipelineRunId = randomUUID();
+    try {
+      await insertPipelineRun(getPool(config), {
+        id:           coachPipelineRunId,
+        userId,
+        pipelineType: 'coach',
+        referenceId:  f.applicationId!,
+        metadata: {
+          applicationSlug:         slug,
+          interviewStage:          f.interviewStage,
+          strategistPipelineRunId: f.strategistPipelineRunId,
+        },
+      });
+    } catch (err: unknown) {
+      console.error('[applications/coach] failed to insert pipeline_run', err);
+      return ctx.json({ error: 'Failed to record pipeline run' }, 500);
+    }
+
+    const job = buildPipelineJob({
+      namespace:          config.strategistPipelineNamespace,
+      image:              config.strategistPipelineImage,
+      serviceAccountName: config.strategistPipelineServiceAccount,
+      nameStem:           `coach-${sanitizeLabel(slug)}-${sanitizeLabel(f.interviewStage!)}`,
+      suffixInput:        `${coachPipelineRunId}:${f.applicationId}:${f.interviewStage}:${Date.now()}`,
+      labels: {
+        app:    'coach-pipeline',
+        userId,
+        slug:   sanitizeLabel(slug),
+        stage:  sanitizeLabel(f.interviewStage!),
+      },
+      command: ['node', 'dist/run-coach.js'],
+      env: [
+        { name: 'COACH_PIPELINE_RUN_ID',      value: coachPipelineRunId },
+        { name: 'STRATEGIST_PIPELINE_RUN_ID', value: f.strategistPipelineRunId! },
+        { name: 'APPLICATION_ID',             value: f.applicationId! },
+        { name: 'APPLICATION_SLUG',           value: slug },
+        { name: 'USER_ID',                    value: userId },
+        { name: 'TARGET_COMPANY',             value: f.targetCompany! },
+        { name: 'TARGET_ROLE',                value: f.targetRole! },
+        { name: 'JOB_DESCRIPTION',            value: f.jobDescription! },
+        { name: 'INTERVIEW_STAGE',            value: f.interviewStage! },
+        { name: 'MODE',                       value: mode },
+      ],
+      envFromSecretRefs: ['platform-rds-credentials'],
+    });
+
+    try { await getBatchApi().createNamespacedJob(config.strategistPipelineNamespace, job); }
+    catch (err: unknown) {
+      console.error('[applications/coach] failed to create K8s Job', err);
+      return ctx.json({ error: 'Failed to schedule coach Job' }, 502);
+    }
+
+    return ctx.json({
+      status:             'queued',
+      coachPipelineRunId,
+      jobName:            job.metadata!.name!,
+      applicationId:      f.applicationId,
+      interviewStage:     f.interviewStage,
+    }, 202);
+  });
+
+  // ── GET /:slug/coaching/:stage — read coaching_content row ────────────────
+  /**
+   * Returns the coaching content row for an application + stage. The admin
+   * passes applicationId via query param to avoid a slug→id lookup
+   * (job_applications has no slug column today).
+   *
+   * Returns 404 while the Job is still running; the admin polls until 200.
+   */
+  app.get('/:slug/coaching/:stage', async (ctx) => {
+    const stage = ctx.req.param('stage');
+
+    const applicationId = ctx.req.query('applicationId');
+    if (!applicationId) {
+      return ctx.json({ error: 'applicationId query param required' }, 400);
+    }
+
+    const pool = getPool(config);
+    const result = await pool.query<{
+      topics_to_study:     unknown;
+      expected_questions:  unknown;
+      personal_highlights: unknown;
+      generated_at:        Date;
+    }>(
+      `SELECT topics_to_study, expected_questions, personal_highlights, generated_at
+       FROM coaching_content WHERE job_application_id = $1 AND stage_type = $2`,
+      [applicationId, stage],
+    );
+    if (result.rows.length === 0) {
+      return ctx.json({ error: 'Coaching content not yet ready' }, 404);
+    }
+
+    const row = result.rows[0]!;
+    return ctx.json({
+      applicationId,
+      stage,
+      coaching:           row.topics_to_study,
+      questions:          row.expected_questions,
+      personalHighlights: row.personal_highlights,
+      generatedAt:        row.generated_at,
+    });
   });
 
   return app;

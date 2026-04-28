@@ -8,8 +8,17 @@
  */
 
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
-import { loadConfig } from '../../src/lib/config.js';
+import {
+  loadConfig,
+  getJobImage,
+  isImageConfigured,
+  UNSET_IMAGE_SENTINEL,
+  _resetJobImageCache,
+} from '../../src/lib/config.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -27,9 +36,6 @@ const VALID_ENV: Record<string, string> = {
   PG_DATABASE: 'tucaken',
   PG_USER: 'postgres',
   PG_PASSWORD: 'secret',
-  INGESTION_IMAGE: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/ingestion:latest',
-  ARTICLE_PIPELINE_IMAGE: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/article-pipeline:latest',
-  STRATEGIST_PIPELINE_IMAGE: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/strategist-pipeline:latest',
 };
 
 // ---------------------------------------------------------------------------
@@ -97,22 +103,9 @@ describe('loadConfig()', () => {
   });
 
   describe('pipeline config', () => {
-    // The 3 *_IMAGE env vars are written by ArgoCD Image Updater on each ECR
-    // push. On first deploy (before any push) they may be unset — we fall back
-    // to UNSET_IMAGE_SENTINEL and let routes return 502 via isImageConfigured.
-    it('falls back to sentinel when ARTICLE_PIPELINE_IMAGE is missing', async () => {
-      delete process.env['ARTICLE_PIPELINE_IMAGE'];
-      const { UNSET_IMAGE_SENTINEL } = await import('../../src/lib/config.js');
-      const cfg = loadConfig();
-      expect(cfg.articlePipelineImage).toBe(UNSET_IMAGE_SENTINEL);
-    });
-
-    it('falls back to sentinel when STRATEGIST_PIPELINE_IMAGE is missing', async () => {
-      delete process.env['STRATEGIST_PIPELINE_IMAGE'];
-      const { UNSET_IMAGE_SENTINEL } = await import('../../src/lib/config.js');
-      const cfg = loadConfig();
-      expect(cfg.strategistPipelineImage).toBe(UNSET_IMAGE_SENTINEL);
-    });
+    // Image URIs are NOT loaded into AdminApiConfig — they're resolved
+    // dynamically by getJobImage() from the file mount. See the
+    // 'getJobImage' describe block below.
 
     it('defaults pipeline namespaces and SAs when env unset', () => {
       delete process.env['ARTICLE_PIPELINE_NAMESPACE'];
@@ -144,19 +137,7 @@ describe('loadConfig()', () => {
   });
 
   describe('ingestion config', () => {
-    it('falls back to sentinel when INGESTION_IMAGE is missing', async () => {
-      delete process.env['INGESTION_IMAGE'];
-      const { UNSET_IMAGE_SENTINEL } = await import('../../src/lib/config.js');
-      const cfg = loadConfig();
-      expect(cfg.ingestionImage).toBe(UNSET_IMAGE_SENTINEL);
-    });
-
-    it('resolves ingestionImage from INGESTION_IMAGE env var', () => {
-      const cfg = loadConfig();
-      expect(cfg.ingestionImage).toBe(
-        '771826808455.dkr.ecr.eu-west-1.amazonaws.com/ingestion:latest',
-      );
-    });
+    // INGESTION_IMAGE is no longer in AdminApiConfig — see getJobImage().
 
     it('defaults ingestionNamespace to "ingestion" when INGESTION_NAMESPACE unset', () => {
       delete process.env['INGESTION_NAMESPACE'];
@@ -183,6 +164,65 @@ describe('loadConfig()', () => {
       expect(cfg.ingestionServiceAccount).toBe('custom-sa');
       delete process.env['INGESTION_SERVICE_ACCOUNT'];
     });
+  });
+});
+
+// ===========================================================================
+// getJobImage() — file-mount-first resolution
+// ===========================================================================
+describe('getJobImage()', () => {
+  let tmpDir: string;
+  const ENV_VARS = ['INGESTION_IMAGE', 'ARTICLE_PIPELINE_IMAGE', 'STRATEGIST_PIPELINE_IMAGE'];
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-api-images-'));
+    process.env['JOB_IMAGES_DIR'] = tmpDir;
+    unsetEnv(ENV_VARS);
+    _resetJobImageCache();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete process.env['JOB_IMAGES_DIR'];
+    unsetEnv(ENV_VARS);
+    _resetJobImageCache();
+  });
+
+  it('reads the URI from JOB_IMAGES_DIR/<name> when the file exists', () => {
+    fs.writeFileSync(path.join(tmpDir, 'ingestion'), '771826.dkr.ecr.eu-west-1.amazonaws.com/ingestion:abc123\n');
+    expect(getJobImage('ingestion')).toBe('771826.dkr.ecr.eu-west-1.amazonaws.com/ingestion:abc123');
+  });
+
+  it('trims surrounding whitespace and trailing newline from the file', () => {
+    fs.writeFileSync(path.join(tmpDir, 'article-pipeline'), '   771826.dkr.ecr.eu-west-1.amazonaws.com/article-pipeline:def456   \n');
+    expect(getJobImage('article-pipeline')).toBe('771826.dkr.ecr.eu-west-1.amazonaws.com/article-pipeline:def456');
+  });
+
+  it('falls back to env var when the file is missing', () => {
+    process.env['INGESTION_IMAGE'] = '771826.dkr.ecr.eu-west-1.amazonaws.com/ingestion:envfallback';
+    expect(getJobImage('ingestion')).toBe('771826.dkr.ecr.eu-west-1.amazonaws.com/ingestion:envfallback');
+  });
+
+  it('returns UNSET_IMAGE_SENTINEL when both file and env are missing', () => {
+    expect(getJobImage('job-strategist')).toBe(UNSET_IMAGE_SENTINEL);
+  });
+
+  it('caches the result for 30s — file changes are not seen until cache expiry', () => {
+    fs.writeFileSync(path.join(tmpDir, 'ingestion'), 'old:tag1');
+    expect(getJobImage('ingestion')).toBe('old:tag1');
+
+    fs.writeFileSync(path.join(tmpDir, 'ingestion'), 'new:tag2');
+    expect(getJobImage('ingestion')).toBe('old:tag1'); // still cached
+
+    _resetJobImageCache();
+    expect(getJobImage('ingestion')).toBe('new:tag2'); // cache cleared
+  });
+
+  it('isImageConfigured() rejects sentinel, empty, and trailing-colon URIs', () => {
+    expect(isImageConfigured(UNSET_IMAGE_SENTINEL)).toBe(false);
+    expect(isImageConfigured('')).toBe(false);
+    expect(isImageConfigured('foo/bar:')).toBe(false);
+    expect(isImageConfigured('foo/bar:abc123')).toBe(true);
   });
 });
 

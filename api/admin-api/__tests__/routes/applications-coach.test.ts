@@ -60,13 +60,10 @@ const testConfig = {
   pgUser: 'postgres',
   pgPassword: 'secret',
   ingestionNamespace: 'ingestion',
-  ingestionImage: 'img/ingestion:latest',
   ingestionServiceAccount: 'ingestion-sa',
   articlePipelineNamespace: 'article-pipeline',
-  articlePipelineImage: 'img/article:latest',
   articlePipelineServiceAccount: 'article-pipeline-sa',
   strategistPipelineNamespace: 'job-strategist',
-  strategistPipelineImage: 'img/strategist:latest',
   strategistPipelineServiceAccount: 'job-strategist-sa',
 };
 
@@ -100,11 +97,16 @@ const validBody = {
 // POST /:slug/coach
 // ---------------------------------------------------------------------------
 
+// getJobImage() env-var fallback for tests (no file mount in jest).
+process.env['STRATEGIST_PIPELINE_IMAGE'] = '771826808455.dkr.ecr.eu-west-1.amazonaws.com/job-strategist:latest';
+
 describe('POST /:slug/coach', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     createNamespacedJobMock.mockResolvedValue({});
     insertPipelineRunMock.mockResolvedValue(undefined);
+    const { _resetJobImageCache } = await import('../../src/lib/config.js');
+    _resetJobImageCache();
   });
 
   it('returns 401 when JWT sub missing', async () => {

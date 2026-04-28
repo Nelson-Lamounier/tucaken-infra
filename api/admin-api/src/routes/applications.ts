@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type { JWTPayload } from 'jose';
 import type { AdminApiConfig } from '../lib/config.js';
-import { isImageConfigured } from '../lib/config.js';
+import { getJobImage, isImageConfigured } from '../lib/config.js';
 import { getBatchApi } from '../lib/k8s.js';
 import { buildPipelineJob, sanitizeLabel } from '../lib/k8s-job-builder.js';
 import { getPool } from '../lib/pg.js';
@@ -216,9 +216,10 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono<AdminApiB
     }
     const mode = body.mode?.trim() || 'standard';
 
-    if (!isImageConfigured(config.strategistPipelineImage)) {
-      console.error('[applications/coach] STRATEGIST_PIPELINE_IMAGE not yet set — Image Updater write pending', { value: config.strategistPipelineImage });
-      return ctx.json({ error: 'Strategist pipeline image not yet configured — first deploy must complete' }, 502);
+    const strategistPipelineImage = getJobImage('job-strategist');
+    if (!isImageConfigured(strategistPipelineImage)) {
+      console.error('[applications/coach] image URI unresolved — admin-api-job-images Secret not yet synced', { value: strategistPipelineImage });
+      return ctx.json({ error: 'Strategist pipeline image not yet configured — wait ~60s for ESO/kubelet sync' }, 502);
     }
 
     const coachPipelineRunId = randomUUID();
@@ -241,7 +242,7 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono<AdminApiB
 
     const job = buildPipelineJob({
       namespace:          config.strategistPipelineNamespace,
-      image:              config.strategistPipelineImage,
+      image:              strategistPipelineImage,
       serviceAccountName: config.strategistPipelineServiceAccount,
       nameStem:           `coach-${sanitizeLabel(slug)}-${sanitizeLabel(f.interviewStage!)}`,
       suffixInput:        `${coachPipelineRunId}:${f.applicationId}:${f.interviewStage}:${Date.now()}`,

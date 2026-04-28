@@ -49,13 +49,10 @@ const testConfig = {
   pgUser: 'postgres',
   pgPassword: 'secret',
   ingestionNamespace: 'ingestion',
-  ingestionImage: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/ingestion:latest',
   ingestionServiceAccount: 'ingestion-sa',
   articlePipelineNamespace: 'article-pipeline',
-  articlePipelineImage: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/article-pipeline:latest',
   articlePipelineServiceAccount: 'article-pipeline-sa',
   strategistPipelineNamespace: 'job-strategist',
-  strategistPipelineImage: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/strategist-pipeline:latest',
   strategistPipelineServiceAccount: 'job-strategist-sa',
 };
 
@@ -80,11 +77,18 @@ async function buildAuthedApp(jwtSub: string | null = 'test-user') {
   return app;
 }
 
+// getJobImage() falls back to env vars when no file mount is present.
+// Setting these globally keeps the trigger-route guards happy in tests.
+process.env['ARTICLE_PIPELINE_IMAGE']    = '771826808455.dkr.ecr.eu-west-1.amazonaws.com/article-pipeline:latest';
+process.env['STRATEGIST_PIPELINE_IMAGE'] = '771826808455.dkr.ecr.eu-west-1.amazonaws.com/job-strategist:latest';
+
 describe('POST /article-job/:slug — K8s Job article pipeline', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     createNamespacedJobMock.mockResolvedValue({});
     insertPipelineRunMock.mockResolvedValue(undefined);
+    const { _resetJobImageCache } = await import('../../src/lib/config.js');
+    _resetJobImageCache();
   });
 
   it('returns 401 when JWT sub is missing', async () => {

@@ -44,7 +44,6 @@ const testConfig = {
   pgUser: 'postgres',
   pgPassword: 'secret',
   ingestionNamespace: 'ingestion',
-  ingestionImage: '771826808455.dkr.ecr.eu-west-1.amazonaws.com/ingestion:latest',
   ingestionServiceAccount: 'ingestion-sa',
 } as const;
 
@@ -69,9 +68,14 @@ function buildApp() {
 // ---------------------------------------------------------------------------
 
 describe('POST /trigger — create ingestion Job', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     createNamespacedJobMock.mockReset();
     createNamespacedJobMock.mockResolvedValue({});
+    // getJobImage() resolves env-var fallback when JOB_IMAGES_DIR is unset
+    // or empty; tests set INGESTION_IMAGE so the trigger guard succeeds.
+    process.env['INGESTION_IMAGE'] = '771826808455.dkr.ecr.eu-west-1.amazonaws.com/ingestion:latest';
+    const { _resetJobImageCache } = await import('../../src/lib/config.js');
+    _resetJobImageCache();
   });
 
   it('returns 400 when body is not valid JSON', async () => {

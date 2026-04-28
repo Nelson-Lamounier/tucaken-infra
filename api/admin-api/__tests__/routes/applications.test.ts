@@ -73,7 +73,6 @@ const testConfig = {
   pgUser: 'postgres',
   pgPassword: 'secret',
   strategistPipelineNamespace: 'job-strategist',
-  strategistPipelineImage: 'img/strategist:latest',
   strategistPipelineServiceAccount: 'job-strategist-sa',
 } as const;
 

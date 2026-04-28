@@ -16,7 +16,7 @@ import { Hono } from 'hono';
 import type { JWTPayload } from 'jose';
 import type { V1Job } from '@kubernetes/client-node';
 import type { AdminApiConfig } from '../lib/config.js';
-import { isImageConfigured } from '../lib/config.js';
+import { getJobImage, isImageConfigured } from '../lib/config.js';
 import { getBatchApi } from '../lib/k8s.js';
 
 type AdminApiBindings = {
@@ -37,6 +37,7 @@ interface TriggerBody {
 
 function buildJobSpec(
     cfg: AdminApiConfig,
+    image: string,
     userId: string,
     repoFullName: string,
     forceReindex: boolean,
@@ -72,7 +73,7 @@ function buildJobSpec(
                     serviceAccountName: cfg.ingestionServiceAccount,
                     containers: [{
                         name:    'worker',
-                        image:   cfg.ingestionImage,
+                        image:   image,
                         command: ['node', 'dist/run-ingestion.js'],
                         env: [
                             { name: 'USER_ID',        value: userId },
@@ -115,13 +116,15 @@ export function createIngestionRouter(config: AdminApiConfig): Hono<AdminApiBind
         if (!repoFullName)                           return ctx.json({ error: '"repoFullName" is required' }, 400);
         if (!REPO_FULL_NAME_RE.test(repoFullName))   return ctx.json({ error: '"repoFullName" must match owner/repo' }, 400);
 
-        // Guard: ArgoCD Image Updater hasn't written the image tag yet.
-        if (!isImageConfigured(config.ingestionImage)) {
-            console.error('[ingestion] INGESTION_IMAGE not yet set — Image Updater write pending', { value: config.ingestionImage });
-            return ctx.json({ error: 'Ingestion image not yet configured — first deploy must complete' }, 502);
+        // Resolve the current ingestion image URI from the file mount
+        // (kubelet auto-updates it when ESO refreshes the upstream Secret).
+        const ingestionImage = getJobImage('ingestion');
+        if (!isImageConfigured(ingestionImage)) {
+            console.error('[ingestion] image URI unresolved — admin-api-job-images Secret not yet synced', { value: ingestionImage });
+            return ctx.json({ error: 'Ingestion image not yet configured — wait ~60s for ESO/kubelet sync' }, 502);
         }
 
-        const job = buildJobSpec(config, userId, repoFullName, forceReindex, Date.now());
+        const job = buildJobSpec(config, ingestionImage, userId, repoFullName, forceReindex, Date.now());
 
         try {
             await getBatchApi().createNamespacedJob(config.ingestionNamespace, job);

@@ -190,3 +190,9 @@ pick up the new join token from SSM.
 - [ ] Worker nodes joined and running workloads
 - [ ] CloudFront → NLB → Traefik → Next.js serving traffic
 - [ ] Revert CDK AZ back to `eu-west-1a` when AZ recovers (optional)
+
+## Related
+
+- [Self-Healing Platform](../projects/self-healing-platform.md) — canonical entry point: cross-AZ recovery is the only failure mode with no automated path
+- [NLB Architecture](../concepts/nlb-architecture.md) — EIP SubnetMapping and how the NLB survives an AZ outage
+- [etcd Restore SAN Mismatch](../troubleshooting/etcd-restore-san-mismatch.md) — API server cert SANs reference old IP after control plane migration

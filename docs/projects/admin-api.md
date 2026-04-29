@@ -186,6 +186,7 @@ The image tag format is `{git-sha}-r{run_attempt}` ([.github/workflows/deploy-ap
 
 ## Related projects
 
+- [cdk-monitoring Platform](cdk-monitoring-platform.md) — canonical platform entry point: ECR repos, Platform RDS, Cognito, and Kubernetes worker nodes that admin-api depends on
 - **start-admin** — the TanStack frontend that calls this BFF via server functions.
 - **kubernetes-bootstrap** — holds the ArgoCD ApplicationSet and Argo Rollouts configuration for admin-api; owned by the GitOps delivery path.
 - **ingestion**, **article-pipeline**, **job-strategist** — the K8s Job workloads that admin-api dispatches; their image URIs are tracked in SSM under `/k8s/{env}/job-images/`.

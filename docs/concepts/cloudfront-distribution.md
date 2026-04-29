@@ -495,6 +495,7 @@ enforces this hard limit.
 
 ## Related
 
+- [Request Lifecycle — Viewer to Pod](request-lifecycle-viewer-to-pod.md) — end-to-end path showing where CloudFront fits among all hops
 - [NLB Architecture](nlb-architecture.md)
 - [Security Group Configuration](security-group-configuration.md)
 - [CloudWatch Logs Strategy](cloudwatch-logs-strategy.md)

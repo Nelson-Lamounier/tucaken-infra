@@ -311,6 +311,12 @@ already installed.
 - `kubernetes-app/k8s-bootstrap/system/argocd/bootstrap_argocd.py` — ArgoCD bootstrap script (step 7)
 - `.github/workflows/_deploy-ssm-automation.yml` — Pipeline that syncs bootstrap scripts and triggers SSM
 
+## Related
+
+- [Self-Healing Platform](../projects/self-healing-platform.md) — canonical entry point: where the CCM deadlock fits in the broader self-healing architecture
+- [SSM Bootstrap & Self-Healing Pipeline Integration](../concepts/self-healing-ssm-integration.md) — failure classification, agent tool loop, run_summary.json structure
+- [K8s Bootstrap Failure Modes](../troubleshooting/k8s-bootstrap-failure-modes.md) — three SSM Automation failure modes including CCM taint timeout
+
 ---
 
 *Commands and paths above are real values from the cdk-monitoring repository.*

@@ -37,9 +37,11 @@
 
 | Document | Topic |
 |:---------|:------|
+| [cdk-monitoring Platform](projects/cdk-monitoring-platform.md) | **Canonical entry point** — what this repo is, what it owns, stack inventory, sibling repo relationships, deployment topology |
 | [CDK Platform Stacks](projects/cdk-platform-stacks.md) | Complete reference for all 16 stacks across kubernetes, shared, and org projects |
 | [admin-api BFF](projects/admin-api.md) | Hono BFF serving start-admin: Cognito JWKS auth, K8s Job dispatch, PgBouncer, FinOps route |
 | [cdk-governance-aspects](projects/cdk-governance-aspects.md) | Published npm package: DynamoDB read-only enforcement aspect and tagging aspect |
+| [Self-Healing Platform](projects/self-healing-platform.md) | Bedrock Agent + AMI Refresh pipelines: failure modes covered, remediation flows, manual intervention points, observability |
 
 ---
 
@@ -55,6 +57,8 @@
 | [ASG Configuration](concepts/asg-configuration.md) | Three-pool ASG architecture, Spot setup, Cluster Autoscaler tags, scaling strategy, IAM policy structure, and 3-layer bootstrap |
 | [Launch Template Configuration](concepts/launch-template-configuration.md) | LaunchTemplateConstruct responsibilities, LT↔ASG↔AMI relationships, Golden AMI versioning, IMDSv2, source/dest check workaround, and node launch workflow |
 | [NLB Architecture](concepts/nlb-architecture.md) | NLB design, EIP SubnetMapping, CloudFront/admin traffic paths, security group layers, target group health checks, and live state reference |
+| [CDK Construct Architecture](concepts/cdk-construct-architecture.md) | L1/L2/L3 layer model, custom L3 constructs, CDK Aspects for governance, compile-time validation patterns, factory pattern, and testing approach |
+| [CDK Aspects Governance](concepts/cdk-aspects-governance.md) | Aspects vs constructs, visit() scheduling, TaggingAspect, EnforceReadOnlyDynamoDbAspect token resolution, cdk-nag, published npm package rationale, testing with Annotations API |
 | [CloudFront Distribution](concepts/cloudfront-distribution.md) | Dual-origin setup, EIP DNS conversion, origin secret, behavior ordering, cache policies, AUTH_COOKIES, WAF, cross-account DNS validation role, and live state reference |
 | [Networking Observability](concepts/networking-observability.md) | VPC Flow Logs, NLB access logs, CloudWatch metrics — full traffic path observability |
 | [CloudWatch & Steampipe Data Paths](concepts/cloudwatch-steampipe-data-paths.md) | End-to-end data path from AWS → CloudWatch Logs Insights → Grafana and parallel Steampipe SQL path |
@@ -62,6 +66,7 @@
 | [Platform RDS + PgBouncer](concepts/platform-rds-pgbouncer.md) | PostgreSQL 16 in SharedVpc, PgBouncer transaction mode, lazy pool singleton, connection budget |
 | [IaC Security — Dual-Layer](concepts/iac-security-dual-layer.md) | cdk-nag at synth time + Checkov in CI: complementary roles, skip-check rationale, SARIF integration |
 | [FinOps Observability](concepts/finops-observability.md) | admin-api FinOps route: CloudWatch Bedrock metrics, Cost Explorer queries, IAM permissions |
+| [Request Lifecycle — Viewer to Pod](concepts/request-lifecycle-viewer-to-pod.md) | End-to-end request path: DNS → CloudFront → WAF → NLB → Traefik → kube-proxy → Pod, with per-hop failure modes |
 
 ---
 
@@ -93,6 +98,14 @@
 | [CDK LaunchTemplate.launchTemplateName Always Undefined](troubleshooting/cdk-launch-template-name-undefined.md) | CDK L2 LaunchTemplate.launchTemplateName is always undefined — build concrete name string directly |
 | [NLB Target Registration Propagation Delay](troubleshooting/nlb-target-registration-propagation-delay.md) | Integration tests fail after Spot replacement — new instance absent from DescribeTargetHealth for up to 2.5 min |
 | [RDS allowMajorVersionUpgrade Required](troubleshooting/rds-allow-major-version-upgrade.md) | CloudFormation blocks PostgreSQL major version upgrade without allowMajorVersionUpgrade: true |
+| [CDK Aspects Validation Failures](troubleshooting/cdk-aspects-validation-failures.md) | AwsSolutions-L1 on framework Lambdas, AwsSolutions-IAM5 wildcards, EnforceReadOnlyDynamoDb false positives, suppression recipes |
+| [Traefik Rejects All Requests — X-CloudFront-Origin-Secret Mismatch](troubleshooting/traefik-origin-secret-rejection.md) | 502 at CloudFront while NLB is healthy; secret mismatch between SSM/CloudFront and Traefik HeadersRegexp; 4-step atomic rotation |
+| [Calico VXLAN Cross-Node Pod Communication Failure](troubleshooting/calico-vxlan-cross-node-failure.md) | Cross-node pods time out while same-node pods succeed; UDP 4789 blocked by SG; diagnosis via VPC Flow Logs + SG audit |
+| [PgBouncer Rejects TLS — SSL Connection Failure](troubleshooting/pgbouncer-ssl-connection-failure.md) | `ssl: { rejectUnauthorized: false }` triggers TLS handshake with plain-TCP PgBouncer; drop `ssl` key entirely |
+| [CloudFront Rejects Raw EIP as Origin Domain](troubleshooting/cloudfront-eip-raw-ip-as-origin.md) | CloudFront requires EC2 DNS hostname not raw IP; VPC must have DNS Hostnames enabled |
+| [cdk-nag COG8 — Cognito AdvancedSecurityMode Deprecated](troubleshooting/cognito-advanced-security-mode-cog8-failure.md) | `AdvancedSecurityMode.ENFORCED` deprecated; migrate to `featurePlan: FeaturePlan.PLUS` + `standardThreatProtectionMode` |
+| [GITHUB_OUTPUT Rejects Multi-line aws-cli JSON](troubleshooting/github-output-multiline-value-invalid-format.md) | `aws --output json` is pretty-printed; pipe through `jq -c '.'` before writing to GITHUB_OUTPUT |
+| [CloudFormation Execution Role Missing Service / Non-ASCII SG Description](troubleshooting/cfn-exec-role-missing-service-permissions.md) | Stack rollback on new service deploy (add to CDKCloudFormationEx.json + bootstrap); em dash in SG description causes HTTP 400 |
 
 ---
 
@@ -100,6 +113,7 @@
 
 | Runbook | Scenario |
 |:--------|:---------|
+| [Creating a New CDK Construct](runbooks/creating-a-new-cdk-construct.md) | Domain placement, props interface, inline defaults, validation, exports, unit test boilerplate |
 | [Creating a New Stack](runbooks/creating-a-new-stack.md) | Step-by-step guide for adding a new CDK stack or project |
 | [Bootstrap Deadlock — CCM](runbooks/bootstrap-deadlock-ccm.md) | Resolve Cloud Controller Manager deadlock during cluster bootstrap |
 | [Cross-AZ Recovery](runbooks/cross-az-recovery.md) | Recover cluster state after an AZ failure |

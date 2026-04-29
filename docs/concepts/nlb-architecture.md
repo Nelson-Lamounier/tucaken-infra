@@ -389,6 +389,7 @@ zcat *.log.gz | head -20
 
 ## Related
 
+- [Request Lifecycle — Viewer to Pod](request-lifecycle-viewer-to-pod.md) — end-to-end path showing where NLB fits among all hops
 - [ADR-006: NLB over EIP-Failover Lambda](../decisions/0006-nlb-over-eip-failover-lambda.md)
 - [Security Group Configuration](security-group-configuration.md)
 - [Networking Observability](../networking-observability.md)

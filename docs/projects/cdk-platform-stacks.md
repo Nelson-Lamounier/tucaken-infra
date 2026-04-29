@@ -414,6 +414,12 @@ Workflow: `.github/workflows/deploy-org.yml`
 
 Integration tests (verify-data, verify-base, verify-edge) run between stages. A failing test halts the pipeline before the next stage deploys.
 
+## Related
+
+- [cdk-monitoring Platform](cdk-monitoring-platform.md) — canonical project entry point: what this repo is, what it owns, sibling repo relationships
+- [CDK Construct Architecture](../concepts/cdk-construct-architecture.md) — L1/L2/L3 model, factory pattern, compile-time validation patterns
+- [SSM Cross-Stack Pattern](../patterns/ssm-cross-stack-pattern.md) — why SSM replaces CloudFormation exports for cross-stack discovery
+
 <!--
 Evidence trail (auto-generated):
 - Source: infra/lib/projects/kubernetes/factory.ts (read on 2026-04-28)

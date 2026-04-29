@@ -6,26 +6,19 @@
 
 ---
 
-## Architecture Decision Records
-
-| ADR | Decision |
-|:----|:---------|
-| [ADR-001: Self-Managed K8s vs EKS](adrs/0001-self-managed-k8s-vs-eks.md) | Why self-managed Kubernetes on EC2 over EKS |
-| [ADR-002: SSM over CloudFormation Exports](adrs/0002-ssm-over-cloudformation-exports.md) | Why SSM Parameter Store replaces Fn::ImportValue for cross-stack discovery |
-| [ADR-003: Crossplane over Terraform Modules](adrs/0003-crossplane-over-terraform-modules.md) | Why Crossplane manages in-cluster AWS resources instead of Terraform |
-| [ADR-004: Cognito over Auth0](adrs/0004-cognito-over-auth0.md) | Why Amazon Cognito replaces Auth.js v5 Credentials provider |
-| [ADR-005: NLB over EIP-Failover Lambda](adrs/0005-nlb-over-eip-failover-lambda.md) | Why the NLB replaced the Lambda-based EIP failover construct |
-| [ADR-006: GitOps over Direct K8s Deploy](adrs/0006-gitops-over-direct-k8s-deploy.md) | Why ArgoCD Image Updater replaced the k8s-runner deploy job |
-| [ADR-007: K8s Job Images from ConfigMap Files](adrs/0007-k8s-job-images-from-configmap-files.md) | Why Job image URIs are read from filesystem paths instead of env vars |
-| [ADR-008: Argo Rollouts Blue/Green with Prometheus Analysis](adrs/0008-argo-rollouts-blue-green-prometheus.md) | Why Argo Rollouts drives Blue/Green with Prometheus pre-promotion gates |
-
----
-
 ## Decisions
 
-| Document | Topic |
-|:---------|:------|
-| [Tucaken Architecture Migration](decisions/0002-tucaken-architecture-migration.md) | Lambda/Step Functions/DynamoDB → Kubernetes-native platform migration rationale and full stack mapping |
+| # | Decision |
+|:--|:---------|
+| [0001: Self-Managed K8s vs EKS](decisions/0001-self-managed-k8s-vs-eks.md) | Why self-managed Kubernetes on EC2 over EKS |
+| [0002: Tucaken Architecture Migration](decisions/0002-tucaken-architecture-migration.md) | Lambda/Step Functions/DynamoDB → Kubernetes-native platform migration rationale and full stack mapping |
+| [0003: SSM over CloudFormation Exports](decisions/0003-ssm-over-cloudformation-exports.md) | Why SSM Parameter Store replaces Fn::ImportValue for cross-stack discovery |
+| [0004: Crossplane over Terraform Modules](decisions/0004-crossplane-over-terraform-modules.md) | Why Crossplane manages in-cluster AWS resources instead of Terraform |
+| [0005: Cognito over Auth0](decisions/0005-cognito-over-auth0.md) | Why Amazon Cognito replaces Auth.js v5 Credentials provider |
+| [0006: NLB over EIP-Failover Lambda](decisions/0006-nlb-over-eip-failover-lambda.md) | Why the NLB replaced the Lambda-based EIP failover construct |
+| [0007: GitOps over Direct K8s Deploy](decisions/0007-gitops-over-direct-k8s-deploy.md) | Why ArgoCD Image Updater replaced the k8s-runner deploy job |
+| [0008: K8s Job Images from ConfigMap Files](decisions/0008-k8s-job-images-from-configmap-files.md) | Why Job image URIs are read from filesystem paths instead of env vars |
+| [0009: Argo Rollouts Blue/Green with Prometheus Analysis](decisions/0009-argo-rollouts-blue-green-prometheus.md) | Why Argo Rollouts drives Blue/Green with Prometheus pre-promotion gates |
 
 ---
 

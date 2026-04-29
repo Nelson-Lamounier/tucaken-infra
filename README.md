@@ -30,7 +30,7 @@ The split gives each repo a single reason to change: this repo changes when plat
 
 ## Highlights
 
-- **Self-managed Kubernetes on EC2** — kubeadm control plane + two Spot worker pools (general-purpose `t3.small` min=2/max=4, monitoring-dedicated `t3.medium` with `NoSchedule` taint), provisioned entirely via CDK without EKS fees ([ADR-001](docs/adrs/0001-self-managed-k8s-vs-eks.md))
+- **Self-managed Kubernetes on EC2** — kubeadm control plane + two Spot worker pools (general-purpose `t3.small` min=2/max=4, monitoring-dedicated `t3.medium` with `NoSchedule` taint), provisioned entirely via CDK without EKS fees ([ADR-001](docs/decisions/0001-self-managed-k8s-vs-eks.md))
 - **Project Factory pattern** — single `bin/app.ts` entry point delegates to typed factories via `-c project=X -c environment=Y`; no project logic leaks into the orchestrator ([`infra/lib/factories/`](infra/lib/factories/))
 - **Self-healing Lambda** — CloudWatch alarm triggers a Bedrock `ConverseCommand` agent that diagnoses Kubernetes incidents and applies SSM Run Command remediations without human intervention ([`infra/lambda/self-healing/`](infra/lambda/self-healing/), [`docs/concepts/self-healing-ssm-integration.md`](docs/concepts/self-healing-ssm-integration.md))
 - **Platform RDS** — PostgreSQL 16 in SharedVpc isolated subnets, serving all platform domains (articles, identity, career, config); replaces three separate DynamoDB tables ([`infra/lib/stacks/kubernetes/platform-rds-stack.ts`](infra/lib/stacks/kubernetes/platform-rds-stack.ts))
@@ -137,7 +137,7 @@ Platform infrastructure is provisioned by CDK stacks defined in [`infra/lib/stac
 
 ## Key design decisions
 
-- **Self-managed K8s over EKS** — deliberate learning decision for portfolio depth; eliminates ~$73/mo EKS control plane cost ([ADR-001: self-managed-k8s-vs-eks](docs/adrs/0001-self-managed-k8s-vs-eks.md))
+- **Self-managed K8s over EKS** — deliberate learning decision for portfolio depth; eliminates ~$73/mo EKS control plane cost ([ADR-001: self-managed-k8s-vs-eks](docs/decisions/0001-self-managed-k8s-vs-eks.md))
 - **Tucaken migration: Lambda/Step Functions → Kubernetes** — ingestion pipelines and AI jobs moved to K8s Jobs to eliminate VPC NAT costs and cold-start S3 staging overhead ([docs/decisions/0002-tucaken-architecture-migration.md](docs/decisions/0002-tucaken-architecture-migration.md))
 - **Single Platform RDS over multiple DynamoDB tables** — one PostgreSQL 16 instance in SharedVpc replaces three DynamoDB tables; `pgvector` extension handles embeddings without a second instance ([`infra/lib/stacks/kubernetes/platform-rds-stack.ts`](infra/lib/stacks/kubernetes/platform-rds-stack.ts))
 - **Project Factory pattern** — typed factory registry isolates project stacks while sharing VPC, IAM, and compliance concerns ([`infra/lib/factories/`](infra/lib/factories/))
@@ -163,9 +163,7 @@ cdk-monitoring/
 ├── packages/
 │   └── cdk-governance-aspects/     # Published npm package
 ├── docs/
-│   ├── adrs/                       # Architecture Decision Records
-│   ├── concepts/                   # Architecture concepts (self-healing, monitoring)
-│   ├── decisions/                  # Major migration decisions
+│   ├── decisions/                  # Architecture Decision Records + migration decisions
 │   ├── runbooks/                   # Operational runbooks
 │   └── plans/                      # Active migration plans
 ├── .github/workflows/              # 11 CI/CD workflows
@@ -235,7 +233,7 @@ Evidence trail (auto-generated):
 - Source: infra/lib/factories/README.md (read on 2026-04-28)
 - Source: infra/lib/stacks/kubernetes/README.md (read on 2026-04-28)
 - Source: packages/cdk-governance-aspects/README.md (read on 2026-04-28)
-- Source: docs/adrs/0001-self-managed-k8s-vs-eks.md (read on 2026-04-28)
+- Source: docs/decisions/0001-self-managed-k8s-vs-eks.md (read on 2026-04-28)
 - Source: docs/decisions/0002-tucaken-architecture-migration.md (read on 2026-04-28)
 - Source: .github/workflows/ (listed on 2026-04-28 — 11 workflows)
 - Source: .checkov/custom_checks/ (listed on 2026-04-28 — 13 rules)

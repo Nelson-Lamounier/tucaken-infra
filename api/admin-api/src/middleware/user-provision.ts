@@ -18,23 +18,15 @@
  *     than silently corrupting data.
  */
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import type { JWTPayload } from 'jose';
 import type { Pool } from 'pg';
+import type { AdminApiBindings } from '../lib/types.js';
 import { upsertUser } from '../lib/repositories/users.js';
-
-type Bindings = {
-  Variables: {
-    jwtPayload: JWTPayload;
-    /** Resolved users.id UUID — available to all downstream route handlers. */
-    userId: string;
-  };
-};
 
 /** sub → users.id cache, lives for the lifetime of the pod process. */
 const subToUserId = new Map<string, string>();
 
-export function userProvisionMiddleware(pool: Pool): MiddlewareHandler<Bindings> {
-  return async (ctx: Context<Bindings>, next: Next): Promise<void> => {
+export function userProvisionMiddleware(pool: Pool): MiddlewareHandler<AdminApiBindings> {
+  return async (ctx: Context<AdminApiBindings>, next: Next): Promise<void> => {
     const payload = ctx.get('jwtPayload');
     const sub     = payload?.sub;
 

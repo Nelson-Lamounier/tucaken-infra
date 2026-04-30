@@ -2,7 +2,7 @@
  * @format
  * ApplicationRepository — typed pg queries for the job_applications table.
  */
-import type { Pool } from 'pg';
+import type { Queryable } from '../pg.js';
 
 export interface Application {
     id:             string;
@@ -34,7 +34,7 @@ function rowToApplication(row: Record<string, unknown>): Application {
     };
 }
 
-export async function upsertApplication(pool: Pool, application: Application): Promise<void> {
+export async function upsertApplication(pool: Queryable, application: Application): Promise<void> {
     await pool.query(
         `INSERT INTO job_applications
              (id, user_id, company, role, job_url, job_description, kanban_status, applied_at)
@@ -60,7 +60,7 @@ export async function upsertApplication(pool: Pool, application: Application): P
     );
 }
 
-export async function getApplication(pool: Pool, id: string): Promise<Application | null> {
+export async function getApplication(pool: Queryable, id: string): Promise<Application | null> {
     const result = await pool.query(
         `SELECT id, user_id, company, role, job_url, job_description,
                 kanban_status, applied_at, created_at, updated_at
@@ -71,7 +71,7 @@ export async function getApplication(pool: Pool, id: string): Promise<Applicatio
     return rowToApplication(result.rows[0] as Record<string, unknown>);
 }
 
-export async function listApplications(pool: Pool, kanbanStatus?: string): Promise<Application[]> {
+export async function listApplications(pool: Queryable, kanbanStatus?: string): Promise<Application[]> {
     if (kanbanStatus !== undefined) {
         const result = await pool.query(
             `SELECT id, user_id, company, role, job_url, job_description,
@@ -89,13 +89,13 @@ export async function listApplications(pool: Pool, kanbanStatus?: string): Promi
     return (result.rows as Record<string, unknown>[]).map(rowToApplication);
 }
 
-export async function updateApplicationStatus(pool: Pool, id: string, kanbanStatus: string): Promise<void> {
+export async function updateApplicationStatus(pool: Queryable, id: string, kanbanStatus: string): Promise<void> {
     await pool.query(
         `UPDATE job_applications SET kanban_status = $1, updated_at = NOW() WHERE id = $2`,
         [kanbanStatus, id],
     );
 }
 
-export async function deleteApplication(pool: Pool, id: string): Promise<void> {
+export async function deleteApplication(pool: Queryable, id: string): Promise<void> {
     await pool.query(`DELETE FROM job_applications WHERE id = $1`, [id]);
 }

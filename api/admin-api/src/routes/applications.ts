@@ -17,12 +17,12 @@
 
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
-import type { JWTPayload } from 'jose';
 import type { AdminApiConfig } from '../lib/config.js';
 import { getJobImage, isImageConfigured } from '../lib/config.js';
 import { getBatchApi } from '../lib/k8s.js';
 import { buildPipelineJob, sanitizeLabel } from '../lib/k8s-job-builder.js';
-import { getPool } from '../lib/pg.js';
+import { getPool, withUser } from '../lib/pg.js';
+import type { AdminApiBindings } from '../lib/types.js';
 import { insertPipelineRun } from '../lib/repositories/pipeline-runs.js';
 import {
   listApplications,
@@ -49,10 +49,6 @@ const VALID_STATUSES = new Set([
 
 // ── Router factory ────────────────────────────────────────────────────────────
 
-type AdminApiBindings = {
-  Variables: { jwtPayload: JWTPayload };
-};
-
 /**
  * Creates the Hono router for application management routes.
  *
@@ -64,9 +60,13 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono<AdminApiB
 
   // ── GET / — list applications ─────────────────────────────────────────────
   app.get('/', async (ctx) => {
-    const rawStatus = ctx.req.query('status');
-    const apps = await listApplications(getPool(config), rawStatus ?? undefined);
-    const summaries = apps.map((a) => ({
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
+    return withUser(getPool(config), userId, async (db) => {
+      const rawStatus = ctx.req.query('status');
+      const apps = await listApplications(db, rawStatus ?? undefined);
+      const summaries = apps.map((a) => ({
         slug:           a.id,
         targetCompany:  a.company,
         targetRole:     a.role,
@@ -79,8 +79,9 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono<AdminApiB
         appliedAt:      a.appliedAt ?? null,
         createdAt:      a.createdAt ?? null,
         updatedAt:      a.updatedAt ?? null,
-    }));
-    return ctx.json({ applications: summaries, count: summaries.length });
+      }));
+      return ctx.json({ applications: summaries, count: summaries.length });
+    });
   });
 
   // ── GET /:slug — application detail (PG) ─────────────────────────────────
@@ -97,99 +98,115 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono<AdminApiB
    *  - latest resumes row (tailored resume content_json)
    */
   app.get('/:slug', async (ctx) => {
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
     const slug = ctx.req.param('slug');
-    const pool = getPool(config);
 
-    const application = await getApplication(pool, slug);
-    if (!application) return ctx.json({ error: `Application not found: ${slug}` }, 404);
+    return withUser(getPool(config), userId, async (db) => {
+      const application = await getApplication(db, slug);
+      if (!application) return ctx.json({ error: `Application not found: ${slug}` }, 404);
 
-    const analysisResult = await pool.query<{
-      id:         string;
-      metadata:   { analysis?: unknown } | null;
-      created_at: Date;
-    }>(
-      `SELECT id, metadata, created_at
-         FROM pipeline_runs
-        WHERE pipeline_type = 'strategist' AND reference_id = $1 AND status = 'complete'
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [slug],
-    );
-    const latestAnalysis = analysisResult.rows[0] ?? null;
+      const analysisResult = await db.query<{
+        id:         string;
+        metadata:   { analysis?: unknown } | null;
+        created_at: Date;
+      }>(
+        `SELECT id, metadata, created_at
+           FROM pipeline_runs
+          WHERE pipeline_type = 'strategist' AND reference_id = $1 AND status = 'complete'
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [slug],
+      );
+      const latestAnalysis = analysisResult.rows[0] ?? null;
 
-    const coachingResult = await pool.query<{
-      stage_type:          string;
-      topics_to_study:     unknown;
-      expected_questions:  unknown;
-      personal_highlights: unknown;
-    }>(
-      `SELECT stage_type, topics_to_study, expected_questions, personal_highlights
-         FROM coaching_content WHERE job_application_id = $1`,
-      [slug],
-    );
+      const coachingResult = await db.query<{
+        stage_type:          string;
+        topics_to_study:     unknown;
+        expected_questions:  unknown;
+        personal_highlights: unknown;
+      }>(
+        `SELECT stage_type, topics_to_study, expected_questions, personal_highlights
+           FROM coaching_content WHERE job_application_id = $1`,
+        [slug],
+      );
 
-    const resumeResult = await pool.query<{
-      id:           string;
-      content_json: unknown;
-      generated_at: Date;
-    }>(
-      `SELECT id, content_json, generated_at
-         FROM resumes WHERE job_application_id = $1
-        ORDER BY generated_at DESC LIMIT 1`,
-      [slug],
-    );
+      const resumeResult = await db.query<{
+        id:           string;
+        content_json: unknown;
+        generated_at: Date;
+      }>(
+        `SELECT id, content_json, generated_at
+           FROM resumes WHERE job_application_id = $1
+          ORDER BY generated_at DESC LIMIT 1`,
+        [slug],
+      );
 
-    return ctx.json({
-      application: {
-        id:                  application.id,
-        slug:                application.id,
-        targetCompany:       application.company,
-        targetRole:          application.role,
-        jobUrl:              application.jobUrl,
-        jobDescription:      application.jobDescription,
-        status:              application.kanbanStatus,
-        interviewStage:      'applied',
-        createdAt:           application.createdAt,
-        updatedAt:           application.updatedAt,
-        analysis:            latestAnalysis?.metadata?.analysis ?? null,
-        latestAnalysisRunId: latestAnalysis?.id ?? null,
-        tailoredResume:      resumeResult.rows[0]?.content_json ?? null,
-        coaching:            coachingResult.rows.reduce<Record<string, unknown>>((acc, row) => {
-          acc[row.stage_type] = {
-            topics:    row.topics_to_study,
-            questions: row.expected_questions,
-            personal:  row.personal_highlights,
-          };
-          return acc;
-        }, {}),
-      },
+      return ctx.json({
+        application: {
+          id:                  application.id,
+          slug:                application.id,
+          targetCompany:       application.company,
+          targetRole:          application.role,
+          jobUrl:              application.jobUrl,
+          jobDescription:      application.jobDescription,
+          status:              application.kanbanStatus,
+          interviewStage:      'applied',
+          createdAt:           application.createdAt,
+          updatedAt:           application.updatedAt,
+          analysis:            latestAnalysis?.metadata?.analysis ?? null,
+          latestAnalysisRunId: latestAnalysis?.id ?? null,
+          tailoredResume:      resumeResult.rows[0]?.content_json ?? null,
+          coaching:            coachingResult.rows.reduce<Record<string, unknown>>((acc, row) => {
+            acc[row.stage_type] = {
+              topics:    row.topics_to_study,
+              questions: row.expected_questions,
+              personal:  row.personal_highlights,
+            };
+            return acc;
+          }, {}),
+        },
+      });
     });
   });
 
   // ── DELETE /:slug — delete application ────────────────────────────────────
   app.delete('/:slug', async (ctx) => {
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
     const slug = ctx.req.param('slug');
-    await pgDeleteApplication(getPool(config), slug);
-    return ctx.json({ deleted: true, slug });
+
+    return withUser(getPool(config), userId, async (db) => {
+      await pgDeleteApplication(db, slug);
+      return ctx.json({ deleted: true, slug });
+    });
   });
 
   // ── POST /:slug/status — update status ────────────────────────────────────
   app.post('/:slug/status', async (ctx) => {
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
     const slug = ctx.req.param('slug');
     const body = await ctx.req.json<{ status?: string; interviewStage?: string }>();
     if (!body.status || !VALID_STATUSES.has(body.status)) {
       return ctx.json({ error: `Invalid or missing status: ${body.status ?? '(none)'}` }, 400);
     }
-    await pgUpdateStatus(getPool(config), slug, body.status);
-    return ctx.json({ success: true, status: body.status });
+
+    return withUser(getPool(config), userId, async (db) => {
+      await pgUpdateStatus(db, slug, body.status!);
+      return ctx.json({ success: true, status: body.status });
+    });
   });
 
   // ── POST /:slug/coach — schedule the coach K8s Job ───────────────────────
   app.post('/:slug/coach', async (ctx) => {
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
     const slug = ctx.req.param('slug');
-    const jwtPayload = ctx.get('jwtPayload');
-    const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : '';
-    if (!userId) return ctx.json({ error: 'Authenticated subject missing' }, 401);
 
     let body: {
       strategistPipelineRunId?: string;
@@ -223,98 +240,104 @@ export function createApplicationsRouter(config: AdminApiConfig): Hono<AdminApiB
     }
 
     const coachPipelineRunId = randomUUID();
-    try {
-      await insertPipelineRun(getPool(config), {
-        id:           coachPipelineRunId,
-        userId,
-        pipelineType: 'coach',
-        referenceId:  f.applicationId!,
-        metadata: {
-          applicationSlug:         slug,
-          interviewStage:          f.interviewStage,
-          strategistPipelineRunId: f.strategistPipelineRunId,
+
+    return withUser(getPool(config), userId, async (db) => {
+      try {
+        await insertPipelineRun(db, {
+          id:           coachPipelineRunId,
+          userId,
+          pipelineType: 'coach',
+          referenceId:  f.applicationId!,
+          metadata: {
+            applicationSlug:         slug,
+            interviewStage:          f.interviewStage,
+            strategistPipelineRunId: f.strategistPipelineRunId,
+          },
+        });
+      } catch (err: unknown) {
+        console.error('[applications/coach] failed to insert pipeline_run', err);
+        return ctx.json({ error: 'Failed to record pipeline run' }, 500);
+      }
+
+      const job = buildPipelineJob({
+        namespace:          config.strategistPipelineNamespace,
+        image:              strategistPipelineImage,
+        serviceAccountName: config.strategistPipelineServiceAccount,
+        nameStem:           `coach-${sanitizeLabel(slug)}-${sanitizeLabel(f.interviewStage!)}`,
+        suffixInput:        `${coachPipelineRunId}:${f.applicationId}:${f.interviewStage}:${Date.now()}`,
+        labels: {
+          app:    'coach-pipeline',
+          userId,
+          slug:   sanitizeLabel(slug),
+          stage:  sanitizeLabel(f.interviewStage!),
         },
+        command: ['node', 'dist/run-coach.js'],
+        env: [
+          { name: 'COACH_PIPELINE_RUN_ID',      value: coachPipelineRunId },
+          { name: 'STRATEGIST_PIPELINE_RUN_ID', value: f.strategistPipelineRunId! },
+          { name: 'APPLICATION_ID',             value: f.applicationId! },
+          { name: 'APPLICATION_SLUG',           value: slug },
+          { name: 'USER_ID',                    value: userId },
+          { name: 'TARGET_COMPANY',             value: f.targetCompany! },
+          { name: 'TARGET_ROLE',                value: f.targetRole! },
+          { name: 'JOB_DESCRIPTION',            value: f.jobDescription! },
+          { name: 'INTERVIEW_STAGE',            value: f.interviewStage! },
+          { name: 'MODE',                       value: mode },
+        ],
+        envFromSecretRefs: ['platform-rds-credentials'],
       });
-    } catch (err: unknown) {
-      console.error('[applications/coach] failed to insert pipeline_run', err);
-      return ctx.json({ error: 'Failed to record pipeline run' }, 500);
-    }
 
-    const job = buildPipelineJob({
-      namespace:          config.strategistPipelineNamespace,
-      image:              strategistPipelineImage,
-      serviceAccountName: config.strategistPipelineServiceAccount,
-      nameStem:           `coach-${sanitizeLabel(slug)}-${sanitizeLabel(f.interviewStage!)}`,
-      suffixInput:        `${coachPipelineRunId}:${f.applicationId}:${f.interviewStage}:${Date.now()}`,
-      labels: {
-        app:    'coach-pipeline',
-        userId,
-        slug:   sanitizeLabel(slug),
-        stage:  sanitizeLabel(f.interviewStage!),
-      },
-      command: ['node', 'dist/run-coach.js'],
-      env: [
-        { name: 'COACH_PIPELINE_RUN_ID',      value: coachPipelineRunId },
-        { name: 'STRATEGIST_PIPELINE_RUN_ID', value: f.strategistPipelineRunId! },
-        { name: 'APPLICATION_ID',             value: f.applicationId! },
-        { name: 'APPLICATION_SLUG',           value: slug },
-        { name: 'USER_ID',                    value: userId },
-        { name: 'TARGET_COMPANY',             value: f.targetCompany! },
-        { name: 'TARGET_ROLE',                value: f.targetRole! },
-        { name: 'JOB_DESCRIPTION',            value: f.jobDescription! },
-        { name: 'INTERVIEW_STAGE',            value: f.interviewStage! },
-        { name: 'MODE',                       value: mode },
-      ],
-      envFromSecretRefs: ['platform-rds-credentials'],
+      try { await getBatchApi().createNamespacedJob({ namespace: config.strategistPipelineNamespace, body: job }); }
+      catch (err: unknown) {
+        console.error('[applications/coach] failed to create K8s Job', err);
+        return ctx.json({ error: 'Failed to schedule coach Job' }, 502);
+      }
+
+      return ctx.json({
+        status:             'queued',
+        coachPipelineRunId,
+        jobName:            job.metadata!.name!,
+        applicationId:      f.applicationId,
+        interviewStage:     f.interviewStage,
+      }, 202);
     });
-
-    try { await getBatchApi().createNamespacedJob({ namespace: config.strategistPipelineNamespace, body: job }); }
-    catch (err: unknown) {
-      console.error('[applications/coach] failed to create K8s Job', err);
-      return ctx.json({ error: 'Failed to schedule coach Job' }, 502);
-    }
-
-    return ctx.json({
-      status:             'queued',
-      coachPipelineRunId,
-      jobName:            job.metadata!.name!,
-      applicationId:      f.applicationId,
-      interviewStage:     f.interviewStage,
-    }, 202);
   });
 
   // ── GET /:slug/coaching/:stage — read coaching_content row ────────────────
   app.get('/:slug/coaching/:stage', async (ctx) => {
-    const stage = ctx.req.param('stage');
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
 
+    const stage = ctx.req.param('stage');
     const applicationId = ctx.req.query('applicationId');
     if (!applicationId) {
       return ctx.json({ error: 'applicationId query param required' }, 400);
     }
 
-    const pool = getPool(config);
-    const result = await pool.query<{
-      topics_to_study:     unknown;
-      expected_questions:  unknown;
-      personal_highlights: unknown;
-      generated_at:        Date;
-    }>(
-      `SELECT topics_to_study, expected_questions, personal_highlights, generated_at
-       FROM coaching_content WHERE job_application_id = $1 AND stage_type = $2`,
-      [applicationId, stage],
-    );
-    if (result.rows.length === 0) {
-      return ctx.json({ error: 'Coaching content not yet ready' }, 404);
-    }
+    return withUser(getPool(config), userId, async (db) => {
+      const result = await db.query<{
+        topics_to_study:     unknown;
+        expected_questions:  unknown;
+        personal_highlights: unknown;
+        generated_at:        Date;
+      }>(
+        `SELECT topics_to_study, expected_questions, personal_highlights, generated_at
+         FROM coaching_content WHERE job_application_id = $1 AND stage_type = $2`,
+        [applicationId, stage],
+      );
+      if (result.rows.length === 0) {
+        return ctx.json({ error: 'Coaching content not yet ready' }, 404);
+      }
 
-    const row = result.rows[0]!;
-    return ctx.json({
-      applicationId,
-      stage,
-      coaching:           row.topics_to_study,
-      questions:          row.expected_questions,
-      personalHighlights: row.personal_highlights,
-      generatedAt:        row.generated_at,
+      const row = result.rows[0]!;
+      return ctx.json({
+        applicationId,
+        stage,
+        coaching:           row.topics_to_study,
+        questions:          row.expected_questions,
+        personalHighlights: row.personal_highlights,
+        generatedAt:        row.generated_at,
+      });
     });
   });
 

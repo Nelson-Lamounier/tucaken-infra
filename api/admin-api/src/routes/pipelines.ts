@@ -14,12 +14,12 @@
 
 import { randomUUID, createHash } from 'node:crypto';
 import { Hono } from 'hono';
-import type { JWTPayload } from 'jose';
 import type { V1Job } from '@kubernetes/client-node';
 import type { AdminApiConfig } from '../lib/config.js';
 import { getJobImage, isImageConfigured } from '../lib/config.js';
 import { getBatchApi } from '../lib/k8s.js';
-import { getPool } from '../lib/pg.js';
+import { getPool, withUser } from '../lib/pg.js';
+import type { AdminApiBindings } from '../lib/types.js';
 import { insertPipelineRun, getPipelineRun } from '../lib/repositories/pipeline-runs.js';
 
 const MAX_NAME_LEN = 63;
@@ -78,13 +78,6 @@ function buildPipelineJob(input: BuildJobInput): V1Job {
   };
 }
 
-/** Hono context variable bindings for authenticated routes. */
-type AdminApiBindings = {
-  Variables: {
-    jwtPayload: JWTPayload;
-  };
-};
-
 /**
  * Create the pipelines admin router.
  *
@@ -99,10 +92,10 @@ export function createPipelinesRouter(config: AdminApiConfig): Hono<AdminApiBind
   // Phase 4: K8s-Job-based article pipeline trigger.
   // -------------------------------------------------------------------------
   router.post('/article-job/:slug', async (ctx) => {
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
     const slug = ctx.req.param('slug');
-    const jwtPayload = ctx.get('jwtPayload');
-    const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : '';
-    if (!userId) return ctx.json({ error: 'Authenticated subject missing' }, 401);
 
     let body: { mode?: string; s3Bucket?: string; s3SourceKey?: string };
     try { body = await ctx.req.json(); }
@@ -121,46 +114,49 @@ export function createPipelinesRouter(config: AdminApiConfig): Hono<AdminApiBind
     }
 
     const pipelineRunId = randomUUID();
-    try {
-      await insertPipelineRun(getPool(config), {
-        id:            pipelineRunId,
-        userId,
-        pipelineType:  'article',
-        referenceId:   slug,
-        metadata:      { s3Bucket, s3SourceKey, mode },
+
+    return withUser(getPool(config), userId, async (db) => {
+      try {
+        await insertPipelineRun(db, {
+          id:            pipelineRunId,
+          userId,
+          pipelineType:  'article',
+          referenceId:   slug,
+          metadata:      { s3Bucket, s3SourceKey, mode },
+        });
+      } catch (err: unknown) {
+        console.error('[pipelines/article-job] failed to insert pipeline_run', err);
+        return ctx.json({ error: 'Failed to record pipeline run' }, 500);
+      }
+
+      const timestamp = Date.now();
+      const job = buildPipelineJob({
+        namespace:           config.articlePipelineNamespace,
+        image:               articlePipelineImage,
+        serviceAccountName:  config.articlePipelineServiceAccount,
+        nameStem:            `article-${sanitizeLabel(slug)}`,
+        timestamp,
+        suffixInput:         `${pipelineRunId}:${slug}:${timestamp}`,
+        labels:              { app: 'article-pipeline', userId, slug: sanitizeLabel(slug) },
+        command:             ['node', 'dist/run-pipeline.js'],
+        env: [
+          { name: 'PIPELINE_RUN_ID', value: pipelineRunId },
+          { name: 'SLUG',            value: slug },
+          { name: 'S3_BUCKET',       value: s3Bucket },
+          { name: 'S3_SOURCE_KEY',   value: s3SourceKey },
+          { name: 'MODE',            value: mode },
+        ],
+        envFromSecretRefs:   ['platform-rds-credentials'],
       });
-    } catch (err: unknown) {
-      console.error('[pipelines/article-job] failed to insert pipeline_run', err);
-      return ctx.json({ error: 'Failed to record pipeline run' }, 500);
-    }
 
-    const timestamp = Date.now();
-    const job = buildPipelineJob({
-      namespace:           config.articlePipelineNamespace,
-      image:               articlePipelineImage,
-      serviceAccountName:  config.articlePipelineServiceAccount,
-      nameStem:            `article-${sanitizeLabel(slug)}`,
-      timestamp,
-      suffixInput:         `${pipelineRunId}:${slug}:${timestamp}`,
-      labels:              { app: 'article-pipeline', userId, slug: sanitizeLabel(slug) },
-      command:             ['node', 'dist/run-pipeline.js'],
-      env: [
-        { name: 'PIPELINE_RUN_ID', value: pipelineRunId },
-        { name: 'SLUG',            value: slug },
-        { name: 'S3_BUCKET',       value: s3Bucket },
-        { name: 'S3_SOURCE_KEY',   value: s3SourceKey },
-        { name: 'MODE',            value: mode },
-      ],
-      envFromSecretRefs:   ['platform-rds-credentials'],
+      try { await getBatchApi().createNamespacedJob({ namespace: config.articlePipelineNamespace, body: job }); }
+      catch (err: unknown) {
+        console.error('[pipelines/article-job] failed to create K8s Job', err);
+        return ctx.json({ error: 'Failed to schedule pipeline Job' }, 502);
+      }
+
+      return ctx.json({ status: 'queued', pipelineRunId, jobName: job.metadata!.name!, slug }, 202);
     });
-
-    try { await getBatchApi().createNamespacedJob({ namespace: config.articlePipelineNamespace, body: job }); }
-    catch (err: unknown) {
-      console.error('[pipelines/article-job] failed to create K8s Job', err);
-      return ctx.json({ error: 'Failed to schedule pipeline Job' }, 502);
-    }
-
-    return ctx.json({ status: 'queued', pipelineRunId, jobName: job.metadata!.name!, slug }, 202);
   });
 
   // -------------------------------------------------------------------------
@@ -168,9 +164,8 @@ export function createPipelinesRouter(config: AdminApiConfig): Hono<AdminApiBind
   // Phase 4: K8s-Job-based strategist pipeline trigger.
   // -------------------------------------------------------------------------
   router.post('/strategist-job', async (ctx) => {
-    const jwtPayload = ctx.get('jwtPayload');
-    const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : '';
-    if (!userId) return ctx.json({ error: 'Authenticated subject missing' }, 401);
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
 
     let body: { applicationId?: string; applicationSlug?: string; targetCompany?: string; targetRole?: string; jobDescription?: string; mode?: string };
     try { body = await ctx.req.json(); }
@@ -194,49 +189,52 @@ export function createPipelinesRouter(config: AdminApiConfig): Hono<AdminApiBind
     }
 
     const pipelineRunId = randomUUID();
-    try {
-      await insertPipelineRun(getPool(config), {
-        id:           pipelineRunId,
-        userId,
-        pipelineType: 'strategist',
-        referenceId:  applicationId!,
-        metadata:     { applicationSlug, targetCompany, targetRole, mode },
+
+    return withUser(getPool(config), userId, async (db) => {
+      try {
+        await insertPipelineRun(db, {
+          id:           pipelineRunId,
+          userId,
+          pipelineType: 'strategist',
+          referenceId:  applicationId!,
+          metadata:     { applicationSlug, targetCompany, targetRole, mode },
+        });
+      } catch (err: unknown) {
+        console.error('[pipelines/strategist-job] failed to insert pipeline_run', err);
+        return ctx.json({ error: 'Failed to record pipeline run' }, 500);
+      }
+
+      const timestamp = Date.now();
+      const job = buildPipelineJob({
+        namespace:           config.strategistPipelineNamespace,
+        image:               strategistPipelineImage,
+        serviceAccountName:  config.strategistPipelineServiceAccount,
+        nameStem:            `strategist-${sanitizeLabel(applicationSlug!)}`,
+        timestamp,
+        suffixInput:         `${pipelineRunId}:${applicationId}:${timestamp}`,
+        labels:              { app: 'strategist-pipeline', userId, applicationSlug: sanitizeLabel(applicationSlug!) },
+        command:             ['node', 'dist/run-pipeline.js'],
+        env: [
+          { name: 'PIPELINE_RUN_ID',   value: pipelineRunId },
+          { name: 'APPLICATION_ID',    value: applicationId! },
+          { name: 'APPLICATION_SLUG',  value: applicationSlug! },
+          { name: 'USER_ID',           value: userId },
+          { name: 'TARGET_COMPANY',    value: targetCompany! },
+          { name: 'TARGET_ROLE',       value: targetRole! },
+          { name: 'JOB_DESCRIPTION',   value: jobDescription! },
+          { name: 'MODE',              value: mode },
+        ],
+        envFromSecretRefs: ['platform-rds-credentials'],
       });
-    } catch (err: unknown) {
-      console.error('[pipelines/strategist-job] failed to insert pipeline_run', err);
-      return ctx.json({ error: 'Failed to record pipeline run' }, 500);
-    }
 
-    const timestamp = Date.now();
-    const job = buildPipelineJob({
-      namespace:           config.strategistPipelineNamespace,
-      image:               strategistPipelineImage,
-      serviceAccountName:  config.strategistPipelineServiceAccount,
-      nameStem:            `strategist-${sanitizeLabel(applicationSlug!)}`,
-      timestamp,
-      suffixInput:         `${pipelineRunId}:${applicationId}:${timestamp}`,
-      labels:              { app: 'strategist-pipeline', userId, applicationSlug: sanitizeLabel(applicationSlug!) },
-      command:             ['node', 'dist/run-pipeline.js'],
-      env: [
-        { name: 'PIPELINE_RUN_ID',   value: pipelineRunId },
-        { name: 'APPLICATION_ID',    value: applicationId! },
-        { name: 'APPLICATION_SLUG',  value: applicationSlug! },
-        { name: 'USER_ID',           value: userId },
-        { name: 'TARGET_COMPANY',    value: targetCompany! },
-        { name: 'TARGET_ROLE',       value: targetRole! },
-        { name: 'JOB_DESCRIPTION',   value: jobDescription! },
-        { name: 'MODE',              value: mode },
-      ],
-      envFromSecretRefs: ['platform-rds-credentials'],
+      try { await getBatchApi().createNamespacedJob({ namespace: config.strategistPipelineNamespace, body: job }); }
+      catch (err: unknown) {
+        console.error('[pipelines/strategist-job] failed to create K8s Job', err);
+        return ctx.json({ error: 'Failed to schedule pipeline Job' }, 502);
+      }
+
+      return ctx.json({ status: 'queued', pipelineRunId, jobName: job.metadata!.name!, applicationId }, 202);
     });
-
-    try { await getBatchApi().createNamespacedJob({ namespace: config.strategistPipelineNamespace, body: job }); }
-    catch (err: unknown) {
-      console.error('[pipelines/strategist-job] failed to create K8s Job', err);
-      return ctx.json({ error: 'Failed to schedule pipeline Job' }, 502);
-    }
-
-    return ctx.json({ status: 'queued', pipelineRunId, jobName: job.metadata!.name!, applicationId }, 202);
   });
 
   // -------------------------------------------------------------------------
@@ -244,15 +242,18 @@ export function createPipelinesRouter(config: AdminApiConfig): Hono<AdminApiBind
   // Phase 4: poll the pipeline_runs row.
   // -------------------------------------------------------------------------
   router.get('/runs/:id', async (ctx) => {
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
     const id = ctx.req.param('id');
-    const run = await getPipelineRun(getPool(config), id);
-    if (!run) return ctx.json({ error: 'Pipeline run not found' }, 404);
 
-    const jwtPayload = ctx.get('jwtPayload');
-    const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : '';
-    if (run.userId !== userId) return ctx.json({ error: 'Forbidden' }, 403);
-
-    return ctx.json({ run });
+    return withUser(getPool(config), userId, async (db) => {
+      const run = await getPipelineRun(db, id);
+      if (!run) return ctx.json({ error: 'Pipeline run not found' }, 404);
+      // RLS already isolates to this user's rows; explicit check retained as defence-in-depth.
+      if (run.userId !== userId) return ctx.json({ error: 'Forbidden' }, 403);
+      return ctx.json({ run });
+    });
   });
 
   return router;

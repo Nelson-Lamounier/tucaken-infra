@@ -20,9 +20,9 @@
  */
 
 import { Hono } from 'hono';
-import type { JWTPayload } from 'jose';
 import type { AdminApiConfig } from '../lib/config.js';
-import { getPool } from '../lib/pg.js';
+import { getPool, withUser } from '../lib/pg.js';
+import type { AdminApiBindings } from '../lib/types.js';
 import {
     upsertArticle,
     deleteArticle as pgDeleteArticle,
@@ -30,13 +30,6 @@ import {
     listArticlesByStatus,
     listAllArticles,
 } from '../lib/repositories/articles.js';
-
-/** Hono context variable bindings for admin-api authenticated routes. */
-type AdminApiBindings = {
-  Variables: {
-    jwtPayload: JWTPayload;
-  };
-};
 
 /**
  * Create the articles admin router.
@@ -153,37 +146,41 @@ export function createArticlesRouter(config: AdminApiConfig): Hono<AdminApiBindi
   // GET /api/admin/articles/:slug/versions — read pipeline_runs history
   // -----------------------------------------------------------------------
   router.get('/:slug/versions', async (ctx) => {
+    const userId = ctx.get('userId');
+    if (!userId) return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
+
     const slug = ctx.req.param('slug');
     const limitParam = ctx.req.query('limit');
     const limit = limitParam ? Math.min(parseInt(limitParam, 10), 50) : 20;
-    const pool = getPool(config);
 
-    const result = await pool.query<{
-        id: string; status: string; metadata: Record<string, unknown> | null;
-        error_message: string | null; created_at: Date; updated_at: Date;
-    }>(
-        `SELECT id, status, metadata, error_message, created_at, updated_at
-         FROM pipeline_runs
-         WHERE pipeline_type = 'article' AND reference_id = $1
-         ORDER BY created_at DESC
-         LIMIT $2`,
-        [slug, limit],
-    );
+    return withUser(getPool(config), userId, async (db) => {
+      const result = await db.query<{
+          id: string; status: string; metadata: Record<string, unknown> | null;
+          error_message: string | null; created_at: Date; updated_at: Date;
+      }>(
+          `SELECT id, status, metadata, error_message, created_at, updated_at
+           FROM pipeline_runs
+           WHERE pipeline_type = 'article' AND reference_id = $1
+           ORDER BY created_at DESC
+           LIMIT $2`,
+          [slug, limit],
+      );
 
-    const versions = result.rows.map((r) => ({
-        pipelineRunId: r.id,
-        status:        r.status,
-        metadata:      r.metadata,
-        errorMessage:  r.error_message,
-        createdAt:     r.created_at,
-        updatedAt:     r.updated_at,
-    }));
+      const versions = result.rows.map((r) => ({
+          pipelineRunId: r.id,
+          status:        r.status,
+          metadata:      r.metadata,
+          errorMessage:  r.error_message,
+          createdAt:     r.created_at,
+          updatedAt:     r.updated_at,
+      }));
 
-    return ctx.json({
-        success:       true,
-        slug,
-        totalVersions: versions.length,
-        versions,
+      return ctx.json({
+          success:       true,
+          slug,
+          totalVersions: versions.length,
+          versions,
+      });
     });
   });
 

@@ -4,7 +4,7 @@
  * Job pods update status via job-strategist/article-pipeline lib helpers;
  * admin-api INSERTs the row at trigger time and SELECTs for polling.
  */
-import type { Pool } from 'pg';
+import type { Queryable } from '../pg.js';
 
 export interface PipelineRun {
     id:            string;
@@ -46,7 +46,7 @@ function rowToRun(row: PipelineRunRow): PipelineRun {
 }
 
 export async function insertPipelineRun(
-    pool: Pool,
+    pool: Queryable,
     args: {
         id:           string;
         userId:       string;
@@ -62,7 +62,7 @@ export async function insertPipelineRun(
     );
 }
 
-export async function getPipelineRun(pool: Pool, id: string): Promise<PipelineRun | null> {
+export async function getPipelineRun(pool: Queryable, id: string): Promise<PipelineRun | null> {
     const result = await pool.query<PipelineRunRow>(
         `SELECT id, user_id, pipeline_type, reference_id, status, error_message, metadata, created_at, updated_at
          FROM pipeline_runs WHERE id = $1`,

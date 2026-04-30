@@ -7,7 +7,7 @@
  * schema targets Tucaken user resumes — the admin CV blob is structurally
  * compatible without schema changes.
  */
-import type { Pool } from 'pg';
+import type { Queryable } from '../pg.js';
 
 export interface Resume {
     id:               string;
@@ -37,7 +37,7 @@ function rowToResume(row: Record<string, unknown>): Resume {
     return resume;
 }
 
-export async function upsertResume(pool: Pool, resume: Resume): Promise<void> {
+export async function upsertResume(pool: Queryable, resume: Resume): Promise<void> {
     const contentJson = JSON.stringify({
         ...resume.contentJson,
         label:     resume.label,
@@ -59,7 +59,7 @@ export async function upsertResume(pool: Pool, resume: Resume): Promise<void> {
     );
 }
 
-export async function getResume(pool: Pool, id: string): Promise<Resume | null> {
+export async function getResume(pool: Queryable, id: string): Promise<Resume | null> {
     const result = await pool.query(
         `SELECT id, user_id, job_application_id, content_json, rendered_html, generated_at
          FROM resumes WHERE id = $1`,
@@ -69,7 +69,7 @@ export async function getResume(pool: Pool, id: string): Promise<Resume | null> 
     return rowToResume(result.rows[0] as Record<string, unknown>);
 }
 
-export async function listResumes(pool: Pool): Promise<Resume[]> {
+export async function listResumes(pool: Queryable): Promise<Resume[]> {
     const result = await pool.query(
         `SELECT id, user_id, job_application_id, content_json, rendered_html, generated_at
          FROM resumes ORDER BY generated_at DESC`,
@@ -77,7 +77,7 @@ export async function listResumes(pool: Pool): Promise<Resume[]> {
     return (result.rows as Record<string, unknown>[]).map(rowToResume);
 }
 
-export async function getActiveResume(pool: Pool): Promise<Resume | null> {
+export async function getActiveResume(pool: Queryable): Promise<Resume | null> {
     const result = await pool.query(
         `SELECT id, user_id, job_application_id, content_json, rendered_html, generated_at
          FROM resumes
@@ -88,7 +88,7 @@ export async function getActiveResume(pool: Pool): Promise<Resume | null> {
     return rowToResume(result.rows[0] as Record<string, unknown>);
 }
 
-export async function deleteResume(pool: Pool, id: string): Promise<void> {
+export async function deleteResume(pool: Queryable, id: string): Promise<void> {
     await pool.query(`DELETE FROM resumes WHERE id = $1`, [id]);
 }
 
@@ -97,7 +97,7 @@ export async function deleteResume(pool: Pool, id: string): Promise<void> {
  * Sequential writes — acceptable for small tables (< 20 resumes).
  */
 export async function setActiveResume(
-    pool: Pool,
+    pool: Queryable,
     oldActiveId: string | null,
     newActiveId: string,
 ): Promise<void> {

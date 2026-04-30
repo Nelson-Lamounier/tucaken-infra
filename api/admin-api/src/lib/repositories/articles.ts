@@ -2,7 +2,7 @@
  * @format
  * ArticleRepository — typed pg queries for the articles table.
  */
-import type { Pool } from 'pg';
+import type { Queryable } from '../pg.js';
 
 export interface Article {
     slug:        string;
@@ -39,7 +39,7 @@ function rowToArticle(row: Record<string, unknown>): Article {
     };
 }
 
-export async function upsertArticle(pool: Pool, article: Article): Promise<void> {
+export async function upsertArticle(pool: Queryable, article: Article): Promise<void> {
     await pool.query(
         `INSERT INTO articles
              (slug, title, excerpt, content_md, tags, status, ai_generated, ai_model,
@@ -71,7 +71,7 @@ export async function upsertArticle(pool: Pool, article: Article): Promise<void>
     );
 }
 
-export async function getArticleBySlug(pool: Pool, slug: string): Promise<Article | null> {
+export async function getArticleBySlug(pool: Queryable, slug: string): Promise<Article | null> {
     const result = await pool.query(
         `SELECT slug, title, excerpt, content_md, tags, status, ai_generated,
                 ai_model, published_at, cover_image, created_at, updated_at
@@ -82,7 +82,7 @@ export async function getArticleBySlug(pool: Pool, slug: string): Promise<Articl
     return rowToArticle(result.rows[0] as Record<string, unknown>);
 }
 
-export async function listArticlesByStatus(pool: Pool, status: string): Promise<Article[]> {
+export async function listArticlesByStatus(pool: Queryable, status: string): Promise<Article[]> {
     const result = await pool.query(
         `SELECT slug, title, excerpt, content_md, tags, status, ai_generated,
                 ai_model, published_at, cover_image, created_at, updated_at
@@ -92,7 +92,7 @@ export async function listArticlesByStatus(pool: Pool, status: string): Promise<
     return (result.rows as Record<string, unknown>[]).map(rowToArticle);
 }
 
-export async function listAllArticles(pool: Pool): Promise<Article[]> {
+export async function listAllArticles(pool: Queryable): Promise<Article[]> {
     const result = await pool.query(
         `SELECT slug, title, excerpt, content_md, tags, status, ai_generated,
                 ai_model, published_at, cover_image, created_at, updated_at
@@ -101,6 +101,6 @@ export async function listAllArticles(pool: Pool): Promise<Article[]> {
     return (result.rows as Record<string, unknown>[]).map(rowToArticle);
 }
 
-export async function deleteArticle(pool: Pool, slug: string): Promise<void> {
+export async function deleteArticle(pool: Queryable, slug: string): Promise<void> {
     await pool.query(`DELETE FROM articles WHERE slug = $1`, [slug]);
 }

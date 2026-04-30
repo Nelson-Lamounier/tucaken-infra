@@ -16,9 +16,9 @@
 import { randomUUID } from 'node:crypto';
 
 import { Hono } from 'hono';
-import type { JWTPayload } from 'jose';
 import type { AdminApiConfig } from '../lib/config.js';
 import { getPool } from '../lib/pg.js';
+import type { AdminApiBindings } from '../lib/types.js';
 import {
     upsertResume,
     getResume as pgGetResume,
@@ -27,13 +27,6 @@ import {
     deleteResume as pgDeleteResume,
     setActiveResume,
 } from '../lib/repositories/resumes.js';
-
-/** Hono context variable bindings for authenticated routes. */
-type AdminApiBindings = {
-  Variables: {
-    jwtPayload: JWTPayload;
-  };
-};
 
 // ---------------------------------------------------------------------------
 // Router factory

@@ -34,6 +34,8 @@ export interface UserProfile {
   avatarUrl?:      string;
   /** Provider's own user ID (Google UID, GitHub numeric ID). Undefined for email. */
   providerUserId?: string | undefined;
+  /** RDS role to assign on first insert — 'user' | 'admin'. Defaults to 'user'. */
+  role?:           string;
 }
 
 export interface ProvisionedUser {
@@ -98,10 +100,10 @@ export async function upsertUser(pool: Pool, user: UserProfile): Promise<Provisi
     } else {
       // ── Step 3: brand-new user — create users row ─────────────────────────
       const inserted = await client.query<{ id: string }>(
-        `INSERT INTO users (email, full_name, avatar_url, auth_provider, created_at, updated_at)
-              VALUES ($1, $2, $3, $4, NOW(), NOW())
+        `INSERT INTO users (email, full_name, avatar_url, auth_provider, role, created_at, updated_at)
+              VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
            RETURNING id`,
-        [user.email, user.fullName ?? null, user.avatarUrl ?? null, user.provider],
+        [user.email, user.fullName ?? null, user.avatarUrl ?? null, user.provider, user.role ?? 'user'],
       );
       const row = inserted.rows[0];
       if (!row) throw new Error('upsertUser: INSERT INTO users returned no row');

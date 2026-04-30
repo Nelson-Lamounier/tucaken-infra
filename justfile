@@ -2777,3 +2777,197 @@ cluster-admin profile="dev-account":
 cluster-down:
     npx tsx "{{FRONTEND_REPO}}/scripts/local-dev.ts" --stop
 
+
+# =============================================================================
+# DATABASE — RDS access via kubectl port-forward through PgBouncer
+#
+# RDS is VPC-private. The tunnel forwards localhost:5433 → pgbouncer → RDS.
+# Keep `just db-tunnel` running in a separate terminal tab before using any
+# other db-* recipe.
+#
+# Prerequisites:
+#   brew install libpq && brew link --force libpq   # provides psql
+#
+# Usage:
+#   just db-tunnel          # Open tunnel (keep tab open)
+#   just db-connect         # psql shell against tucaken DB
+#   just db-tables          # List all tables
+#   just db-rls             # Inspect RLS policies
+#   just db-migrations      # Show applied migration history
+#   just db-run 'SELECT 1'  # Run an inline SQL snippet
+# =============================================================================
+
+PG_NS        := "platform"
+PG_SVC       := "pgbouncer"
+PG_LOCAL_PORT := "5433"
+PG_HOST      := "localhost"
+PG_PORT      := PG_LOCAL_PORT
+PG_DB        := "tucaken"
+PG_USER      := "postgres"
+PG_PASS      := env_var_or_default("PGPASSWORD", "Xz_=u=cCMcb^,1z2YueqgjwS=zknKl")
+
+# Open the kubectl port-forward tunnel. Keep this running in a dedicated tab.
+[group('db')]
+db-tunnel:
+    @echo "Forwarding localhost:{{PG_LOCAL_PORT}} → {{PG_SVC}}.{{PG_NS}} → RDS"
+    @echo "Keep this tab open. Ctrl+C to close the tunnel."
+    kubectl port-forward svc/{{PG_SVC}} -n {{PG_NS}} {{PG_LOCAL_PORT}}:5432
+
+# Open an interactive psql shell (tunnel must be running).
+[group('db')]
+db-connect:
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}}
+
+# List all tables in the public schema with row counts.
+[group('db')]
+db-tables:
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} -c \
+      "SELECT tablename, \
+              pg_size_pretty(pg_total_relation_size(quote_ident(tablename))) AS size \
+         FROM pg_tables \
+        WHERE schemaname = 'public' \
+        ORDER BY tablename;"
+
+# Show all RLS policies (table, policy name, command, roles, expression).
+[group('db')]
+db-rls:
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} -c \
+      "SELECT tablename, policyname, cmd, roles, qual \
+         FROM pg_policies \
+        ORDER BY tablename, policyname;"
+
+# Show tables that have RLS enabled vs disabled.
+[group('db')]
+db-rls-status:
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} -c \
+      "SELECT tablename, rowsecurity AS rls_enabled \
+         FROM pg_tables \
+        WHERE schemaname = 'public' \
+        ORDER BY tablename;"
+
+# Show migration history from schema_migrations (if table exists), else list migration files.
+[group('db')]
+db-migrations:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Migration files on disk ==="
+    ls -1 applications/platform-rds-bootstrap/migrations/*.sql 2>/dev/null || echo "(none)"
+    echo ""
+    echo "=== schema_migrations table (if exists) ==="
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} \
+      -c "SELECT * FROM schema_migrations ORDER BY applied_at DESC;" 2>/dev/null \
+      || echo "(schema_migrations table not found — migrations tracked by filename convention)"
+
+# Run an arbitrary SQL snippet. Usage: just db-run "SELECT count(*) FROM resumes"
+[group('db')]
+db-run sql:
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} -c {{sql}}
+
+# Describe a single table. Usage: just db-describe resumes
+[group('db')]
+db-describe table:
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} -c "\d+ {{table}}"
+
+# Show all indexes on public schema tables.
+[group('db')]
+db-indexes:
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} -c \
+      "SELECT tablename, indexname, indexdef \
+         FROM pg_indexes \
+        WHERE schemaname = 'public' \
+        ORDER BY tablename, indexname;"
+
+# =============================================================================
+# COGNITO ADMIN GROUP — manage who can reach admin-api
+#
+# The 'admin' Cognito group is the gate for all /api/admin/* routes.
+# Adding a user to the group + setting users.role = 'admin' in RDS grants full
+# admin-api access. Remove from the group to revoke immediately (next token
+# refresh reflects the change — no code deploy needed).
+#
+# Usage:
+#   just cognito-create-admin-group          # One-time: create the group
+#   just cognito-add-admin email@example.com # Grant admin access
+#   just cognito-remove-admin email@example.com # Revoke admin access
+#   just cognito-list-admins                 # List all admin group members
+# =============================================================================
+
+COGNITO_POOL_ID  := "eu-west-1_mNRJM2InT"
+COGNITO_REGION   := "eu-west-1"
+COGNITO_PROFILE  := "dev-account"
+
+# Create the 'admin' Cognito group (one-time setup).
+[group('cognito')]
+cognito-create-admin-group:
+    aws cognito-idp create-group \
+      --user-pool-id {{COGNITO_POOL_ID}} \
+      --group-name admin \
+      --description "admin-api access — internal staff only" \
+      --region {{COGNITO_REGION}} \
+      --profile {{COGNITO_PROFILE}} \
+    && echo "Group 'admin' created."
+
+# Add a user to the admin group. Also sets users.role = 'admin' in RDS.
+# Usage: just cognito-add-admin email@example.com
+[group('cognito')]
+cognito-add-admin email:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    USERNAME=$(aws cognito-idp list-users \
+      --user-pool-id {{COGNITO_POOL_ID}} \
+      --filter "email = \"{{email}}\"" \
+      --region {{COGNITO_REGION}} \
+      --profile {{COGNITO_PROFILE}} \
+      --query 'Users[0].Username' \
+      --output text)
+    if [ -z "$USERNAME" ] || [ "$USERNAME" = "None" ]; then
+      echo "Error: no Cognito user found with email {{email}}"
+      exit 1
+    fi
+    aws cognito-idp admin-add-user-to-group \
+      --user-pool-id {{COGNITO_POOL_ID}} \
+      --username "$USERNAME" \
+      --group-name admin \
+      --region {{COGNITO_REGION}} \
+      --profile {{COGNITO_PROFILE}}
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} \
+      -c "UPDATE users SET role = 'admin', updated_at = NOW() WHERE email = '{{email}}'"
+    echo "✓ {{email}} added to Cognito 'admin' group and users.role set to 'admin'"
+
+# Remove a user from the admin group. Also resets users.role = 'user' in RDS.
+# Usage: just cognito-remove-admin email@example.com
+[group('cognito')]
+cognito-remove-admin email:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    USERNAME=$(aws cognito-idp list-users \
+      --user-pool-id {{COGNITO_POOL_ID}} \
+      --filter "email = \"{{email}}\"" \
+      --region {{COGNITO_REGION}} \
+      --profile {{COGNITO_PROFILE}} \
+      --query 'Users[0].Username' \
+      --output text)
+    if [ -z "$USERNAME" ] || [ "$USERNAME" = "None" ]; then
+      echo "Error: no Cognito user found with email {{email}}"
+      exit 1
+    fi
+    aws cognito-idp admin-remove-user-from-group \
+      --user-pool-id {{COGNITO_POOL_ID}} \
+      --username "$USERNAME" \
+      --group-name admin \
+      --region {{COGNITO_REGION}} \
+      --profile {{COGNITO_PROFILE}}
+    PGPASSWORD={{PG_PASS}} psql -h {{PG_HOST}} -p {{PG_PORT}} -U {{PG_USER}} -d {{PG_DB}} \
+      -c "UPDATE users SET role = 'user', updated_at = NOW() WHERE email = '{{email}}'"
+    echo "✓ {{email}} removed from Cognito 'admin' group and users.role reset to 'user'"
+
+# List all current members of the admin group.
+[group('cognito')]
+cognito-list-admins:
+    aws cognito-idp list-users-in-group \
+      --user-pool-id {{COGNITO_POOL_ID}} \
+      --group-name admin \
+      --region {{COGNITO_REGION}} \
+      --profile {{COGNITO_PROFILE}} \
+      --query 'Users[*].{Username:Username,Email:Attributes[?Name==`email`].Value|[0],Status:UserStatus}' \
+      --output table

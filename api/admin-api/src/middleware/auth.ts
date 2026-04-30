@@ -1,41 +1,34 @@
 /**
  * @format
- * admin-api — Cognito JWT authentication middleware.
+ * admin-api — Cognito JWT authentication + admin group enforcement middleware.
  *
- * Validates Cognito-issued JWTs using JWKS (JSON Web Key Sets) from the
- * Cognito User Pool's well-known endpoint. This avoids storing static secrets
- * and ensures token validation always uses the current signing keys.
+ * Validates Cognito-issued JWTs using JWKS from the User Pool's well-known
+ * endpoint, then enforces membership in the Cognito 'admin' group.
  *
  * Flow:
  *   Authorization: Bearer <cognito-id-token>
  *     → Extract token
  *     → Fetch JWKS from Cognito (cached by jose)
  *     → Verify signature, issuer, audience, expiry
+ *     → Check cognito:groups includes 'admin'  ← 403 if not a member
  *     → Attach decoded payload to ctx.set('jwtPayload', payload)
  *     → Continue to handler
  *
- * JWKS caching: jose's createRemoteJWKSet caches keys in-memory per instance.
- * For long-running processes, keys rotate automatically when a new JWT
- * references a different kid not in the cache.
+ * Why Cognito Groups instead of a DB role check:
+ *   Group membership travels in the signed JWT — no extra DB round-trip on
+ *   every request. Adding/removing an admin is a single Cognito API call;
+ *   the next token refresh automatically reflects the change.
  */
 
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import type { Context, MiddlewareHandler, Next } from 'hono';
 
+const REQUIRED_GROUP = 'admin';
+
 /** JWKS caches per pool ID to avoid redundant HTTP fetches. */
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-/**
- * Get or create a JWKS key set for the given Cognito User Pool.
- *
- * @param userPoolId - Cognito User Pool ID.
- * @param region - AWS region the pool is in.
- * @returns Cached JWKS key set fetcher.
- */
-function getJwks(
-  userPoolId: string,
-  region: string,
-): ReturnType<typeof createRemoteJWKSet> {
+function getJwks(userPoolId: string, region: string): ReturnType<typeof createRemoteJWKSet> {
   if (!jwksCache.has(userPoolId)) {
     const url = new URL(
       `https://cognito-idp.${region}.amazonaws.com/${userPoolId}/.well-known/jwks.json`,
@@ -49,13 +42,12 @@ function getJwks(
  * Cognito JWT bearer middleware for Hono.
  *
  * Attaches the decoded JWT payload to `ctx.get('jwtPayload')` for use
- * by downstream route handlers.
+ * by downstream route handlers. Rejects tokens not in the 'admin' group.
  *
- * @param userPoolId - Cognito User Pool ID (from COGNITO_USER_POOL_ID env var).
- * @param clientId - Cognito app client ID (from COGNITO_CLIENT_ID env var).
- * @param issuerUrl - Cognito issuer URL (from COGNITO_ISSUER_URL env var).
- * @param region - AWS region (from AWS_DEFAULT_REGION env var).
- * @returns Hono middleware handler.
+ * @param userPoolId - Cognito User Pool ID (COGNITO_USER_POOL_ID env var).
+ * @param clientId   - Cognito app client ID (COGNITO_CLIENT_ID env var).
+ * @param issuerUrl  - Cognito issuer URL (COGNITO_ISSUER_URL env var).
+ * @param region     - AWS region (AWS_DEFAULT_REGION env var).
  */
 export function cognitoJwtAuth(
   userPoolId: string,
@@ -74,14 +66,15 @@ export function cognitoJwtAuth(
     }
 
     const token = authHeader.slice(7);
-    const jwks = getJwks(userPoolId, region);
+    const jwks  = getJwks(userPoolId, region);
 
+    let payload: JWTPayload;
     try {
-      const { payload } = await jwtVerify(token, jwks, {
-        issuer: issuerUrl,
+      const result = await jwtVerify(token, jwks, {
+        issuer:   issuerUrl,
         audience: clientId,
       });
-      ctx.set('jwtPayload', payload as JWTPayload);
+      payload = result.payload as JWTPayload;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Token validation failed';
       ctx.res = new Response(
@@ -91,6 +84,17 @@ export function cognitoJwtAuth(
       return;
     }
 
+    // Enforce Cognito group membership — admin-api is staff-only.
+    const groups = (payload['cognito:groups'] as string[] | undefined) ?? [];
+    if (!groups.includes(REQUIRED_GROUP)) {
+      ctx.res = new Response(
+        JSON.stringify({ error: 'Forbidden', detail: `Requires '${REQUIRED_GROUP}' group membership` }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } },
+      );
+      return;
+    }
+
+    ctx.set('jwtPayload', payload);
     await next();
   };
 }

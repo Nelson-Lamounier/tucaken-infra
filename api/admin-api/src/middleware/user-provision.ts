@@ -82,6 +82,12 @@ export function userProvisionMiddleware(pool: Pool): MiddlewareHandler<AdminApiB
     try {
       const { provider, providerUserId } = resolveProvider(payload as Record<string, unknown>);
 
+      // All users reaching admin-api have passed the 'admin' group check in cognitoJwtAuth.
+      // Reflect that in the DB role so queries and audit logs can use it without
+      // re-reading the JWT.
+      const groups = (payload['cognito:groups'] as string[] | undefined) ?? [];
+      const role   = groups.includes('admin') ? 'admin' : 'user';
+
       const { id } = await upsertUser(pool, {
         cognitoSub:      sub as string,
         provider,
@@ -89,6 +95,7 @@ export function userProvisionMiddleware(pool: Pool): MiddlewareHandler<AdminApiB
         email:           (payload['email']   as string) ?? '',
         fullName:        (payload['name']    as string) ?? undefined,
         avatarUrl:       (payload['picture'] as string) ?? undefined,
+        role,
       });
 
       subToUserId.set(sub as string, id);

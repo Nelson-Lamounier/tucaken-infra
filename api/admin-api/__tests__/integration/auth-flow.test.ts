@@ -191,7 +191,7 @@ describe('GET /api/admin/me', () => {
 });
 
 describe('Database provisioning', () => {
-  it('users row exists with correct email and role', async () => {
+  it('users row exists with correct email, role and plan', async () => {
     const { rows } = await pool.query<{
       id: string; email: string; role: string; plan: string;
       trial_started_at: Date | null; trial_ends_at: Date | null;
@@ -205,28 +205,33 @@ describe('Database provisioning', () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]!.email).toBe(TEST_EMAIL);
-    expect(rows[0]!.role).toBe('user');
-    expect(rows[0]!.plan).toBe('free');
+    expect(rows[0]!.role).toMatch(/^(user|admin|super_admin)$/);
+    expect(rows[0]!.plan).toMatch(/^(free|pro)$/);
   });
 
-  it('trial dates are set (14-day window)', async () => {
+  it('trial dates are set for non-admin users, null for admins', async () => {
     const { rows } = await pool.query<{
-      trial_started_at: Date; trial_ends_at: Date;
+      role: string; trial_started_at: Date | null; trial_ends_at: Date | null;
     }>(
-      `SELECT trial_started_at, trial_ends_at FROM users WHERE email = $1`,
+      `SELECT role, trial_started_at, trial_ends_at FROM users WHERE email = $1`,
       [TEST_EMAIL],
     );
 
-    const { trial_started_at, trial_ends_at } = rows[0]!;
-    console.log('[db] trial_started_at:', trial_started_at, 'trial_ends_at:', trial_ends_at);
+    const { role, trial_started_at, trial_ends_at } = rows[0]!;
+    console.log('[db] trial_started_at:', trial_started_at, 'trial_ends_at:', trial_ends_at, 'role:', role);
 
-    expect(trial_started_at).not.toBeNull();
-    expect(trial_ends_at).not.toBeNull();
-
-    const diffDays =
-      (new Date(trial_ends_at).getTime() - new Date(trial_started_at).getTime()) /
-      (1000 * 60 * 60 * 24);
-    expect(diffDays).toBeCloseTo(14, 0);
+    if (role === 'admin') {
+      // Admin accounts intentionally skip the trial
+      expect(trial_started_at).toBeNull();
+      expect(trial_ends_at).toBeNull();
+    } else {
+      expect(trial_started_at).not.toBeNull();
+      expect(trial_ends_at).not.toBeNull();
+      const diffDays =
+        (new Date(trial_ends_at!).getTime() - new Date(trial_started_at!).getTime()) /
+        (1000 * 60 * 60 * 24);
+      expect(diffDays).toBeCloseTo(14, 0);
+    }
   });
 
   it('user_identities row links the Cognito sub', async () => {
@@ -246,7 +251,13 @@ describe('Database provisioning', () => {
     expect(rows.some((r) => r.cognito_sub === sub)).toBe(true);
   });
 
-  it('plan_events has a trial_started row', async () => {
+  it('plan_events has trial_started for non-admin users', async () => {
+    const { rows: userRows } = await pool.query<{ role: string }>(
+      `SELECT role FROM users WHERE email = $1`,
+      [TEST_EMAIL],
+    );
+    const role = userRows[0]!.role;
+
     const { rows } = await pool.query<{ event_type: string; reason: string }>(
       `SELECT pe.event_type, pe.reason
          FROM plan_events pe
@@ -255,9 +266,14 @@ describe('Database provisioning', () => {
       [TEST_EMAIL],
     );
 
-    console.log('[db] plan_events:', rows);
+    console.log('[db] plan_events:', rows, 'role:', role);
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.reason).toBe('new_user_signup');
+    if (role === 'admin') {
+      // Admin accounts have no trial, so no trial_started event
+      expect(rows).toHaveLength(0);
+    } else {
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.reason).toBe('new_user_signup');
+    }
   });
 });

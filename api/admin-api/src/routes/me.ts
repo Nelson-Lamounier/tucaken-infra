@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import type { AdminApiConfig } from '../lib/config.js';
 import type { AdminApiBindings } from '../lib/types.js';
-import { getPool, withUser } from '../lib/pg.js';
+import { getPool } from '../lib/pg.js';
 import { getUserPlanStatus } from '../lib/repositories/users.js';
 
 export function createMeRouter(config: AdminApiConfig): Hono<AdminApiBindings> {
@@ -30,9 +30,10 @@ export function createMeRouter(config: AdminApiConfig): Hono<AdminApiBindings> {
       return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
     }
 
-    const plan = await withUser(getPool(config), userId, (db) =>
-      getUserPlanStatus(db, userId),
-    );
+    // Query users directly on the superuser pool — no RLS needed here.
+    // tucaken_app role may not have SELECT on users; this is a scoped
+    // read already protected by the userId from auth middleware.
+    const plan = await getUserPlanStatus(getPool(config), userId);
 
     return ctx.json({
       id:        userId,

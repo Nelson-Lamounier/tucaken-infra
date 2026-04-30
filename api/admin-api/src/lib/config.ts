@@ -51,8 +51,8 @@ export function isAssetsBucketConfigured(name: string | undefined): name is stri
   return typeof name === 'string' && name.length > 0;
 }
 
-/** The 3 logical images admin-api may launch as Jobs. */
-export type JobImageName = 'ingestion' | 'article-pipeline' | 'job-strategist';
+/** The logical images admin-api may launch as Jobs. */
+export type JobImageName = 'ingestion' | 'article-pipeline' | 'job-strategist' | 'resume-import-processor';
 
 /**
  * Mapping from logical image name to the env var that holds the URI in
@@ -61,9 +61,10 @@ export type JobImageName = 'ingestion' | 'article-pipeline' | 'job-strategist';
  * through the file mount.
  */
 const ENV_FALLBACK: Record<JobImageName, string> = {
-    'ingestion':         'INGESTION_IMAGE',
-    'article-pipeline':  'ARTICLE_PIPELINE_IMAGE',
-    'job-strategist':    'STRATEGIST_PIPELINE_IMAGE',
+    'ingestion':                'INGESTION_IMAGE',
+    'article-pipeline':         'ARTICLE_PIPELINE_IMAGE',
+    'job-strategist':           'STRATEGIST_PIPELINE_IMAGE',
+    'resume-import-processor':  'RESUME_IMPORT_IMAGE',
 };
 
 /** TTL for the in-process cache of resolved URIs. */
@@ -195,6 +196,12 @@ export interface AdminApiConfig {
    */
   readonly githubWebhookSecret: string | undefined;
 
+  /** Kubernetes namespace where resume-import-processor Jobs are created. */
+  readonly resumeImportNamespace: string;
+
+  /** ServiceAccount the resume-import-processor Job pod runs as. */
+  readonly resumeImportServiceAccount: string;
+
   // Note: image URIs are NOT in this config object. Use getJobImage(name)
   // from this same module — it reads from the file mount on each call (with
   // a 30s cache) so a Secret rotation by ESO is picked up without restart.
@@ -269,5 +276,7 @@ export function loadConfig(): AdminApiConfig {
     articlePipelineServiceAccount: process.env['ARTICLE_PIPELINE_SERVICE_ACCOUNT'] ?? 'article-pipeline-sa',
     strategistPipelineNamespace: process.env['STRATEGIST_PIPELINE_NAMESPACE'] ?? 'job-strategist',
     strategistPipelineServiceAccount: process.env['STRATEGIST_PIPELINE_SERVICE_ACCOUNT'] ?? 'job-strategist-sa',
+    resumeImportNamespace:           process.env['RESUME_IMPORT_NAMESPACE'] ?? 'resume-import',
+    resumeImportServiceAccount:      process.env['RESUME_IMPORT_SERVICE_ACCOUNT'] ?? 'resume-import-sa',
   };
 }

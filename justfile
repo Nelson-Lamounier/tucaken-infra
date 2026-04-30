@@ -758,6 +758,69 @@ helm-verify-selectors:
 pf-admin-api:
     kubectl port-forward svc/admin-api 3002:3002 -n admin-api
 
+# Store GitHub App credentials in AWS Secrets Manager + SSM so ESO can sync
+# them into the admin-api-github K8s Secret automatically.
+#
+# Infrastructure flow:
+#   Secrets Manager: k8s/development/tucaken-github-app → github_app_id + github_app_private_key
+#   SSM Parameter:   /k8s/development/tucaken-webhook-secret
+#   ESO ExternalSecret: admin-api-github (refreshes every 1h)
+#   Stakater Reloader: rolls admin-api pods when Secret content changes
+#
+# Prerequisites: GitHub App created at github.com/settings/apps
+#   - App ID: visible on the App settings page
+#   - Private key: generate and download as PEM from the App settings page
+#   - Webhook secret: the HMAC secret configured when creating the App
+#
+# Usage:
+#   just github-app-secrets 123456 /path/to/private-key.pem my-webhook-secret
+#
+# After running: ESO refreshes within 1h. Force immediate sync with:
+#   kubectl annotate externalsecret admin-api-github -n admin-api \
+#     force-sync=$(date +%s) --overwrite
+[group('k8s')]
+github-app-secrets app-id private-key-file webhook-secret env="development" region="eu-west-1" profile="dev-account":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SM_SECRET="k8s/{{env}}/tucaken-github-app"
+    SSM_WEBHOOK="/k8s/{{env}}/tucaken-webhook-secret"
+    PRIVATE_KEY=$(cat "{{private-key-file}}")
+    echo "→ Writing GitHub App ID + private key to Secrets Manager: ${SM_SECRET}"
+    # Create or update the Secrets Manager secret with both values as JSON keys
+    SECRET_EXISTS=$(aws secretsmanager describe-secret \
+      --secret-id "${SM_SECRET}" \
+      --region {{region}} --profile {{profile}} \
+      --query 'ARN' --output text 2>/dev/null || echo "")
+    SECRET_VALUE=$(jq -nc \
+      --arg id "{{app-id}}" \
+      --arg key "${PRIVATE_KEY}" \
+      '{github_app_id: $id, github_app_private_key: $key}')
+    if [ -z "${SECRET_EXISTS}" ] || [ "${SECRET_EXISTS}" = "None" ]; then
+      aws secretsmanager create-secret \
+        --name "${SM_SECRET}" \
+        --secret-string "${SECRET_VALUE}" \
+        --region {{region}} --profile {{profile}}
+      echo "✓ Secrets Manager secret created: ${SM_SECRET}"
+    else
+      aws secretsmanager update-secret \
+        --secret-id "${SM_SECRET}" \
+        --secret-string "${SECRET_VALUE}" \
+        --region {{region}} --profile {{profile}}
+      echo "✓ Secrets Manager secret updated: ${SM_SECRET}"
+    fi
+    echo "→ Writing webhook secret to SSM: ${SSM_WEBHOOK}"
+    aws ssm put-parameter \
+      --name "${SSM_WEBHOOK}" \
+      --value "{{webhook-secret}}" \
+      --type SecureString \
+      --overwrite \
+      --region {{region}} --profile {{profile}}
+    echo "✓ SSM parameter written: ${SSM_WEBHOOK}"
+    echo ""
+    echo "ESO refreshes every 1h. Force immediate sync:"
+    echo "  kubectl annotate externalsecret admin-api-github -n admin-api \\"
+    echo "    force-sync=\$(date +%s) --overwrite"
+
 # Restore the ArgoCD Image Updater writeback secret from SSM.
 # Run this whenever Image Updater logs "secrets argocd-image-updater-writeback-key not found".
 # SSM source: /k8s/{env}/argocd/image-updater-deploy-key (SecureString)

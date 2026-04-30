@@ -82,6 +82,10 @@ export interface SharedVpcStackProps extends cdk.StackProps {
     readonly jobStrategistEcrRepositoryName?: string;
     /** Enable job-strategist ECR repository creation @default true */
     readonly createJobStrategistEcrRepository?: boolean;
+    /** resume-import-processor K8s Job ECR repository name @default 'resume-import-processor' */
+    readonly resumeImportProcessorEcrRepositoryName?: string;
+    /** Enable resume-import-processor ECR repository creation @default true */
+    readonly createResumeImportProcessorEcrRepository?: boolean;
 }
 
 
@@ -124,6 +128,8 @@ export class SharedVpcStack extends cdk.Stack {
     public readonly articlePipelineEcrRepository?: ecr.Repository;
     /** ECR Repository for the job-strategist K8s Job (Phase 4) */
     public readonly jobStrategistEcrRepository?: ecr.Repository;
+    /** ECR Repository for the resume-import-processor K8s Job */
+    public readonly resumeImportProcessorEcrRepository?: ecr.Repository;
 
     constructor(scope: Construct, id: string, props: SharedVpcStackProps) {
         super(scope, id, props);
@@ -610,6 +616,67 @@ export class SharedVpcStack extends cdk.Stack {
             new cdk.CfnOutput(this, 'JobStrategistEcrRepositoryUri', {
                 value: this.jobStrategistEcrRepository.repositoryUri,
                 description: 'job-strategist K8s Job ECR Repository URI for docker push/pull',
+            });
+        }
+
+        // =====================================================================
+        // ECR Repository (resume-import-processor) — PDF/DOCX → Bedrock → pgvector Job
+        // Image is consumed by K8s Jobs created by admin-api after a user uploads
+        // their resume. SSM params stored under
+        // /shared/ecr-resume-import-processor/{env}/ for CI discovery.
+        // =====================================================================
+        if (props.createResumeImportProcessorEcrRepository !== false) {
+            const repoName = props.resumeImportProcessorEcrRepositoryName ?? 'resume-import-processor';
+            const isProduction = props.targetEnvironment === Environment.PRODUCTION;
+
+            this.resumeImportProcessorEcrRepository = new ecr.Repository(this, 'ResumeImportProcessorEcrRepository', {
+                repositoryName: repoName,
+                imageScanOnPush: true,
+                imageTagMutability: ecr.TagMutability.MUTABLE,
+                encryption: ecr.RepositoryEncryption.AES_256,
+                removalPolicy: isProduction ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+                lifecycleRules: [
+                    {
+                        rulePriority: 1,
+                        description: 'Remove untagged images after 30 days',
+                        tagStatus: ecr.TagStatus.UNTAGGED,
+                        maxImageAge: cdk.Duration.days(30),
+                    },
+                    {
+                        rulePriority: 2,
+                        description: 'Keep only 50 most recent tagged images',
+                        tagStatus: ecr.TagStatus.ANY,
+                        maxImageCount: 50,
+                    },
+                ],
+            });
+
+            const ssmPrefix = `/shared/ecr-resume-import-processor/${props.targetEnvironment}`;
+
+            new ssm.StringParameter(this, 'SsmResumeImportProcessorEcrRepositoryUri', {
+                parameterName: `${ssmPrefix}/repository-uri`,
+                stringValue: this.resumeImportProcessorEcrRepository.repositoryUri,
+                description: `resume-import-processor ECR repository URI for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new ssm.StringParameter(this, 'SsmResumeImportProcessorEcrRepositoryArn', {
+                parameterName: `${ssmPrefix}/repository-arn`,
+                stringValue: this.resumeImportProcessorEcrRepository.repositoryArn,
+                description: `resume-import-processor ECR repository ARN for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new ssm.StringParameter(this, 'SsmResumeImportProcessorEcrRepositoryName', {
+                parameterName: `${ssmPrefix}/repository-name`,
+                stringValue: this.resumeImportProcessorEcrRepository.repositoryName,
+                description: `resume-import-processor ECR repository name for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new cdk.CfnOutput(this, 'ResumeImportProcessorEcrRepositoryUri', {
+                value: this.resumeImportProcessorEcrRepository.repositoryUri,
+                description: 'resume-import-processor K8s Job ECR Repository URI for docker push/pull',
             });
         }
 

@@ -34,6 +34,8 @@ import { createIngestionRouter } from './routes/ingestion.js';
 import { createPipelinesRouter } from './routes/pipelines.js';
 import { createMeRouter } from './routes/me.js';
 import { createResumesRouter } from './routes/resumes.js';
+import { createResumeImportsRouter } from './routes/resume-imports.js';
+import { createPromptFeedbackRouter } from './routes/prompt-feedback.js';
 
 // ── Startup Validation ───────────────────────────────────────────────────────
 // loadConfig() throws immediately if any required env var is absent.
@@ -109,6 +111,8 @@ app.route('/api/admin/finops', createFinopsRouter(config));
 app.route('/api/admin/ingestion', createIngestionRouter(config));
 app.route('/api/admin/pipelines', createPipelinesRouter(config));
 app.route('/api/admin/resumes', createResumesRouter(config));
+app.route('/api/admin/resume-imports', createResumeImportsRouter(config));
+app.route('/api/admin/prompt-feedback', createPromptFeedbackRouter(config));
 
 // ── 404 handler ──────────────────────────────────────────────────────────────
 app.notFound((ctx) => ctx.json({ error: 'Not found' }, 404));

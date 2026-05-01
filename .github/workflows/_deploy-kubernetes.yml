@@ -1115,6 +1115,93 @@ jobs:
     secrets: inherit
 
   # ===========================================================================
+  # Diagnose Tucaken Edge Failure
+  #
+  # The CDK CLI surfaces "NoStack: CloudFormationStack object does not hold a
+  # stack" when stack creation fails BEFORE any resource is successfully
+  # created (typically during a custom resource invocation like ACM DNS-01
+  # validation). The real root cause lives in the CloudFormation event log.
+  # This job prints the failed events directly into the workflow output.
+  # ===========================================================================
+  diagnose-tucaken-edge:
+    name: Diagnose Tucaken Edge Failure
+    needs: [setup, deploy-tucaken-edge]
+    if: |
+      always()
+      && needs.deploy-tucaken-edge.result == 'failure'
+      && needs.setup.outputs.tucaken-enabled == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure AWS Credentials (us-east-1)
+        uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: us-east-1
+
+      - name: Print failed CloudFormation events
+        env:
+          STACK_NAME: ${{ needs.setup.outputs.tucaken-edge-stack }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "── Stack status ─────────────────────────────────────"
+          aws cloudformation describe-stacks \
+            --region us-east-1 \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].[StackStatus,StackStatusReason]' \
+            --output table 2>/dev/null \
+            || echo "(stack does not exist or already deleted)"
+
+          echo ""
+          echo "── Failed events (most recent first) ────────────────"
+          aws cloudformation describe-stack-events \
+            --region us-east-1 \
+            --stack-name "$STACK_NAME" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`ROLLBACK_IN_PROGRESS`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table 2>/dev/null \
+            || echo "(no events available)"
+
+          echo ""
+          echo "── Validation Lambda recent log streams ─────────────"
+          LAMBDA_LOG_GROUP="/aws/lambda/tucaken-acm-dns-validation-${{ inputs.cdk-environment }}"
+          aws logs describe-log-streams \
+            --region us-east-1 \
+            --log-group-name "$LAMBDA_LOG_GROUP" \
+            --order-by LastEventTime --descending \
+            --max-items 3 \
+            --query 'logStreams[*].[logStreamName,lastEventTimestamp]' \
+            --output table 2>/dev/null \
+            || echo "(no log streams; Lambda may not have been invoked)"
+
+          echo ""
+          echo "── Latest validation Lambda log events ──────────────"
+          LATEST_STREAM=$(aws logs describe-log-streams \
+            --region us-east-1 \
+            --log-group-name "$LAMBDA_LOG_GROUP" \
+            --order-by LastEventTime --descending \
+            --max-items 1 \
+            --query 'logStreams[0].logStreamName' \
+            --output text 2>/dev/null || echo "")
+          if [[ -n "$LATEST_STREAM" && "$LATEST_STREAM" != "None" ]]; then
+            aws logs get-log-events \
+              --region us-east-1 \
+              --log-group-name "$LAMBDA_LOG_GROUP" \
+              --log-stream-name "$LATEST_STREAM" \
+              --query 'events[*].message' \
+              --output text 2>/dev/null | tail -100
+          else
+            echo "(no Lambda log stream found — Lambda likely never invoked or just created)"
+          fi
+
+  # ===========================================================================
   # Verify Tucaken Edge Stack (5e)
   #
   # Lightweight post-deploy check: confirms both distributions exist, ACM

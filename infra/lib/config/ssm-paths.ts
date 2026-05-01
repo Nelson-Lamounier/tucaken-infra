@@ -511,6 +511,50 @@ export function bedrockSsmPaths(environment: Environment): BedrockSsmPaths {
 }
 
 // =============================================================================
+// ORG SSM PATHS (root account)
+// =============================================================================
+
+/**
+ * SSM parameter paths stored in the root/management account.
+ *
+ * These are the authoritative source for Route 53 hosted zone IDs used by
+ * CrossAccountDnsRoleStack. Storing here removes the dependency on GitHub
+ * repository variables and avoids the vars/secrets namespace confusion.
+ *
+ * Parameters must be created manually (or via bootstrap script) in the root
+ * account before the org deploy workflow runs:
+ *
+ * ```bash
+ * aws ssm put-parameter --name /org/route53/portfolio-zone-id \
+ *   --value <ZONE_ID> --type String
+ * aws ssm put-parameter --name /org/route53/tucaken-io-zone-id \
+ *   --value <ZONE_ID> --type String
+ * aws ssm put-parameter --name /org/route53/tucaken-com-zone-id \
+ *   --value <ZONE_ID> --type String
+ * ```
+ */
+export interface OrgSsmPaths {
+    /** The prefix itself: /org/route53 */
+    readonly prefix: string;
+    /** Route 53 hosted zone ID for nelsonlamounier.com (portfolio) */
+    readonly portfolioHostedZoneId: string;
+    /** Route 53 hosted zone ID for tucaken.io */
+    readonly tucakenIoHostedZoneId: string;
+    /** Route 53 hosted zone ID for tucaken.com */
+    readonly tucakenComHostedZoneId: string;
+}
+
+export function orgSsmPaths(): OrgSsmPaths {
+    const prefix = '/org/route53';
+    return {
+        prefix,
+        portfolioHostedZoneId: `${prefix}/portfolio-zone-id`,
+        tucakenIoHostedZoneId: `${prefix}/tucaken-io-zone-id`,
+        tucakenComHostedZoneId: `${prefix}/tucaken-com-zone-id`,
+    };
+}
+
+// =============================================================================
 // SELF-HEALING SSM PATHS
 // =============================================================================
 

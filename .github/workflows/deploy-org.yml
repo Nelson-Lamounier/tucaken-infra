@@ -70,58 +70,67 @@ jobs:
     name: Resolve Hosted Zone IDs
     if: inputs.stack == 'dns-role' || inputs.stack == 'all'
     runs-on: ubuntu-latest
-    # No environment binding — all zone IDs live as repository-level variables.
-    # Binding to any environment loads that environment's secrets into the
-    # runner's masking registry. GitHub masks by value, not by name: any secret
-    # whose value matches a zone ID would zero out the step output even when the
-    # value is read via vars.* rather than secrets.*.
+    # Bound to 'management' to access the root-account OIDC role for SSM queries.
+    # Zone IDs (Z0985246...) cannot accidentally match OIDC role ARNs or passwords
+    # so step-output masking is not a risk here (unlike reading from vars.*
+    # alongside environment secrets whose values might overlap).
+    environment: management
     outputs:
       hosted-zone-ids: ${{ steps.build.outputs.zones }}
     steps:
-      - name: Build comma-separated zone list
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure AWS Credentials
+        uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Query Hosted Zone IDs from SSM
         id: build
-        env:
-          PORTFOLIO_ZONE: ${{ vars.HOSTED_ZONE_ID }}
-          TUCAKEN_IO_ZONE: ${{ vars.TUCAKEN_IO_HOSTED_ZONE_ID }}
-          TUCAKEN_COM_ZONE: ${{ vars.TUCAKEN_COM_HOSTED_ZONE_ID }}
         shell: bash
+        env:
+          SSM_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
         run: |
           set -euo pipefail
 
+          # ── Helper: query SSM, return empty string on missing parameter ──
+          get_zone() {
+            aws ssm get-parameter \
+              --name "$1" \
+              --region "${SSM_REGION}" \
+              --query 'Parameter.Value' \
+              --output text 2>/dev/null || echo ""
+          }
+
+          PORTFOLIO_ZONE=$(get_zone "/org/route53/portfolio-zone-id")
+          TUCAKEN_IO_ZONE=$(get_zone "/org/route53/tucaken-io-zone-id")
+          TUCAKEN_COM_ZONE=$(get_zone "/org/route53/tucaken-com-zone-id")
+
           # ── Presence-only diagnostic (does not leak values) ──
-          echo "── Hosted zone inputs (presence only) ───────────────"
-          echo "  vars.HOSTED_ZONE_ID                      : $([[ -n "${PORTFOLIO_ZONE:-}"   ]] && echo set || echo UNSET)"
-          echo "  TUCAKEN_IO_HOSTED_ZONE_ID  (var)         : $([[ -n "${TUCAKEN_IO_ZONE:-}"  ]] && echo set || echo UNSET)"
-          echo "  TUCAKEN_COM_HOSTED_ZONE_ID (var)         : $([[ -n "${TUCAKEN_COM_ZONE:-}" ]] && echo set || echo UNSET)"
+          echo "── Hosted zone SSM lookup (presence only) ───────────"
+          echo "  /org/route53/portfolio-zone-id    : $([[ -n "${PORTFOLIO_ZONE}"   ]] && echo found || echo MISSING)"
+          echo "  /org/route53/tucaken-io-zone-id   : $([[ -n "${TUCAKEN_IO_ZONE}"  ]] && echo found || echo MISSING)"
+          echo "  /org/route53/tucaken-com-zone-id  : $([[ -n "${TUCAKEN_COM_ZONE}" ]] && echo found || echo MISSING)"
           echo ""
 
-          # Build list, skipping empty entries.
+          # Build comma-separated list, skipping any missing parameters.
           ZONES=""
-          [[ -n "${PORTFOLIO_ZONE:-}"   ]] && ZONES="${PORTFOLIO_ZONE}"
-          [[ -n "${TUCAKEN_IO_ZONE:-}"  ]] && ZONES="${ZONES:+${ZONES},}${TUCAKEN_IO_ZONE}"
-          [[ -n "${TUCAKEN_COM_ZONE:-}" ]] && ZONES="${ZONES:+${ZONES},}${TUCAKEN_COM_ZONE}"
+          [[ -n "${PORTFOLIO_ZONE}"   ]] && ZONES="${PORTFOLIO_ZONE}"
+          [[ -n "${TUCAKEN_IO_ZONE}"  ]] && ZONES="${ZONES:+${ZONES},}${TUCAKEN_IO_ZONE}"
+          [[ -n "${TUCAKEN_COM_ZONE}" ]] && ZONES="${ZONES:+${ZONES},}${TUCAKEN_COM_ZONE}"
 
-          # Fail fast if nothing resolved — prevents passing
-          # `--context hostedZoneIds=` (empty) to CDK, which would crash with
-          # "hostedZoneIds is required for org project. Pass via context."
           if [[ -z "${ZONES}" ]]; then
-            echo "::error::Resolved zero hosted zones."
-            echo "::error::At minimum HOSTED_ZONE_ID (repo var) must be set."
-            echo "::error::Tucaken zones (TUCAKEN_IO_HOSTED_ZONE_ID, TUCAKEN_COM_HOSTED_ZONE_ID)"
-            echo "::error::must be set as repository-level variables."
+            echo "::error::Resolved zero hosted zones from SSM."
+            echo "::error::Create the parameters in the root account before running this workflow:"
+            echo "::error::  aws ssm put-parameter --name /org/route53/portfolio-zone-id --value <ID> --type String"
+            echo "::error::  aws ssm put-parameter --name /org/route53/tucaken-io-zone-id --value <ID> --type String"
+            echo "::error::  aws ssm put-parameter --name /org/route53/tucaken-com-zone-id --value <ID> --type String"
             exit 1
           fi
 
-          # IMPORTANT: do NOT mask zone IDs here.
-          # Hosted zone IDs are non-sensitive (public via DNS NS records), and
-          # GitHub Actions strips any step output that contains a masked value
-          # ("Skip output 'X' since it may contain secret"), which would zero
-          # out this output and break downstream `--context hostedZoneIds=`.
-          # Defense-in-depth masking happens in the consuming job
-          # (_deploy-stack.yml's "Set Scoped Config") where the value lives in
-          # env vars, not step outputs.
           IFS=',' read -ra Z_ARR <<< "${ZONES}"
-
           echo "zones=${ZONES}" >> "$GITHUB_OUTPUT"
           echo "[OK] Resolved ${#Z_ARR[@]} hosted zone(s) for DNS role policy"
 

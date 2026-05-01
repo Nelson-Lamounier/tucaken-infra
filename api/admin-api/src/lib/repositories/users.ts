@@ -171,6 +171,7 @@ export type EffectivePlan = 'pro' | 'trial' | 'free';
 export interface PlanStatus {
   plan:                 string;          // stored column: 'free' | 'pro'
   effectivePlan:        EffectivePlan;   // derived: 'pro' | 'trial' | 'free'
+  role:                 string;          // 'user' | 'admin'
   trialStartedAt:       Date | null;
   trialEndsAt:          Date | null;
   trialDaysRemaining:   number | null;   // null when no active trial
@@ -192,6 +193,7 @@ export async function getUserPlanStatus(
 ): Promise<PlanStatus | null> {
   const result = await pool.query<{
     plan:                   string;
+    role:                   string;
     trial_started_at:       Date | null;
     trial_ends_at:          Date | null;
     subscription_status:    string | null;
@@ -202,6 +204,7 @@ export async function getUserPlanStatus(
   }>(
     `SELECT
        plan,
+       role,
        trial_started_at,
        trial_ends_at,
        subscription_status,
@@ -228,6 +231,7 @@ export async function getUserPlanStatus(
   return {
     plan:                 row.plan,
     effectivePlan:        row.effective_plan as EffectivePlan,
+    role:                 row.role,
     trialStartedAt:       row.trial_started_at,
     trialEndsAt:          row.trial_ends_at,
     trialDaysRemaining:   row.trial_days_remaining,

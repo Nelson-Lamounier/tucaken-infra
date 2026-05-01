@@ -157,9 +157,10 @@ export function createResumeImportsRouter(config: AdminApiConfig): Hono<AdminApi
     if (!fileSizeBytes || fileSizeBytes > MAX_FILE_SIZE)
       return ctx.json({ error: `File must be between 1 byte and ${MAX_FILE_SIZE / 1024 / 1024} MB` }, 413);
 
-    // Quota check — free tier: 1 import per month
+    // Quota check — free tier only; role='admin' has unlimited imports
     const planStatus = await getUserPlanStatus(pool, userId);
-    if (planStatus?.effectivePlan === 'free') {
+    const isAdmin = planStatus?.role === 'admin';
+    if (!isAdmin && planStatus?.effectivePlan === 'free') {
       const used = await countImportsThisMonth(pool, userId);
       if (used >= FREE_TIER_IMPORTS_PER_MONTH) {
         return ctx.json({
@@ -169,10 +170,21 @@ export function createResumeImportsRouter(config: AdminApiConfig): Hono<AdminApi
       }
     }
 
-    // Safe S3 key: scoped to resume-imports/<userId>/<uuid>.<ext>
+    // Build presigned URL before inserting the DB record — avoids stale
+    // awaiting_upload rows when S3 / network errors occur
     const ext    = contentType === 'application/pdf' ? 'pdf' : 'docx';
     const fileId = crypto.randomUUID();
     const s3Key  = `resume-imports/${userId}/${fileId}.${ext}`;
+
+    const command = new PutObjectCommand({
+      Bucket:        config.assetsBucketName!,
+      Key:           s3Key,
+      ContentType:   contentType,
+      ContentLength: fileSizeBytes,
+      ServerSideEncryption: 'AES256',
+    });
+
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: PRESIGN_EXPIRY_SECONDS });
 
     const importRecord = await createResumeImport(pool, {
       userId,
@@ -181,17 +193,6 @@ export function createResumeImportsRouter(config: AdminApiConfig): Hono<AdminApi
       contentType,
       fileSizeBytes,
     });
-
-    const command = new PutObjectCommand({
-      Bucket:        config.assetsBucketName!,
-      Key:           s3Key,
-      ContentType:   contentType,
-      ContentLength: fileSizeBytes,
-      // Server-side encryption (SSE-S3 is bucket default; this makes it explicit)
-      ServerSideEncryption: 'AES256',
-    });
-
-    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: PRESIGN_EXPIRY_SECONDS });
 
     return ctx.json({
       importId:  importRecord.id,

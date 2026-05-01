@@ -117,10 +117,15 @@ jobs:
             exit 1
           fi
 
-          # Mask each zone ID in subsequent logs (consistent with how
-          # HOSTED_ZONE_ID is treated elsewhere in the pipeline).
+          # IMPORTANT: do NOT mask zone IDs here.
+          # Hosted zone IDs are non-sensitive (public via DNS NS records), and
+          # GitHub Actions strips any step output that contains a masked value
+          # ("Skip output 'X' since it may contain secret"), which would zero
+          # out this output and break downstream `--context hostedZoneIds=`.
+          # Defense-in-depth masking happens in the consuming job
+          # (_deploy-stack.yml's "Set Scoped Config") where the value lives in
+          # env vars, not step outputs.
           IFS=',' read -ra Z_ARR <<< "${ZONES}"
-          for Z in "${Z_ARR[@]}"; do echo "::add-mask::$Z"; done
 
           echo "zones=${ZONES}" >> "$GITHUB_OUTPUT"
           echo "[OK] Resolved ${#Z_ARR[@]} hosted zone(s) for DNS role policy"

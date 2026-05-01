@@ -6,30 +6,32 @@
 #      in the root-account hosted zone for ACM certificate validation.
 #
 # Security:
-#   - Manual trigger only (workflow_dispatch) with a typed confirmation gate.
+#   - Manual trigger only (workflow_dispatch).
+#   - **Required-reviewer gate** on the `management` GitHub Environment is the
+#     primary protection — the deploy job pauses until an approved reviewer
+#     clicks "Approve and run" in the GitHub UI. This is enforced by GitHub
+#     and cannot be bypassed in code.
 #   - All sensitive values (account IDs, hosted zone, role ARN) are sourced
 #     from GitHub environment variables/secrets and masked in logs.
 #   - OIDC federation — no long-lived credentials stored anywhere.
 #
 # Prerequisites:
-#   - The 'management' GitHub environment must exist with these variables:
-#       ROOT_ACCOUNT_ID, DEV_ACCOUNT_ID, AWS_REGION, HOSTED_ZONE_ID
-#   - The AWS_OIDC_ROLE secret must grant access to the root account.
+#   - The 'management' GitHub Environment must exist with:
+#       Required reviewers: at least one (Settings → Environments → management
+#                           → Required reviewers)
+#       Variables: ROOT_ACCOUNT_ID, DEV_ACCOUNT_ID, AWS_REGION, HOSTED_ZONE_ID
+#       Secrets:   AWS_OIDC_ROLE
 #   - CDK bootstrap must already be present in the root account/region.
 #
 # Usage:
-#   gh workflow run deploy-org.yml --ref develop \
-#     -f confirm=DEPLOY-ORG -f stack=dns-role
+#   gh workflow run deploy-org.yml --ref develop -f stack=dns-role
+#   # then approve the run in the GitHub Actions UI when prompted
 
 name: Deploy Organization (Root Account)
 
 on:
   workflow_dispatch:
     inputs:
-      confirm:
-        description: 'Type "DEPLOY-ORG" to confirm root account deployment'
-        required: true
-        type: string
       stack:
         description: "Stack to deploy"
         required: true
@@ -45,29 +47,6 @@ permissions:
   contents: read     # Required by actions/checkout
 
 jobs:
-  # ===========================================================================
-  # Gate — Require explicit confirmation before modifying the root account.
-  # Prevents accidental deployments; the caller must type "DEPLOY-ORG".
-  # ===========================================================================
-  validate:
-    name: Validate Confirmation
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      proceed: ${{ steps.check.outputs.proceed }}
-
-    steps:
-      - name: Validate Confirmation Input
-        id: check
-        run: |
-          if [ "${{ inputs.confirm }}" != "DEPLOY-ORG" ]; then
-            echo "[FAIL] Deployment not confirmed."
-            echo "       You must type 'DEPLOY-ORG' to confirm."
-            exit 1
-          fi
-          echo "proceed=true" >> $GITHUB_OUTPUT
-          echo "[OK] Root account deployment confirmed"
-
   # ===========================================================================
   # Stack 1: Cross-Account DNS Validation Role
   #
@@ -89,7 +68,6 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────
   resolve-hosted-zones:
     name: Resolve Hosted Zone IDs
-    needs: [validate]
     if: inputs.stack == 'dns-role' || inputs.stack == 'all'
     runs-on: ubuntu-latest
     # Bind to the development environment so environment-scoped secrets
@@ -124,7 +102,7 @@ jobs:
 
   deploy-dns-role:
     name: Deploy DNS Role
-    needs: [validate, resolve-hosted-zones]
+    needs: [resolve-hosted-zones]
     if: inputs.stack == 'dns-role' || inputs.stack == 'all'
     uses: ./.github/workflows/_deploy-stack.yml
     with:
@@ -147,7 +125,7 @@ jobs:
   # ===========================================================================
   summary:
     name: Deployment Summary
-    needs: [validate, deploy-dns-role]
+    needs: [resolve-hosted-zones, deploy-dns-role]
     runs-on: ubuntu-latest
     if: always()
 
@@ -169,7 +147,7 @@ jobs:
 
           | Stage | Status |
           |-------|--------|
-          | Validation | ${{ needs.validate.result }} |
+          | Resolve Hosted Zones | ${{ needs.resolve-hosted-zones.result }} |
           | DNS Role | ${{ needs.deploy-dns-role.result }} |
 
           EOF

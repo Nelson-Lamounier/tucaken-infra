@@ -181,7 +181,9 @@ export function createResumeImportsRouter(config: AdminApiConfig): Hono<AdminApi
       Key:           s3Key,
       ContentType:   contentType,
       ContentLength: fileSizeBytes,
-      ServerSideEncryption: 'AES256',
+      // SSE-S3 is the bucket default (BucketEncryption.S3_MANAGED in CDK).
+      // Not included here so it doesn't appear in SignedHeaders — the browser
+      // fetch would need to send the header too, which would require CORS preflight.
     });
 
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: PRESIGN_EXPIRY_SECONDS });

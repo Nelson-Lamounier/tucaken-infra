@@ -195,7 +195,7 @@ export async function countImportsThisMonth(
     `SELECT COUNT(*) AS count FROM resume_imports
       WHERE user_id = $1::uuid
         AND created_at >= DATE_TRUNC('month', NOW())
-        AND status != 'failed'`,
+        AND status NOT IN ('awaiting_upload', 'failed')`,
     [userId],
   );
   return parseInt(result.rows[0]?.count ?? '0', 10);

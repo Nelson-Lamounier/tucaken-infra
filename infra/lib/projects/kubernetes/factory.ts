@@ -480,6 +480,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 tableSsmPath: bedrockContentTableSsmPath,
                 bucketSsmPath: ssmPaths.assetsBucketName,
                 namePrefix: nextjsNamePrefix,
+                ssmPrefix,
                 // WAF: API traffic is routed through CloudFront edge WAF
                 skipWaf: true,
 

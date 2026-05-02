@@ -727,11 +727,13 @@ echo "SSM Automation will be triggered by the CI pipeline"
                 masterKey: kms.Alias.fromAliasName(this, 'SnsEncryptionKey', 'alias/aws/sns'),
             });
 
-            if (props.notificationEmail) {
-                alertsTopic.addSubscription(
-                    new sns_subscriptions.EmailSubscription(props.notificationEmail),
-                );
-            }
+            const alertsEmail: string =
+                props.notificationEmail ||
+                ssm.StringParameter.valueForStringParameter(this, `${ssmPrefix}/ops-email`);
+
+            alertsTopic.addSubscription(
+                new sns_subscriptions.EmailSubscription(alertsEmail),
+            );
 
             // Allow Grafana's SNS contact point to publish
             launchTemplateConstruct.addToRolePolicy(new iam.PolicyStatement({

@@ -42,6 +42,7 @@ function createApiStack(
         tableSsmPath: props?.tableSsmPath ?? '/nextjs/development/dynamodb-table-name',
         bucketSsmPath: props?.bucketSsmPath ?? '/nextjs/development/assets-bucket-name',
         projectName: props?.projectName ?? 'nextjs',
+        ssmPrefix: props?.ssmPrefix ?? '/k8s/development',
         ...props,
     });
 

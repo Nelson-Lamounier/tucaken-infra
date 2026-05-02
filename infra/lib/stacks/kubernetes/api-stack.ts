@@ -92,12 +92,20 @@ export interface NextJsApiStackProps extends cdk.StackProps {
      */
     readonly skipWaf?: boolean;
 
+    /**
+     * SSM parameter prefix (e.g. '/k8s/development').
+     * Used to read `{ssmPrefix}/ops-email` for DLQ alarm SNS subscription
+     * when `notificationEmail` is not explicitly provided.
+     */
+    readonly ssmPrefix: string;
+
     // ==========================================================================
     // EMAIL SUBSCRIPTION CONFIGURATION
     // ==========================================================================
 
     /**
      * Owner email address for receiving subscription notifications.
+     * When provided, overrides the `{ssmPrefix}/ops-email` SSM parameter.
      * Must be SES-verified in sandbox mode.
      * @example 'nelson@nelsonlamounier.com'
      */
@@ -220,11 +228,13 @@ export class NextJsApiStack extends cdk.Stack {
             displayName: `${namePrefix} API DLQ Alerts (${envName})`,
         });
 
-        if (props.notificationEmail) {
-            dlqAlarmTopic.addSubscription(
-                new sns_subscriptions.EmailSubscription(props.notificationEmail),
-            );
-        }
+        const dlqAlarmEmail: string =
+            props.notificationEmail ||
+            ssm.StringParameter.valueForStringParameter(this, `${props.ssmPrefix}/ops-email`);
+
+        dlqAlarmTopic.addSubscription(
+            new sns_subscriptions.EmailSubscription(dlqAlarmEmail),
+        );
 
         // Suppress cdk-nag: SNS topic uses default encryption (acceptable for
         // alarm notifications which contain no sensitive data)

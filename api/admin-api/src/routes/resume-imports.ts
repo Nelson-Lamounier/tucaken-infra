@@ -39,6 +39,7 @@ import { getUserPlanStatus } from '../lib/repositories/users.js';
 import {
   createResumeImport,
   markUploadComplete,
+  resetImportForRetry,
   getResumeImport,
   listResumeImports,
   countImportsThisMonth,
@@ -238,6 +239,47 @@ export function createResumeImportsRouter(config: AdminApiConfig): Hono<AdminApi
       await getBatchApi().createNamespacedJob({ namespace: config.resumeImportNamespace, body: job });
     } catch (err) {
       console.error('[resume-imports] failed to create K8s Job', err);
+      return ctx.json({ error: 'Failed to schedule resume import job' }, 502);
+    }
+
+    return ctx.json({ importId: importRecord.id, status: 'queued' }, 202);
+  });
+
+  // ─── POST /:id/retry ──────────────────────────────────────────────────────
+  // Re-dispatches a failed import. Resets status to queued and creates a new
+  // K8s Job to re-run the resume-import-processor.
+  // ──────────────────────────────────────────────────────────────────────────
+  router.post('/:id/retry', async (ctx) => {
+    const jwtPayload = ctx.get('jwtPayload');
+    const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : null;
+    if (!userId) return ctx.json({ error: 'Authenticated user not provisioned' }, 401);
+
+    const importId = ctx.req.param('id');
+
+    const importRecord = await resetImportForRetry(pool, importId, userId);
+    if (!importRecord) {
+      return ctx.json({ error: 'Import not found or not in failed state' }, 404);
+    }
+
+    const image = getJobImage('resume-import-processor');
+    if (!isImageConfigured(image)) {
+      console.error('[resume-imports] retry: image URI unresolved', { image });
+      return ctx.json({ error: 'Resume import processor image not configured' }, 502);
+    }
+
+    const job = buildJobSpec(
+      config,
+      image,
+      importRecord.id,
+      userId,
+      importRecord.s3Key,
+      importRecord.contentType,
+    );
+
+    try {
+      await getBatchApi().createNamespacedJob({ namespace: config.resumeImportNamespace, body: job });
+    } catch (err) {
+      console.error('[resume-imports] retry: failed to create K8s Job', err);
       return ctx.json({ error: 'Failed to schedule resume import job' }, 502);
     }
 

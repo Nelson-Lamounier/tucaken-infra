@@ -70,7 +70,7 @@ describe('Naming Utilities', () => {
         });
 
         it('should have expected k8s stack keys', () => {
-            expect(Object.keys(STACK_REGISTRY.kubernetes)).toStrictEqual(['data', 'base', 'controlPlane', 'generalPool', 'monitoringPool', 'appIam', 'api', 'edge', 'observability', 'platformRds']);
+            expect(Object.keys(STACK_REGISTRY.kubernetes)).toStrictEqual(['data', 'base', 'controlPlane', 'generalPool', 'monitoringPool', 'appIam', 'api', 'edge', 'tucakenEdge', 'observability', 'platformRds']);
         });
     });
 

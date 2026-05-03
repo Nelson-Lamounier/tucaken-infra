@@ -14,6 +14,8 @@ export type AdminApiBindings = {
     jwtPayload: JWTPayload;
     /** users.id UUID — the stable FK anchor. Set by userProvisionMiddleware. */
     userId: string;
+    /** True when userProvisionMiddleware inserted a brand-new users row this request. */
+    isNewUser: boolean;
   };
 };
 

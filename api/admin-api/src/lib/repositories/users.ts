@@ -48,6 +48,22 @@ export interface UserProfile {
 export interface ProvisionedUser {
   /** RDS users.id UUID — the stable FK anchor for all child tables. */
   id: string;
+  /** True only when a brand-new users row was inserted (Step 3). False for returning users. */
+  isNew: boolean;
+}
+
+/**
+ * Returns true if a users row with the given email already exists.
+ * Used at sign-up time to detect cross-provider duplicates before Cognito
+ * creates a second native user (which would trigger AliasExistsException or
+ * silently merge identities depending on pool config).
+ */
+export async function userExistsByEmail(pool: Pool, email: string): Promise<boolean> {
+  const result = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM users WHERE email = $1) AS exists`,
+    [email],
+  );
+  return result.rows[0]?.exists ?? false;
 }
 
 /**
@@ -78,7 +94,7 @@ export async function upsertUser(pool: Pool, user: UserProfile): Promise<Provisi
         [user.fullName ?? null, user.avatarUrl ?? null, existingIdentity.rows[0].user_id],
       );
       await client.query('COMMIT');
-      return { id: existingIdentity.rows[0].user_id };
+      return { id: existingIdentity.rows[0].user_id, isNew: false };
     }
 
     // ── Step 2: same email, different provider — link new identity to existing user ──
@@ -91,6 +107,8 @@ export async function upsertUser(pool: Pool, user: UserProfile): Promise<Provisi
     );
 
     let userId: string;
+
+    let isNew = false;
 
     if (existingUser.rows[0]) {
       userId = existingUser.rows[0].id;
@@ -132,6 +150,7 @@ export async function upsertUser(pool: Pool, user: UserProfile): Promise<Provisi
       const row = inserted.rows[0];
       if (!row) throw new Error('upsertUser: INSERT INTO users returned no row');
       userId = row.id;
+      isNew  = true;
 
       // Audit: record trial start for non-admin users
       if (!isAdmin) {
@@ -145,17 +164,24 @@ export async function upsertUser(pool: Pool, user: UserProfile): Promise<Provisi
 
     // ── Link the Cognito sub to this user (new identity row) ─────────────────
     //
-    // ON CONFLICT DO NOTHING: race condition guard in case of concurrent requests.
+    // ON CONFLICT (user_id, provider): handles two cases —
+    //   1. Concurrent requests with the same sub both miss the pod cache and
+    //      race to insert; the second is a no-op update to identical values.
+    //   2. Sub rotation: Cognito user deleted + recreated (new sub, same email +
+    //      provider). Step 1 above missed the old sub; we update it here so
+    //      the user can sign in again without a 503.
     await client.query(
       `INSERT INTO user_identities
              (user_id, cognito_sub, provider, provider_user_id, created_at)
        VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (cognito_sub) DO NOTHING`,
+       ON CONFLICT (user_id, provider) DO UPDATE
+         SET cognito_sub      = EXCLUDED.cognito_sub,
+             provider_user_id = EXCLUDED.provider_user_id`,
       [userId, user.cognitoSub, user.provider, user.providerUserId ?? null],
     );
 
     await client.query('COMMIT');
-    return { id: userId };
+    return { id: userId, isNew };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

@@ -23,8 +23,9 @@ export function createMeRouter(config: AdminApiConfig): Hono<AdminApiBindings> {
    * which creates the users row on first sign-in.
    */
   router.get('/', async (ctx) => {
-    const userId   = ctx.get('userId');
-    const payload  = ctx.get('jwtPayload');
+    const userId    = ctx.get('userId');
+    const isNewUser = ctx.get('isNewUser') ?? false;
+    const payload   = ctx.get('jwtPayload');
 
     if (!userId) {
       return ctx.json({ error: 'User not provisioned — retry in a moment' }, 503);
@@ -40,6 +41,7 @@ export function createMeRouter(config: AdminApiConfig): Hono<AdminApiBindings> {
       email:     payload['email']   as string,
       name:      payload['name']    as string | undefined,
       avatarUrl: payload['picture'] as string | undefined,
+      isNew:     isNewUser,
       plan:      plan ?? {
         plan:                 'free',
         effectivePlan:        'free',

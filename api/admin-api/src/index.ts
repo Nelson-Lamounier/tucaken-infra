@@ -36,6 +36,7 @@ import { createMeRouter } from './routes/me.js';
 import { createResumesRouter } from './routes/resumes.js';
 import { createResumeImportsRouter } from './routes/resume-imports.js';
 import { createPromptFeedbackRouter } from './routes/prompt-feedback.js';
+import { createPublicRouter } from './routes/public.js';
 
 // ── Startup Validation ───────────────────────────────────────────────────────
 // loadConfig() throws immediately if any required env var is absent.
@@ -82,6 +83,11 @@ app.route('/healthz', createHealthRouter());
 // Must be registered BEFORE the JWT middleware which guards /api/admin/*.
 // GitHub posts to /api/github/webhook; does not carry a Cognito token.
 app.route('/api/github', createGitHubWebhookRouter(config));
+
+// ── Public routes (unauthenticated — read-only, non-sensitive) ───────────────
+// Registered before the JWT middleware so sign-up flows can call these
+// without a session token (e.g. email-exists check before Cognito SignUp).
+app.route('/api/public', createPublicRouter(config));
 
 // ── Cognito JWT guard — applied to all /api/admin/* routes ───────────────────
 const jwtMiddleware = cognitoJwtAuth(

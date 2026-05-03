@@ -88,7 +88,7 @@ export function userProvisionMiddleware(pool: Pool): MiddlewareHandler<AdminApiB
       const groups = (payload['cognito:groups'] as string[] | undefined) ?? [];
       const role   = groups.includes('admin') ? 'admin' : 'user';
 
-      const { id } = await upsertUser(pool, {
+      const { id, isNew } = await upsertUser(pool, {
         cognitoSub:      sub as string,
         provider,
         providerUserId,
@@ -100,6 +100,7 @@ export function userProvisionMiddleware(pool: Pool): MiddlewareHandler<AdminApiB
 
       subToUserId.set(sub as string, id);
       ctx.set('userId', id);
+      ctx.set('isNewUser', isNew);
     } catch (err) {
       console.error('[user-provision] upsert failed', { sub, err });
     }

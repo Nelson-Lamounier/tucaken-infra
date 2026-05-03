@@ -24,14 +24,14 @@
  */
 
 import {
+    ACMClient,
+    DescribeCertificateCommand,
+} from '@aws-sdk/client-acm';
+import {
     CloudFrontClient,
     GetDistributionCommand,
 } from '@aws-sdk/client-cloudfront';
 import type { DistributionConfig } from '@aws-sdk/client-cloudfront';
-import {
-    ACMClient,
-    DescribeCertificateCommand,
-} from '@aws-sdk/client-acm';
 import {
     SSMClient,
     GetParametersByPathCommand,
@@ -112,6 +112,8 @@ let ioDistributionConfig: DistributionConfig;
 let comDistributionConfig: DistributionConfig;
 let ioWafArn: string | undefined;
 let comWafArn: string | undefined;
+let ioAliases: string[];
+let comAliases: string[];
 
 // =============================================================================
 // Top-Level beforeAll
@@ -136,6 +138,8 @@ beforeAll(async () => {
 
     ioWafArn = ioResp.Distribution?.DistributionConfig?.WebACLId;
     comWafArn = comResp.Distribution?.DistributionConfig?.WebACLId;
+    ioAliases = ioDistributionConfig.Aliases?.Items ?? [];
+    comAliases = comDistributionConfig.Aliases?.Items ?? [];
 }, 60_000);
 
 // =============================================================================
@@ -177,13 +181,11 @@ describe('CloudFront — Primary distribution (.io)', () => {
     });
 
     it('should have tucaken.io as an alias', () => {
-        const aliases = ioDistributionConfig.Aliases?.Items ?? [];
-        expect(aliases).toContain('tucaken.io');
+        expect(ioAliases).toContain('tucaken.io');
     });
 
     it('should have www.tucaken.io as an alias', () => {
-        const aliases = ioDistributionConfig.Aliases?.Items ?? [];
-        expect(aliases).toContain('www.tucaken.io');
+        expect(ioAliases).toContain('www.tucaken.io');
     });
 
     it('should have a WAF WebACL attached', () => {
@@ -208,13 +210,11 @@ describe('CloudFront — Redirect distribution (.com)', () => {
     });
 
     it('should have tucaken.com as an alias', () => {
-        const aliases = comDistributionConfig.Aliases?.Items ?? [];
-        expect(aliases).toContain('tucaken.com');
+        expect(comAliases).toContain('tucaken.com');
     });
 
     it('should have www.tucaken.com as an alias', () => {
-        const aliases = comDistributionConfig.Aliases?.Items ?? [];
-        expect(aliases).toContain('www.tucaken.com');
+        expect(comAliases).toContain('www.tucaken.com');
     });
 
     it('should have the same WAF WebACL as the .io distribution', () => {

@@ -634,11 +634,13 @@ describe('KubernetesWorkerAsgStack — monitoring pool', () => {
             });
         });
 
-        it('should NOT create an email subscription when notificationEmail is omitted', () => {
+        it('should create an email subscription from SSM ops-email fallback when notificationEmail is omitted', () => {
+            // The stack always subscribes — either the explicit email prop or
+            // the SSM-backed /ops-email fallback (added in fix: ami-refresh).
             const { template: noEmailTemplate } = createWorkerAsgStack('monitoring', {
                 notificationEmail: undefined,
             });
-            noEmailTemplate.resourceCountIs('AWS::SNS::Subscription', 0);
+            noEmailTemplate.resourceCountIs('AWS::SNS::Subscription', 1);
         });
     });
 

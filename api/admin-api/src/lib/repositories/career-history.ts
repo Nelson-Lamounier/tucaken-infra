@@ -184,6 +184,34 @@ export async function listResumeImports(
 }
 
 /**
+ * Reset a failed resume_import back to 'queued' state for retry.
+ * Clears error fields, increments retry count, and resets completion timestamp.
+ * Returns the updated record or null if not found/not in failed state.
+ */
+export async function resetImportForRetry(
+  pool: Pool,
+  importId: string,
+  userId: string,
+): Promise<ResumeImport | null> {
+  const result = await pool.query<Record<string, unknown>>(
+    `UPDATE resume_imports
+        SET status        = 'queued',
+            error_code    = NULL,
+            error_details = NULL,
+            started_at    = NOW(),
+            completed_at  = NULL,
+            retry_count   = retry_count + 1,
+            updated_at    = NOW()
+      WHERE id = $1::uuid
+        AND user_id = $2::uuid
+        AND status = 'failed'
+  RETURNING ${IMPORT_COLS}`,
+    [importId, userId],
+  );
+  return result.rows[0] ? rowToImport(result.rows[0]) : null;
+}
+
+/**
  * Count resume imports for this user in the current calendar month.
  * Used to enforce the free-tier quota (1 import/month).
  */

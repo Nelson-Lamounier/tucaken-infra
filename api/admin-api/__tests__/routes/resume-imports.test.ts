@@ -78,7 +78,7 @@ function buildApp() {
   const app = new Hono();
   app.use('*', async (c, next) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (c as any).set('jwtPayload', { sub: TEST_USER_ID });
+    (c as any).set('userId', TEST_USER_ID);
     await next();
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

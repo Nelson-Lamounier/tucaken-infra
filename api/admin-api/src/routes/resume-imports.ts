@@ -250,8 +250,7 @@ export function createResumeImportsRouter(config: AdminApiConfig): Hono<AdminApi
   // K8s Job to re-run the resume-import-processor.
   // ──────────────────────────────────────────────────────────────────────────
   router.post('/:id/retry', async (ctx) => {
-    const jwtPayload = ctx.get('jwtPayload');
-    const userId = typeof jwtPayload?.sub === 'string' ? jwtPayload.sub : null;
+    const userId = requireUserId(ctx);
     if (!userId) return ctx.json({ error: 'Authenticated user not provisioned' }, 401);
 
     const importId = ctx.req.param('id');

@@ -53,6 +53,20 @@ export interface ProvisionedUser {
 }
 
 /**
+ * Returns true if a users row with the given email already exists.
+ * Used at sign-up time to detect cross-provider duplicates before Cognito
+ * creates a second native user (which would trigger AliasExistsException or
+ * silently merge identities depending on pool config).
+ */
+export async function userExistsByEmail(pool: Pool, email: string): Promise<boolean> {
+  const result = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM users WHERE email = $1) AS exists`,
+    [email],
+  );
+  return result.rows[0]?.exists ?? false;
+}
+
+/**
  * Resolves or creates a users row and links the Cognito identity to it.
  *
  * Idempotent — safe to call on every authenticated request.

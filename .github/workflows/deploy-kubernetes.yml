@@ -57,13 +57,24 @@ jobs:
       deploy: ${{ steps.decide.outputs.deploy }}
       skip_verification: ${{ steps.decide.outputs.skip_verification }}
     steps:
-      - name: Abort if Shared deploy did not succeed
-        if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
+      - name: Check upstream conclusion
+        id: upstream
         run: |
-          echo "Deploy Shared concluded: ${{ github.event.workflow_run.conclusion }} — skipping k8s deploy."
-          exit 1
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            CONCLUSION="${{ github.event.workflow_run.conclusion }}"
+            echo "conclusion=$CONCLUSION" >> "$GITHUB_OUTPUT"
+            if [[ "$CONCLUSION" != "success" ]]; then
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              echo "Deploy Shared concluded: $CONCLUSION — will skip k8s deploy."
+            else
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: steps.upstream.outputs.ok == 'true'
         with:
           # Check out the commit that triggered the chain, not the workflow file HEAD.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -72,7 +83,7 @@ jobs:
       - name: Detect changed paths
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: paths
-        if: github.event_name == 'workflow_run'
+        if: steps.upstream.outputs.ok == 'true' && github.event_name == 'workflow_run'
         with:
           base: HEAD~1
           filters: |
@@ -93,7 +104,11 @@ jobs:
       - name: Decide whether to deploy
         id: decide
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${{ steps.upstream.outputs.ok }}" != "true" ]]; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "skip_verification=false" >> "$GITHUB_OUTPUT"
+            echo "Upstream did not succeed — skipping."
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             echo "skip_verification=${{ inputs.skip_verification || false }}" >> "$GITHUB_OUTPUT"
             echo "Manual trigger — deploying."

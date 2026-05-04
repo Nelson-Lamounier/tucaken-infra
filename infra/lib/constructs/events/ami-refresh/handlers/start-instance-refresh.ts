@@ -30,7 +30,21 @@ export async function handler(
   for (const asgName of asgNames) {
     const resp = await asg.send(new StartInstanceRefreshCommand({
       AutoScalingGroupName: asgName,
-      Preferences: { MinHealthyPercentage: 0, InstanceWarmup: 60 },
+      Preferences: {
+        // 50%: at most half the pool is in-flight at once. With min=1
+        // / max=4 this means 1 instance at a time on the general pool,
+        // which gives NTH room to drain before the next termination
+        // fires. 0% (the previous default) let the ASG kill 100% of
+        // the pool simultaneously — incompatible with PDB-respecting
+        // drains.
+        MinHealthyPercentage: 50,
+        // 300s: covers kubeadm join + Calico ready + system pods +
+        // Traefik scheduled before InstanceRefresh starts the next
+        // termination. The previous 60s was shorter than the boot
+        // path, so refresh would routinely outpace the cluster's
+        // ability to absorb the new node.
+        InstanceWarmup: 300,
+      },
     }));
     const refreshId = resp.InstanceRefreshId;
     if (!refreshId) throw new Error(`StartInstanceRefresh returned no InstanceRefreshId for ${asgName}`);

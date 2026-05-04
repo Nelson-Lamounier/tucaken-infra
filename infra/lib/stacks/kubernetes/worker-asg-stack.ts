@@ -43,6 +43,7 @@
  */
 
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
+import * as hooktargets from 'aws-cdk-lib/aws-autoscaling-hooktargets';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -51,12 +52,14 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sns_subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
 
 import { Construct } from 'constructs';
 
 import { Environment, shortEnv } from '../../config/environments';
+import { NodeTerminationHandlerQueue } from '../../constructs/events/node-termination';
 import {
     AutoScalingGroupConstruct,
     LaunchTemplateConstruct,
@@ -291,6 +294,83 @@ export class KubernetesWorkerAsgStack extends cdk.Stack {
         const userData = ec2.UserData.forLinux();
 
         // =====================================================================
+        // Node Termination Handler (NTH) — queue + IAM
+        //
+        // Single SQS queue + IAM ManagedPolicy shared across both worker
+        // pools. Created on the *general* pool stack (deployed first by
+        // factory.ts) and read from SSM by the *monitoring* pool stack.
+        // Both pools attach a lifecycle hook pointing at the queue and add
+        // the policy to their instance role so NTH (running as a DaemonSet
+        // on every worker) can poll, drain, and complete-lifecycle-action.
+        //
+        // The IAM policy scopes autoscaling:CompleteLifecycleAction by name
+        // wildcard (`{namePrefix}-*`) so it covers any future worker ASG
+        // we add without re-running the general stack.
+        // =====================================================================
+        const isGeneralPool = props.poolType === 'general';
+
+        let nthQueueArn: string;
+        let nthQueueUrl: string;
+        let nthNodePolicy: iam.IManagedPolicy;
+        let nthQueueConstruct: NodeTerminationHandlerQueue | undefined;
+
+        if (isGeneralPool) {
+            nthQueueConstruct = new NodeTerminationHandlerQueue(this, 'NodeTerminationHandler', {
+                // Use cluster-level prefix (not poolId) so the queue / DLQ /
+                // EventBridge rule names are stable regardless of which pool
+                // creates them. Monitoring pool reads via SSM; rename guard.
+                namePrefix,
+                autoScalingGroupArns: [
+                    // Wildcard covers any worker ASG in this cluster — the
+                    // monitoring stack creates its own ASG after the general
+                    // stack is deployed, and the policy needs to allow NTH
+                    // to complete lifecycle actions on both.
+                    cdk.Stack.of(this).formatArn({
+                        service: 'autoscaling',
+                        resource: 'autoScalingGroup',
+                        resourceName: `*:autoScalingGroupName/${namePrefix}-*`,
+                    }),
+                ],
+                // opsAlertsTopic: deferred — the bootstrap-alarm SNS topic
+                // lives in kubernetes-bootstrap; wire when its ARN is
+                // exported to /k8s/{env}/ops-alerts-topic-arn.
+            });
+            nthQueueArn = nthQueueConstruct.queue.queueArn;
+            nthQueueUrl = nthQueueConstruct.queue.queueUrl;
+            nthNodePolicy = nthQueueConstruct.nodePolicy;
+
+            new ssm.StringParameter(this, 'NthQueueUrlParam', {
+                parameterName: `${ssmPrefix}/nth/queue-url`,
+                stringValue: nthQueueUrl,
+                description: 'NTH SQS queue URL — read by aws-node-termination-handler chart',
+            });
+            new ssm.StringParameter(this, 'NthQueueArnParam', {
+                parameterName: `${ssmPrefix}/nth/queue-arn`,
+                stringValue: nthQueueArn,
+                description: 'NTH SQS queue ARN — for cross-stack IAM scoping',
+            });
+            new ssm.StringParameter(this, 'NthNodePolicyArnParam', {
+                parameterName: `${ssmPrefix}/nth/node-policy-arn`,
+                stringValue: nthNodePolicy.managedPolicyArn,
+                description: 'NTH IAM ManagedPolicy ARN — attached to worker node roles',
+            });
+        } else {
+            // Monitoring pool: read what the general pool stack wrote.
+            nthQueueArn = ssm.StringParameter.valueForStringParameter(
+                this, `${ssmPrefix}/nth/queue-arn`,
+            );
+            nthQueueUrl = ssm.StringParameter.valueForStringParameter(
+                this, `${ssmPrefix}/nth/queue-url`,
+            );
+            nthNodePolicy = iam.ManagedPolicy.fromManagedPolicyArn(
+                this, 'NthNodePolicy',
+                ssm.StringParameter.valueForStringParameter(
+                    this, `${ssmPrefix}/nth/node-policy-arn`,
+                ),
+            );
+        }
+
+        // =====================================================================
         // Launch Template
         // =====================================================================
         const launchTemplateConstruct = new LaunchTemplateConstruct(this, 'LaunchTemplate', {
@@ -310,6 +390,11 @@ export class KubernetesWorkerAsgStack extends cdk.Stack {
             // Required: Kubernetes pod overlay networking (Calico) uses pod IPs
             // that don't match ENI IPs — AWS drops this traffic unless disabled.
             disableSourceDestCheck: true,
+            // NTH ManagedPolicy lets the DaemonSet poll the queue, drain
+            // pods, and call CompleteLifecycleAction. Inherited by every
+            // pod on the node (kubeadm has no native IRSA), but scoped
+            // tightly enough that escape doesn't matter.
+            additionalManagedPolicies: [nthNodePolicy],
         });
 
         // =====================================================================
@@ -619,7 +704,7 @@ export class KubernetesWorkerAsgStack extends cdk.Stack {
             // Cluster Autoscaler owns scale decisions for the general pool;
             // CPU target tracking and CA conflict (both set desiredCapacity).
             // The monitoring pool retains target tracking (CA does not manage it).
-            disableScalingPolicy: props.poolType === 'general',
+            disableScalingPolicy: isGeneralPool,
             namePrefix: poolId,
             instanceName: `${namePrefix}-${props.poolType}-worker`,
             bootstrapRole,
@@ -631,6 +716,15 @@ export class KubernetesWorkerAsgStack extends cdk.Stack {
                 subnetType: ec2.SubnetType.PUBLIC,
                 availabilityZones: [`${this.region}a`],
             },
+            // ELB-derived health on the general pool only — that pool serves
+            // public traffic via the NLB target groups, so a kubelet/Traefik
+            // failure that doesn't crash the EC2 instance must still trigger
+            // replacement. Monitoring pool stays on EC2-only health (no NLB
+            // attachments). 900s grace covers worst-case kubeadm join +
+            // Calico ready + system pods + Traefik scheduled before NLB
+            // probes become authoritative.
+            useElbHealthCheck: isGeneralPool,
+            healthCheckGracePeriodSeconds: isGeneralPool ? 900 : 300,
         });
 
         // =====================================================================
@@ -649,6 +743,43 @@ export class KubernetesWorkerAsgStack extends cdk.Stack {
             `k8s.io/cluster-autoscaler/${props.clusterName}`, 'owned',
             { applyToLaunchedInstances: false },
         );
+
+        // =====================================================================
+        // NTH discovery tag
+        //
+        // The aws-node-termination-handler chart (queue mode) auto-discovers
+        // ASGs by tag and only acts on lifecycle events from tagged groups.
+        // Without this tag the DaemonSet drains nothing.
+        // =====================================================================
+        cdk.Tags.of(asgConstruct.autoScalingGroup).add(
+            'aws-node-termination-handler/managed', '',
+            { applyToLaunchedInstances: false },
+        );
+
+        // =====================================================================
+        // NTH lifecycle hook
+        //
+        // ASG INSTANCE_TERMINATING events publish to the NTH SQS queue. NTH
+        // cordons + drains the affected node (PDB-respecting), then calls
+        // CompleteLifecycleAction so the ASG releases the instance.
+        //
+        //   heartbeatTimeout 600s — covers slow PDB-blocked drains.
+        //   defaultResult CONTINUE — if NTH crashes, ASG terminates anyway
+        //     after the timeout (safe-by-default; prefer running over stuck).
+        // =====================================================================
+        const nthHookTarget = nthQueueConstruct
+            ? nthQueueConstruct.hookTarget
+            : new hooktargets.QueueHook(
+                sqs.Queue.fromQueueArn(this, 'NthQueueRef', nthQueueArn),
+            );
+
+        asgConstruct.autoScalingGroup.addLifecycleHook('NthDrainHook', {
+            lifecycleHookName: `${poolId}-nth-drain`,
+            lifecycleTransition: autoscaling.LifecycleTransition.INSTANCE_TERMINATING,
+            heartbeatTimeout: cdk.Duration.seconds(600),
+            defaultResult: autoscaling.DefaultResult.CONTINUE,
+            notificationTarget: nthHookTarget,
+        });
 
         // =====================================================================
         // User Data — Infrastructure Readiness Stub

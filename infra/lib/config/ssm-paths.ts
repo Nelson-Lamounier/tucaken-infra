@@ -298,6 +298,25 @@ export interface K8sSsmPaths {
     /** Prometheus basic auth secret (htpasswd hash) */
     readonly prometheusBasicAuth: string;
 
+    // --- Node Termination Handler (NTH) ---
+    /**
+     * SQS queue URL consumed by aws-node-termination-handler.
+     *
+     * NTH polls this queue for: ASG `INSTANCE_TERMINATING` lifecycle hooks,
+     * EC2 Spot interruption warnings, Spot rebalance recommendations, and
+     * AWS-scheduled instance events. NTH cordons + drains the affected node
+     * (PDB-respecting) and calls `autoscaling:CompleteLifecycleAction` to
+     * release the ASG back to its termination flow.
+     */
+    readonly nthQueueUrl: string;
+    /**
+     * SQS queue ARN — same scope as `nthQueueUrl`. Useful for IAM scoping
+     * when other principals need to send to the queue (currently only the
+     * ASG lifecycle hook role and EventBridge rules; both are configured in
+     * CDK and don't need this path).
+     */
+    readonly nthQueueArn: string;
+
     /** Wildcard path for IAM: /k8s/{environment}/* */
     readonly wildcard: string;
 }
@@ -344,6 +363,10 @@ export function k8sSsmPaths(environment: Environment): K8sSsmPaths {
         cloudfrontOriginSecret: `${prefix}/cloudfront-origin-secret`,
         tucakenCloudfrontOriginSecret: `${prefix}/tucaken-cloudfront-origin-secret`,
         prometheusBasicAuth: `${prefix}/prometheus-basic-auth`,
+
+        // Node Termination Handler
+        nthQueueUrl: `${prefix}/nth/queue-url`,
+        nthQueueArn: `${prefix}/nth/queue-arn`,
 
         // IAM
         wildcard: `${prefix}/*`,

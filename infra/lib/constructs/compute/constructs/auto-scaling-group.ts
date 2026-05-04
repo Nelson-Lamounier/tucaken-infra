@@ -99,6 +99,29 @@ export interface AutoScalingGroupConstructProps {
     readonly healthCheckGracePeriodSeconds?: number;
 
     /**
+     * Use ELB-derived health checks instead of EC2-only checks.
+     *
+     * When `true`, the ASG terminates instances whose attached target groups
+     * report Unhealthy — useful when kubelet/Traefik can fail without the
+     * EC2 instance crashing. When `false` (default), only EC2 system status
+     * checks drive replacement.
+     *
+     * Requires the ASG to be attached to at least one target group via
+     * `attachToNetworkTargetGroup`. Pair with a generous
+     * `healthCheckGracePeriodSeconds` (≥600s) to cover boot + kubeadm join
+     * + CNI ready + system pods + ingress controller scheduled before the
+     * first NLB probe lands.
+     *
+     * Recommended only on ingress-bearing pools (general). Leave `false` on
+     * pools without NLB target attachments (monitoring), and on
+     * single-instance ASGs where killing yourself defeats the point
+     * (control-plane).
+     *
+     * @default false
+     */
+    readonly useElbHealthCheck?: boolean;
+
+    /**
      * Name prefix for resources.
      * Expected to be environment-aware (e.g., 'monitoring-development').
      * @default 'monitoring'
@@ -288,12 +311,24 @@ export class AutoScalingGroupConstruct extends Construct {
             vpcSubnets: props.subnetSelection ?? {
                 subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
             },
-            // Use healthChecks (new API) instead of deprecated healthCheck
-            healthChecks: autoscaling.HealthChecks.ec2({
-                gracePeriod: cdk.Duration.seconds(
-                    props.healthCheckGracePeriodSeconds ?? 300,
-                ),
-            }),
+            // Use healthChecks (new API) instead of deprecated healthCheck.
+            // ELB mode adds target-group health to the replacement signal —
+            // critical for catching kubelet/ingress failures that don't crash
+            // the EC2 instance. Only enable on pools that actually attach to
+            // a target group; otherwise the ASG has nothing to derive ELB
+            // health from and falls back to EC2-only behaviour anyway.
+            healthChecks: props.useElbHealthCheck
+                ? autoscaling.HealthChecks.withAdditionalChecks({
+                    gracePeriod: cdk.Duration.seconds(
+                        props.healthCheckGracePeriodSeconds ?? 600,
+                    ),
+                    additionalTypes: [autoscaling.AdditionalHealthCheckType.ELB],
+                })
+                : autoscaling.HealthChecks.ec2({
+                    gracePeriod: cdk.Duration.seconds(
+                        props.healthCheckGracePeriodSeconds ?? 300,
+                    ),
+                }),
             updatePolicy: autoscaling.UpdatePolicy.rollingUpdate({
                 maxBatchSize,
                 minInstancesInService,

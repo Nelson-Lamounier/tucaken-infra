@@ -1,0 +1,103 @@
+# @format
+# Sync DR scripts (cdk-monitoring/scripts/local/*.sh that run on cluster
+# nodes) to the platform scripts bucket so SSM Run Command can pull them
+# at execution time.
+#
+# Triggered:
+#   - On push to main when the scripts change
+#   - Manually via workflow_dispatch (for ad-hoc re-sync)
+#
+# IAM: uses the same OIDC role as deploy-* workflows (s3:PutObject on the
+# scripts bucket). No new IAM needed.
+
+name: "Sync DR Scripts → S3"
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "scripts/local/etcd-restore-rto-test.sh"
+      - "scripts/local/dr/**"
+      - ".github/workflows/sync-dr-scripts.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: false
+        default: "development"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+
+concurrency:
+  group: sync-dr-scripts-${{ github.ref }}
+  cancel-in-progress: false   # serialise; never abort a partial sync
+
+jobs:
+  sync:
+    name: Sync DR scripts to S3
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ inputs.environment || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region:     ${{ env.AWS_REGION }}
+
+      - name: Resolve scripts bucket from SSM
+        id: resolve-bucket
+        env:
+          CDK_ENV: ${{ inputs.environment || 'development' }}
+        run: |
+          SSM_KEY="/k8s/${CDK_ENV}/scripts-bucket"
+          BUCKET=$(aws ssm get-parameter \
+            --name "$SSM_KEY" \
+            --query 'Parameter.Value' \
+            --output text \
+            --region "$AWS_REGION" 2>/dev/null | sed 's|^s3://||;s|/$||')
+          if [ -z "$BUCKET" ]; then
+            echo "::error::SSM parameter $SSM_KEY not found"
+            exit 1
+          fi
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "Scripts bucket: s3://$BUCKET"
+
+      # Single-script sync (cheap; one PUT per run). When more DR scripts
+      # are added, switch to `aws s3 sync` over a directory.
+      - name: Push etcd RTO test script
+        env:
+          BUCKET: ${{ steps.resolve-bucket.outputs.bucket }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          aws s3 cp \
+            scripts/local/etcd-restore-rto-test.sh \
+            "s3://${BUCKET}/dr/etcd-restore-rto-test.sh" \
+            --content-type 'text/x-shellscript' \
+            --metadata "git-sha=${SHA},source-repo=cdk-monitoring" \
+            --region "$AWS_REGION"
+          echo "Uploaded → s3://${BUCKET}/dr/etcd-restore-rto-test.sh"
+          aws s3 ls "s3://${BUCKET}/dr/" --region "$AWS_REGION"
+
+      - name: Summary
+        env:
+          BUCKET: ${{ steps.resolve-bucket.outputs.bucket }}
+        run: |
+          {
+            echo "### DR scripts synced"
+            echo "- s3://${BUCKET}/dr/etcd-restore-rto-test.sh"
+            echo ""
+            echo "Run on a control plane node:"
+            echo '```bash'
+            echo "aws s3 cp s3://${BUCKET}/dr/etcd-restore-rto-test.sh /tmp/"
+            echo "sudo bash /tmp/etcd-restore-rto-test.sh \"\$BUCKET\""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

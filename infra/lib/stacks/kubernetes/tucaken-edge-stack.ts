@@ -382,23 +382,28 @@ export class TucakenEdgeStack extends cdk.Stack {
         // Runs at viewer-request on BOTH distributions. Order:
         //   1. If host !== canonical apex → 301 to https://<apex><uri>
         //      (handles www.tucaken.io, tucaken.com, www.tucaken.com)
-        //   2. (STAGING only) If `Authorization` header missing/wrong →
-        //      401 with `WWW-Authenticate: Basic realm="tucaken-staging"`
+        //   2. (NON-PROD only) If `Authorization` header missing/wrong →
+        //      401 with `WWW-Authenticate: Basic realm="tucaken-private"`
         //   3. Pass-through to origin
         //
-        // The auth gate is intentionally enabled on STAGING only — public
-        // users see a browser credential prompt; prod stays open. Removing
-        // the gate later is a one-line config change (set
-        // `enableEdgeAuth=false` or rotate envs out of the gate list).
+        // The auth gate is enabled on every NON-PRODUCTION environment so the
+        // public can't browse work-in-progress dev or staging deployments.
+        // Production stays open. Removing the gate from a given env later
+        // is a one-line config flip (or moving the env into PRODUCTION).
         //
         // Credentials are read from SSM at synth time:
         //   /tucaken/{env}/edge/auth-expected = "Basic <base64(user:pass)>"
+        //
+        // The SSM parameter MUST exist in the target account before the first
+        // synth/deploy of a gated env. If absent, valueFromLookup returns a
+        // CDK dummy token, the function compiles with the dummy as `expected`,
+        // and every request 401s — including yours.
         //
         // Rotation today = update SSM + `cdk deploy`. For zero-deploy rotation,
         // migrate to CloudFront KeyValueStore (deferred — see commit history).
         // =====================================================================
         const ioDomain = props.ioDomain;
-        const enableEdgeAuth = envName === Environment.STAGING;
+        const enableEdgeAuth = envName !== Environment.PRODUCTION;
         const expectedAuthHeader = enableEdgeAuth
             ? ssm.StringParameter.valueFromLookup(this, tucakenPaths.edgeAuthExpected)
             : '';
@@ -412,7 +417,7 @@ export class TucakenEdgeStack extends cdk.Stack {
             statusCode: 401,
             statusDescription: 'Unauthorized',
             headers: {
-                'www-authenticate': { value: 'Basic realm="tucaken-staging"' },
+                'www-authenticate': { value: 'Basic realm="tucaken-private"' },
                 'cache-control': { value: 'no-store' }
             }
         };
@@ -422,7 +427,7 @@ export class TucakenEdgeStack extends cdk.Stack {
         const edgeFunction = new cloudfront.Function(this, 'EdgeFunction', {
             functionName: `${namePrefix}-edge-${envName}`,
             comment: enableEdgeAuth
-                ? 'Host normalize → 301; then basic-auth gate (STAGING)'
+                ? `Host normalize → 301; then basic-auth gate (${envName})`
                 : 'Host normalize: redirect www/.com variants to https://tucaken.io',
             code: cloudfront.FunctionCode.fromInline(`
 function handler(event) {

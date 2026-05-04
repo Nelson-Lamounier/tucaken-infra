@@ -389,12 +389,16 @@ export interface TucakenSsmPaths {
      * Expected `Authorization` header value for the edge basic-auth gate.
      * Format: `Basic <base64(user:pass)>`.
      *
-     * Read at synth time by `TucakenEdgeStack` when the env opts in (currently
-     * STAGING only). Absence disables the gate gracefully.
+     * Read at synth time by `TucakenEdgeStack` on every NON-PRODUCTION env
+     * (dev + staging today). Production stays public and ignores this param.
      *
-     * Manual setup:
+     * MUST exist in the target account before first deploy of a gated env.
+     * If absent, `valueFromLookup` returns a CDK dummy token, the function
+     * bakes the dummy in as `expected`, and every request 401s.
+     *
+     * Manual setup (run once per non-prod env):
      *   aws ssm put-parameter \
-     *     --name /tucaken/staging/edge/auth-expected \
+     *     --name /tucaken/development/edge/auth-expected \
      *     --type String \
      *     --value "Basic $(echo -n 'user:pass' | base64)"
      */

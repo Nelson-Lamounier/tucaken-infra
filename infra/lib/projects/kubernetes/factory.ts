@@ -538,6 +538,8 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 baseDomain: configs.edge.baseDomain,
                 runnersSubdomain: configs.edge.runnersSubdomain,
                 lokiPushSubdomain: configs.edge.lokiPushSubdomain,
+                pushgatewaySubdomain: configs.edge.pushgatewaySubdomain,
+                mttrWebhookSubdomain: configs.edge.mttrWebhookSubdomain,
                 env: edgeEnv,
             },
         );

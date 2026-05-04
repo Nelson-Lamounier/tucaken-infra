@@ -88,13 +88,21 @@ describe('loadConfig()', () => {
 
   describe('fail-fast validation', () => {
     it('throws when a single required var is missing', () => {
-      delete process.env['ASSETS_BUCKET_NAME'];
-      expect(() => loadConfig()).toThrow('ASSETS_BUCKET_NAME');
+      // ASSETS_BUCKET_NAME is intentionally optional (lands in SSM only after
+      // ai-content-stack deploys). Use a truly required var instead.
+      delete process.env['COGNITO_USER_POOL_ID'];
+      expect(() => loadConfig()).toThrow('COGNITO_USER_POOL_ID');
     });
 
     it('lists all missing variables in a single thrown error', () => {
-      unsetEnv(['ASSETS_BUCKET_NAME', 'COGNITO_USER_POOL_ID']);
-      expect(() => loadConfig()).toThrow(/ASSETS_BUCKET_NAME/);
+      unsetEnv(['COGNITO_USER_POOL_ID', 'COGNITO_CLIENT_ID', 'PG_HOST']);
+      const error = (() => {
+        try { loadConfig(); return null; } catch (e) { return e as Error; }
+      })();
+      expect(error).not.toBeNull();
+      expect(error!.message).toMatch(/COGNITO_USER_POOL_ID/);
+      expect(error!.message).toMatch(/COGNITO_CLIENT_ID/);
+      expect(error!.message).toMatch(/PG_HOST/);
     });
 
     it('throws the admin-api service prefix in the error message', () => {

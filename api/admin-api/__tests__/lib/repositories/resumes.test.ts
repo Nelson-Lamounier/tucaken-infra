@@ -44,7 +44,7 @@ describe('ResumeRepository', () => {
             expect(sql).toMatch(/ON CONFLICT \(id\) DO UPDATE/i);
         });
 
-        it('should merge label and is_active into content_json param', async () => {
+        it('passes label and is_active as dedicated columns and JSON-encodes content', async () => {
             mockQuery.mockResolvedValue({ rows: [] });
             await upsertResume(fakePool, {
                 id: 'resume-uuid-1',
@@ -56,23 +56,26 @@ describe('ResumeRepository', () => {
                 renderedHtml: null,
             });
             const [, params] = mockQuery.mock.calls[0] as unknown as [string, unknown[]];
-            // params[3] is content_json (4th positional param after id, user_id, job_application_id)
-            const contentJsonParam = params[3] as string;
-            const parsed = JSON.parse(contentJsonParam) as Record<string, unknown>;
-            expect(parsed['label']).toBe('Portfolio CV');
-            expect(parsed['is_active']).toBe(true);
-            expect(parsed['name']).toBe('Nelson');
+            // Positional params (matches upsertResume INSERT/UPDATE):
+            //   $1 id, $2 user_id, $3 job_application_id, $4 label,
+            //   $5 is_active, $6 content_json (JSON), $7 rendered_html
+            expect(params[3]).toBe('Portfolio CV');
+            expect(params[4]).toBe(true);
+            const contentJson = JSON.parse(params[5] as string) as Record<string, unknown>;
+            expect(contentJson['name']).toBe('Nelson');
         });
     });
 
     describe('getResume', () => {
-        it('should return mapped resume with label and isActive extracted from content_json', async () => {
+        it('maps label, is_active, and content_json from dedicated columns', async () => {
             mockQuery.mockResolvedValue({
                 rows: [{
                     id: 'resume-uuid-1',
                     user_id: null,
                     job_application_id: null,
-                    content_json: { label: 'My CV', is_active: true, name: 'Nelson' },
+                    label: 'My CV',
+                    is_active: true,
+                    content_json: { name: 'Nelson' },
                     rendered_html: null,
                     generated_at: new Date('2026-01-01'),
                 }],
@@ -111,40 +114,24 @@ describe('ResumeRepository', () => {
     });
 
     describe('setActiveResume', () => {
-        it('should call upsertResume twice when both old and new IDs exist', async () => {
-            // getResume is called twice (once for old, once for new) → 2 SELECT calls
-            // upsertResume is called twice → 2 INSERT calls
-            // Total: 4 query calls
-            mockQuery.mockResolvedValue({
-                rows: [{
-                    id: 'old-id',
-                    user_id: null,
-                    job_application_id: null,
-                    content_json: { label: 'Old', is_active: true },
-                    rendered_html: null,
-                    generated_at: new Date(),
-                }],
-            });
-            await setActiveResume(fakePool, 'old-id', 'new-id');
-            // getResume(old-id) → SELECT, upsertResume(old deactivate) → INSERT
-            // getResume(new-id) → SELECT, upsertResume(new activate) → INSERT
-            expect(mockQuery).toHaveBeenCalledTimes(4);
-        });
-
-        it('should skip old resume deactivation when oldActiveId is null', async () => {
-            mockQuery.mockResolvedValue({
-                rows: [{
-                    id: 'new-id',
-                    user_id: null,
-                    job_application_id: null,
-                    content_json: { label: 'New', is_active: false },
-                    rendered_html: null,
-                    generated_at: new Date(),
-                }],
-            });
-            await setActiveResume(fakePool, null, 'new-id');
-            // Only getResume(new-id) → SELECT, upsertResume(activate) → INSERT
+        // The current implementation issues two UPDATEs scoped by user_id +
+        // is_active. The DB-side partial unique index enforces the
+        // one-active-per-user invariant, so we no longer round-trip through
+        // getResume / upsertResume. Tests reflect that.
+        it('issues two UPDATE queries scoped by user and target id', async () => {
+            mockQuery.mockResolvedValue({ rows: [] });
+            await setActiveResume(fakePool, 'user-1', 'new-id');
             expect(mockQuery).toHaveBeenCalledTimes(2);
+
+            const [sql1, params1] = mockQuery.mock.calls[0] as unknown as [string, unknown[]];
+            expect(sql1).toMatch(/UPDATE resumes SET is_active = FALSE/i);
+            expect(sql1).toMatch(/user_id = \$1 AND is_active = TRUE/i);
+            expect(params1).toEqual(['user-1']);
+
+            const [sql2, params2] = mockQuery.mock.calls[1] as unknown as [string, unknown[]];
+            expect(sql2).toMatch(/UPDATE resumes SET is_active = TRUE/i);
+            expect(sql2).toMatch(/WHERE id = \$1/i);
+            expect(params2).toEqual(['new-id']);
         });
     });
 });

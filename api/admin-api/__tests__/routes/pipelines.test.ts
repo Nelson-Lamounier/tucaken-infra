@@ -69,12 +69,15 @@ async function buildAuthedApp(jwtSub: string | null = 'test-user') {
   const app = new Hono();
   if (jwtSub !== null) {
     app.use('*', async (c, next) => {
-       
+
       (c as any).set('jwtPayload', { sub: jwtSub });
-       
+
       (c as any).set('userId', jwtSub);
       await next();
     });
+  } else {
+    // Simulate the JWT-verify middleware blocking unauthenticated requests.
+    app.use('*', async (c) => c.json({ error: 'Unauthorized' }, 401));
   }
    
   app.route('/', createPipelinesRouter(testConfig as any));

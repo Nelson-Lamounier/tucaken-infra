@@ -26,6 +26,8 @@ jest.unstable_mockModule('../../src/lib/k8s.js', () => ({
 
 jest.unstable_mockModule('../../src/lib/pg.js', () => ({
   getPool:    () => ({ query: pgQueryMock }),
+  withUser:   async (_pool: unknown, _userId: string, fn: (db: { query: typeof pgQueryMock }) => Promise<unknown>) =>
+    fn({ query: pgQueryMock }),
   _resetPool: () => {},
 }));
 
@@ -74,12 +76,18 @@ async function buildAuthedApp(jwtSub: string | null = 'test-user') {
   const app = new Hono();
   if (jwtSub !== null) {
     app.use('*', async (c, next) => {
-       
+
       (c as any).set('jwtPayload', { sub: jwtSub });
-       
+
       (c as any).set('userId', jwtSub);
       await next();
     });
+  } else {
+    // Simulate the JWT-verify middleware blocking unauthenticated requests
+    // (production stack: bearerAuth → user-provision → route). Without this
+    // shim the route's defensive "userId not set" branch returns 503, which
+    // is correct in prod but obscures the auth-layer 401 the test asserts.
+    app.use('*', async (c) => c.json({ error: 'Unauthorized' }, 401));
   }
    
   app.route('/', createApplicationsRouter(testConfig as any));

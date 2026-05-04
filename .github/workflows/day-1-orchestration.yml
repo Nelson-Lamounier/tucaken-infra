@@ -220,3 +220,34 @@ jobs:
             echo "One or more phases failed for **${{ inputs.environment }}**. Review the job logs above." >> $GITHUB_STEP_SUMMARY
             echo "::error::Day-1 orchestration did not complete successfully"
           fi
+
+  deploy-marker:
+    name: Loki deploy marker
+    needs: [gate, deploy-shared, deploy-security, deploy-finops, deploy-kubernetes, summary]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute aggregate status
+        id: agg
+        env:
+          STATUSES: ${{ toJSON(needs) }}
+        run: |
+          if echo "$STATUSES" | jq -e 'to_entries | any(.value.result == "failure" or .value.result == "cancelled")' > /dev/null; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=succeeded" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: ./.github/actions/loki-deploy-marker
+        env:
+          LOKI_PUSH_URL:        ${{ secrets.LOKI_PUSH_URL }}
+          LOKI_PUSH_BASIC_AUTH: ${{ secrets.LOKI_PUSH_BASIC_AUTH }}
+        with:
+          service:     cdk-day-1
+          environment: development
+          status:      ${{ steps.agg.outputs.status }}
+          git-sha:     ${{ github.sha }}
+          notes:       "Day-1 orchestration (shared+security+finops+k8s)"

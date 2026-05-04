@@ -70,24 +70,18 @@ jobs:
           fetch-depth: 2  # HEAD + HEAD~1 required for the diff below
 
       - name: Detect changed paths
-        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: paths
         if: steps.upstream.outputs.ok == 'true' && github.event_name == 'workflow_run'
-        with:
-          base: HEAD~1
-          filters: |
-            relevant:
-              - "infra/lib/shared/**"
-              - "infra/lib/stacks/shared/**"
-              - "infra/lib/common/finops/**"
-              - "infra/lib/common/security/**"
-              - "infra/lib/common/iam/**"
-              - "infra/lib/common/cognito/**"
-              - "infra/bin/app.ts"
-              - "scripts/deployment/stacks.ts"
-              - ".github/workflows/deploy-shared.yml"
-              - ".github/workflows/_deploy-stack.yml"
-              - ".github/actions/**"
+        run: |
+          changed=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$changed"
+          if echo "$changed" | grep -qE \
+            '^(infra/lib/shared/|infra/lib/stacks/shared/|infra/lib/common/(finops|security|iam|cognito)/|infra/bin/app\.ts$|scripts/deployment/stacks\.ts$|\.github/workflows/deploy-shared\.yml$|\.github/workflows/_deploy-stack\.yml$|\.github/actions/)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Decide whether to deploy
         id: decide

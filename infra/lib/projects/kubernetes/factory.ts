@@ -29,6 +29,7 @@
 
 import * as cdk from 'aws-cdk-lib/core';
 
+import { getEksConfig } from '../../config/eks';
 import {
     Environment,
     cdkEnvironment,
@@ -46,6 +47,12 @@ import {
     ProjectStackFamily,
 } from '../../factories/project-interfaces';
 import {
+    EksAccessStack,
+    EksAddonsStack,
+    EksClusterStack,
+    EksKarpenterStack,
+    EksPodIdentityStack,
+    EksSystemNodeGroupStack,
     KubernetesAppIamStack,
     KubernetesBaseStack,
     KubernetesControlPlaneStack,
@@ -721,6 +728,111 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             controlPlaneAsgName: controlPlaneStack.concreteAsgName,
             notificationEmail: emailConfig.notificationEmail,
         });
+
+        // =================================================================
+        // EKS Stacks (V1 — parallel deployment alongside kubeadm cluster)
+        //
+        // Sequencing: Cluster → SystemNg → PodIdentity → Addons → Karpenter
+        // (Access in parallel after Cluster).
+        //
+        // Source of truth: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 7.1
+        // =================================================================
+        const eksConfig = getEksConfig(environment);
+
+        const eksClusterStack = new EksClusterStack(
+            scope,
+            stackId(this.namespace, 'EksCluster', environment),
+            {
+                env, targetEnvironment: environment,
+                vpc: baseStack.vpc,
+                clusterName: eksConfig.clusterName,
+                version: eksConfig.version,
+            },
+        );
+        eksClusterStack.addDependency(baseStack);
+        stacks.push(eksClusterStack); stackMap.eksCluster = eksClusterStack;
+
+        const eksSystemNg = new EksSystemNodeGroupStack(
+            scope,
+            stackId(this.namespace, 'EksSystemNg', environment),
+            {
+                env, targetEnvironment: environment,
+                cluster: eksClusterStack.cluster,
+                instanceTypes: eksConfig.mng.instanceTypes,
+                desiredSize: eksConfig.mng.desiredSize,
+                minSize: eksConfig.mng.minSize,
+                maxSize: eksConfig.mng.maxSize,
+                diskSizeGib: eksConfig.mng.diskSizeGib,
+            },
+        );
+        eksSystemNg.addDependency(eksClusterStack);
+        stacks.push(eksSystemNg); stackMap.eksSystemNg = eksSystemNg;
+
+        const karpenterQueueArn = `arn:aws:sqs:${env.region}:${env.account}:${eksConfig.clusterName}-karpenter`;
+
+        const eksPodId = new EksPodIdentityStack(
+            scope,
+            stackId(this.namespace, 'EksPodIdentity', environment),
+            {
+                env, targetEnvironment: environment,
+                cluster: eksClusterStack.cluster,
+                bindings: eksConfig.podIdentityBindings,
+                karpenterInterruptionQueueArn: karpenterQueueArn,
+                workerNodeRoleArn: eksSystemNg.nodeRole.roleArn,
+                hostedZoneIds: edgeConfig.hostedZoneId ? [edgeConfig.hostedZoneId] : [],
+            },
+        );
+        eksPodId.addDependency(eksSystemNg);
+        stacks.push(eksPodId); stackMap.eksPodIdentity = eksPodId;
+
+        const hostedZoneDomain = (edgeConfig.domainName ?? 'nelsonlamounier.com')
+            .split('.').slice(-2).join('.');
+
+        const eksAddons = new EksAddonsStack(
+            scope,
+            stackId(this.namespace, 'EksAddons', environment),
+            {
+                env, targetEnvironment: environment,
+                cluster: eksClusterStack.cluster,
+                karpenterInterruptionQueueName: `${eksConfig.clusterName}-karpenter`,
+                workerNodeRoleArn: eksSystemNg.nodeRole.roleArn,
+                hostedZoneDomain,
+                versions: eksConfig.versions,
+            },
+        );
+        eksAddons.addDependency(eksPodId);
+        stacks.push(eksAddons); stackMap.eksAddons = eksAddons;
+
+        const eksKarp = new EksKarpenterStack(
+            scope,
+            stackId(this.namespace, 'EksKarpenter', environment),
+            {
+                env, targetEnvironment: environment,
+                cluster: eksClusterStack.cluster,
+                workerNodeRole: eksSystemNg.nodeRole,
+                workerSecurityGroupId: baseStack.eksWorkersSg.securityGroupId,
+                subnetTagKey: `kubernetes.io/cluster/${eksConfig.clusterName}`,
+                karpenter: eksConfig.karpenter,
+            },
+        );
+        eksKarp.addDependency(eksAddons);
+        stacks.push(eksKarp); stackMap.eksKarpenter = eksKarp;
+
+        // Access entries: optional GH OIDC + admin role from env vars; skip if neither set.
+        const ghOidcRoleArn = process.env.GH_OIDC_ROLE_ARN;
+        const adminRoleArn = process.env.ADMIN_ROLE_ARN;
+        const accessPrincipals = [ghOidcRoleArn, adminRoleArn].filter((a): a is string => !!a);
+        const eksAccess = new EksAccessStack(
+            scope,
+            stackId(this.namespace, 'EksAccess', environment),
+            {
+                env, targetEnvironment: environment,
+                cluster: eksClusterStack.cluster,
+                principalArns: accessPrincipals,
+            },
+        );
+        eksAccess.addDependency(eksClusterStack);
+        stacks.push(eksAccess); stackMap.eksAccess = eksAccess;
 
         cdk.Annotations.of(scope).addInfo(
             `K8s factory created ${stacks.length} stacks for ${environment}: ` +

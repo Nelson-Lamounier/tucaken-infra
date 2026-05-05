@@ -812,7 +812,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 env, targetEnvironment: environment,
                 cluster: eksClusterStack.cluster,
                 workerNodeRole: eksSystemNg.nodeRole,
-                workerSecurityGroupId: baseStack.eksWorkersSg.securityGroupId,
+                workerSecurityGroupIdSsmPath: `${ssmPrefix}/eks/workers-sg-id`,
                 subnetTagKey: `kubernetes.io/cluster/${eksConfig.clusterName}`,
                 karpenter: eksConfig.karpenter,
             },

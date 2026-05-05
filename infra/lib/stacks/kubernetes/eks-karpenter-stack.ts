@@ -99,7 +99,11 @@ export class EksKarpenterStack extends cdk.Stack {
                     kind: 'EC2NodeClass',
                     metadata: { name: 'workloads-default-class' },
                     spec: {
+                        // Karpenter v1 requires amiSelectorTerms. The AL2023
+                        // alias resolves to the EKS-optimized AL2023 AMI for
+                        // the cluster's Kubernetes version automatically.
                         amiFamily: 'AL2023',
+                        amiSelectorTerms: [{ alias: 'al2023@latest' }],
                         role: cdk.Fn.select(1, cdk.Fn.split('/', props.workerNodeRole.roleArn)),
                         subnetSelectorTerms: [{ tags: { [props.subnetTagKey]: 'shared' } }],
                         securityGroupSelectorTerms: [{ id: workerSecurityGroupId }],

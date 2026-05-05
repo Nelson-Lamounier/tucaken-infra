@@ -40,8 +40,9 @@ describe('EksAddonsStack', () => {
             },
         });
         const t = Template.fromStack(stack);
-        // VPC CNI + Pod Identity Agent
-        t.resourceCountIs('AWS::EKS::Addon', 2);
+        // VPC CNI + Pod Identity Agent + EBS CSI Driver
+        t.resourceCountIs('AWS::EKS::Addon', 3);
         t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'eks-pod-identity-agent' });
+        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'aws-ebs-csi-driver' });
     });
 });

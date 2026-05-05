@@ -182,21 +182,18 @@ export class EksAddonsStack extends cdk.Stack {
         karpenter.node.addDependency(albController);
         karpenter.node.addDependency(eso);
 
-        const ebsCsi = new eks.HelmChart(this, 'EbsCsi', {
-            cluster: props.cluster,
-            chart: 'aws-ebs-csi-driver',
-            release: 'aws-ebs-csi-driver',
-            repository: 'https://kubernetes-sigs.github.io/aws-ebs-csi-driver',
-            namespace: 'kube-system',
-            version: props.versions.ebsCsi,
-            wait: true,
-            values: {
-                controller: {
-                    serviceAccount: { name: 'ebs-csi-controller-sa', create: true },
-                    tolerations: systemToleration,
-                },
-            },
+        // EBS CSI driver as a managed addon (NOT Helm). EKS keeps its
+        // sidecar images in lock-step with the cluster Kubernetes version
+        // — the Helm chart pinned us to images for K8s 1.31 sidecars
+        // (e.g. csi-attacher v4.7.0-eks-1-31-3) which fail with
+        // 'flag provided but not defined: -feature-gates' on a 1.34
+        // cluster. Managed addon side-steps the entire compatibility
+        // matrix and re-uses the same Pod Identity ServiceAccount we
+        // declared in EksPodIdentityStack (kube-system/ebs-csi-controller-sa).
+        new eks.CfnAddon(this, 'EbsCsi', {
+            clusterName: props.cluster.clusterName,
+            addonName: 'aws-ebs-csi-driver',
+            resolveConflicts: 'OVERWRITE',
         });
-        ebsCsi.node.addDependency(albController);
     }
 }

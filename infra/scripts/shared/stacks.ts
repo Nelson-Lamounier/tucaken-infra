@@ -215,6 +215,53 @@ const k8sStacks: StackConfig[] = [
       'PostgreSQL 16.6 RDS instance for platform data (articles, identity, career) with PgBouncer via K8s',
     dependsOn: ['base'],
   },
+  // ===== EKS V1 stacks (parallel deployment alongside kubeadm cluster) =====
+  // Order: eksCluster → eksSystemNg → eksPodIdentity → eksAddons → eksKarpenter
+  // (eksAccess parallel to chain, depends only on eksCluster).
+  // Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 7.1
+  {
+    id: 'eksCluster',
+    name: 'EKS Cluster Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksCluster', env),
+    description: 'EKS managed control plane + KMS envelope key + control-plane log group',
+    dependsOn: ['base'],
+  },
+  {
+    id: 'eksSystemNg',
+    name: 'EKS System Node Group Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksSystemNg', env),
+    description: '3× t3.medium MNG (system taint, AZ-spread)',
+    dependsOn: ['eksCluster'],
+  },
+  {
+    id: 'eksPodIdentity',
+    name: 'EKS Pod Identity Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksPodIdentity', env),
+    description:
+      'CfnPodIdentityAssociation + per-purpose IAM roles (Karpenter, ALB, ESO, EBS CSI, external-dns)',
+    dependsOn: ['eksSystemNg'],
+  },
+  {
+    id: 'eksAddons',
+    name: 'EKS Addons Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksAddons', env),
+    description: 'VPC CNI managed addon + Helm: ESO, ALB controller, external-dns, Karpenter, EBS CSI',
+    dependsOn: ['eksPodIdentity'],
+  },
+  {
+    id: 'eksKarpenter',
+    name: 'EKS Karpenter Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksKarpenter', env),
+    description: 'SQS interruption queue + 4 EventBridge rules + NodePool/EC2NodeClass manifests',
+    dependsOn: ['eksAddons'],
+  },
+  {
+    id: 'eksAccess',
+    name: 'EKS Access Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksAccess', env),
+    description: 'AccessEntry × N — IAM principal → Kubernetes RBAC bindings',
+    dependsOn: ['eksCluster'],
+  },
 ];
 
 registerProject({

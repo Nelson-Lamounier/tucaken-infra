@@ -1,0 +1,182 @@
+# @format
+# Reusable EKS deploy — synth then deploy 6 EKS stacks in dependency order.
+# Caller: deploy-eks-{development,staging,production}.yml.
+# Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 9.2
+#
+# Security: this workflow consumes only `inputs.*`, `vars.*`, `secrets.*`,
+# and outputs from sibling jobs. It does NOT interpolate any
+# `github.event.*` body / title / commit-message data into shell commands,
+# so command-injection vectors documented in
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+# do not apply here.
+
+name: Deploy EKS (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (development | staging | production)"
+        required: true
+        type: string
+      cdk-environment:
+        description: "CDK environment name (same as environment for k8s)"
+        required: true
+        type: string
+      require-approval:
+        description: "CDK --require-approval mode"
+        required: false
+        type: string
+        default: "never"
+    secrets:
+      AWS_OIDC_ROLE:
+        description: "AWS OIDC role ARN"
+        required: false
+      GH_OIDC_ROLE_ARN:
+        description: "GH OIDC IAM role ARN granted EKS Access Entry cluster-admin"
+        required: false
+      ADMIN_ROLE_ARN:
+        description: "Portfolio admin IAM role ARN granted EKS Access Entry cluster-admin"
+        required: false
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+
+jobs:
+  setup:
+    name: Synthesize EKS stack names
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    outputs:
+      eks-cluster: ${{ steps.synth.outputs.eksCluster }}
+      eks-system-ng: ${{ steps.synth.outputs.eksSystemNg }}
+      eks-pod-identity: ${{ steps.synth.outputs.eksPodIdentity }}
+      eks-addons: ${{ steps.synth.outputs.eksAddons }}
+      eks-karpenter: ${{ steps.synth.outputs.eksKarpenter }}
+      eks-access: ${{ steps.synth.outputs.eksAccess }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node + Yarn
+        uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build TypeScript
+        run: just build
+
+      - name: Configure AWS Credentials
+        uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Synthesize & Determine Stack Names
+        id: synth
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          GH_OIDC_ROLE_ARN: ${{ secrets.GH_OIDC_ROLE_ARN }}
+          ADMIN_ROLE_ARN: ${{ secrets.ADMIN_ROLE_ARN }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+        run: just ci-synth kubernetes "$CDK_ENV"
+
+  deploy-cluster:
+    name: Deploy EKS Cluster
+    needs: [setup]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-cluster }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
+  deploy-system-ng:
+    name: Deploy EKS System Node Group
+    needs: [setup, deploy-cluster]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-system-ng }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
+  deploy-pod-identity:
+    name: Deploy EKS Pod Identity
+    needs: [setup, deploy-system-ng]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-pod-identity }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
+  deploy-addons:
+    name: Deploy EKS Addons (Helm)
+    needs: [setup, deploy-pod-identity]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-addons }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
+  deploy-karpenter:
+    name: Deploy EKS Karpenter (SQS + NodePool)
+    needs: [setup, deploy-addons]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-karpenter }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
+  deploy-access:
+    name: Deploy EKS Access (Access Entries)
+    needs: [setup, deploy-cluster]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-access }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
+  summary:
+    name: EKS Deploy Summary
+    needs:
+      - deploy-cluster
+      - deploy-system-ng
+      - deploy-pod-identity
+      - deploy-addons
+      - deploy-karpenter
+      - deploy-access
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Aggregate status
+        env:
+          STATUSES: ${{ toJSON(needs) }}
+        run: |
+          echo "$STATUSES" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$STATUSES" | jq -e 'to_entries | any(.value.result == "failure" or .value.result == "cancelled")' > /dev/null; then
+            echo "FAILED"; exit 1
+          fi
+          echo "SUCCESS"

@@ -1,0 +1,61 @@
+# @format
+# Deploy EKS to Development.
+# Trigger: workflow_dispatch | workflow_run [Deploy K8s to Development success].
+# Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 9.2
+#
+# Security: this workflow only consumes `inputs.*`, `vars.*`, `secrets.*`,
+# `github.event_name`, and `github.event.workflow_run.conclusion` — none of
+# which are attacker-controlled free-text fields. No issue/PR title or commit
+# message is interpolated into shell. The conclusion check below uses an env
+# var, not direct expression interpolation.
+
+name: Deploy EKS to Development
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy K8s to Development"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-eks-development
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Check upstream
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            if [[ "$UPSTREAM_CONCLUSION" != "success" ]]; then
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              echo "Upstream concluded: $UPSTREAM_CONCLUSION — skipping EKS deploy."
+            else
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Deploy
+    needs: [gate]
+    if: needs.gate.outputs.ok == 'true'
+    uses: ./.github/workflows/_deploy-eks.yml
+    with:
+      environment: development
+      cdk-environment: development
+      require-approval: never
+    secrets: inherit

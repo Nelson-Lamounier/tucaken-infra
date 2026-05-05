@@ -1,0 +1,194 @@
+# @format
+# Reusable EKS destroy — reverse dependency order.
+# Caller: destroy-eks-{development,staging,production}.yml.
+# Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 9.2
+#
+# Security review (re: workflow-injection vectors documented at
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/):
+# every shell `run:` block in this workflow uses env-var indirection for
+# values that come from outside (`needs.setup.outputs.*`, `inputs.*`,
+# `vars.*`, `secrets.*`). No `github.event.*` body / title / commit-message /
+# branch-ref data is interpolated. Stack names from synth are passed via
+# `STACK` env var, never templated directly into the command string.
+
+name: Destroy EKS (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      cdk-environment:
+        required: true
+        type: string
+    secrets:
+      AWS_OIDC_ROLE:
+        required: true
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+jobs:
+  setup:
+    name: Synthesize stack names
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    outputs:
+      eks-cluster: ${{ steps.synth.outputs.eksCluster }}
+      eks-system-ng: ${{ steps.synth.outputs.eksSystemNg }}
+      eks-pod-identity: ${{ steps.synth.outputs.eksPodIdentity }}
+      eks-addons: ${{ steps.synth.outputs.eksAddons }}
+      eks-karpenter: ${{ steps.synth.outputs.eksKarpenter }}
+      eks-access: ${{ steps.synth.outputs.eksAccess }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: synth
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+        run: just ci-synth kubernetes "$CDK_ENV"
+
+  destroy-karpenter:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-karpenter }}
+        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+
+  destroy-addons:
+    needs: [setup, destroy-karpenter]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-addons }}
+        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+
+  destroy-pod-identity:
+    needs: [setup, destroy-addons]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-pod-identity }}
+        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+
+  destroy-system-ng:
+    needs: [setup, destroy-pod-identity]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-system-ng }}
+        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+
+  destroy-access:
+    needs: [setup, destroy-system-ng]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-access }}
+        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+
+  destroy-cluster:
+    needs: [setup, destroy-access]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-cluster }}
+        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"

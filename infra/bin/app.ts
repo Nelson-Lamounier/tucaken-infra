@@ -52,6 +52,24 @@ if (!environmentContext || !isValidEnvironment(environmentContext)) {
 const environment = resolveEnvironment(environmentContext);
 const projectConfig = getProjectConfig(projectContext as Project);
 
+// ============================================================================
+// 1b. Fail-loud assertion — AWS_ACCOUNT_ID must be present.
+//
+// Synth time is the right place to fail. If we let a missing AWS_ACCOUNT_ID
+// silently default (e.g., to a CDK_DEFAULT_ACCOUNT picked up from the
+// caller's CLI credentials), we risk synthesizing a template that targets
+// the wrong account.
+//
+// MANAGEMENT env additionally needs ROOT_ACCOUNT — we don't enforce that
+// here because not every project requires the root account ARN.
+// ============================================================================
+if (!process.env.AWS_ACCOUNT_ID) {
+    throw new Error(
+        'AWS_ACCOUNT_ID env var is required. Set it in .env (local) or via ' +
+        'GH Environment vars.AWS_ACCOUNT_ID (CI). Never hardcode account IDs.'
+    );
+}
+
 console.log(`=== Project: ${projectConfig.namespace} | Environment: ${environment} ===`);
 
 // ============================================================================

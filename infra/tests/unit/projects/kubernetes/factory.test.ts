@@ -16,6 +16,8 @@
  */
 
 // --- Set env vars BEFORE any CDK/config imports ---
+process.env.AWS_ACCOUNT_ID = '123456789012';
+process.env.ROOT_ACCOUNT = '711387127421';
 process.env.CDK_DEFAULT_ACCOUNT = '123456789012';
 process.env.CDK_DEFAULT_REGION = 'eu-west-1';
 process.env.DOMAIN_NAME = 'dev.nelsonlamounier.com';
@@ -71,14 +73,14 @@ describe('KubernetesProjectFactory', () => {
             app = new cdk.App();
         });
 
-        it('should create 11 stacks: Data, Base, ControlPlane, GeneralPool, MonitoringPool, AppIam, PlatformRds, Api, Edge, Oidc, Observability', () => {
+        it('should create 17 stacks: 11 kubeadm-era + 6 EKS migration stacks', () => {
             const factory = new KubernetesProjectFactory(Environment.DEVELOPMENT);
             const context = createFactoryContext();
 
             const { stacks, stackMap } = factory.createAllStacks(app, context);
 
-            // 11 stacks: ssm-automation migrated to kubernetes-bootstrap repo; ASG pools replaced legacy workers; OIDC added for IRSA.
-            expect(stacks).toHaveLength(11);
+            // 17 stacks: 11 kubeadm-era + 6 EKS migration stacks running in parallel.
+            expect(stacks).toHaveLength(17);
 
             // Core infrastructure stacks
             expect(stackMap).toHaveProperty('data');
@@ -94,6 +96,14 @@ describe('KubernetesProjectFactory', () => {
             // Cattle-model ASG pools (replaced legacy named worker stacks)
             expect(stackMap).toHaveProperty('generalPool');
             expect(stackMap).toHaveProperty('monitoringPool');
+
+            // EKS migration stacks (parallel to kubeadm cluster)
+            expect(stackMap).toHaveProperty('eksCluster');
+            expect(stackMap).toHaveProperty('eksSystemNg');
+            expect(stackMap).toHaveProperty('eksPodIdentity');
+            expect(stackMap).toHaveProperty('eksAddons');
+            expect(stackMap).toHaveProperty('eksKarpenter');
+            expect(stackMap).toHaveProperty('eksAccess');
 
             // Legacy stacks must NOT be present
             expect(stackMap).not.toHaveProperty('worker');

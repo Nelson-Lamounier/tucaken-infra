@@ -47,6 +47,12 @@ graph TB
 | :------- | :------ | :------ |
 | `ci.yml` | PR, push to main | Lint, typecheck, test, synth, security scan |
 | `deploy-kubernetes.yml` | Manual dispatch | Full K8s cluster deployment (12 stacks) |
+| `deploy-eks-development.yml` | `workflow_run` after Deploy K8s (Dev) + manual | EKS V1: 6-stack deploy chained on K8s success |
+| `deploy-eks-staging.yml` | Manual dispatch | EKS V1: 6-stack deploy to staging |
+| `deploy-eks-production.yml` | Manual dispatch (env-gated) | EKS V1: 6-stack deploy to production |
+| `destroy-eks-development.yml` | Manual dispatch | Tear down EKS V1 in development |
+| `destroy-eks-staging.yml` | Manual dispatch | Tear down EKS V1 in staging |
+| `destroy-eks-production.yml` | Manual dispatch (env-gated) | Tear down EKS V1 in production |
 | `deploy-frontend.yml` | Manual dispatch | Next.js application deployment |
 | `deploy-bedrock.yml` | Manual dispatch | Bedrock AI pipeline (4 stacks) |
 | `deploy-shared.yml` | Manual dispatch | Foundation tier (Crossplane, FinOps, Security) |
@@ -64,6 +70,8 @@ graph TB
 | :------- | :-------- | :------ |
 | `_deploy-stack.yml` | Multiple deployers | Generic CDK stack deployment with diff + deploy |
 | `_deploy-kubernetes.yml` | `deploy-kubernetes.yml` | K8s-specific deployment with ordered stack dependencies |
+| `_deploy-eks.yml` | `deploy-eks-{development,staging,production}.yml` | EKS V1: synth + deploy 6 EKS stacks in dependency order |
+| `_destroy-eks.yml` | `destroy-eks-{development,staging,production}.yml` | EKS V1: destroy 6 EKS stacks in reverse dependency order |
 | `_deploy-ssm-automation.yml` | `deploy-ssm-automation.yml` | SSM document deployment + validation |
 | `_iac-security-scan.yml` | `ci.yml` | Checkov scan with SARIF upload to GitHub Security |
 | `_verify-stack.yml` | Post-deploy steps | CloudFormation stack status verification |

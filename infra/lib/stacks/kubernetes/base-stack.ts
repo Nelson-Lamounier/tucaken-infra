@@ -44,6 +44,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
 import * as cr from 'aws-cdk-lib/custom-resources';
 
@@ -134,6 +135,9 @@ export class KubernetesBaseStack extends cdk.Stack {
     /** Monitoring SG — Prometheus, Node Exporter, Loki, Tempo from VPC */
     public readonly monitoringSg: ec2.SecurityGroup;
 
+    /** EKS workers SG — Karpenter-launched node-to-node + ELB ingress */
+    public readonly eksWorkersSg: ec2.SecurityGroup;
+
     /** KMS key for CloudWatch log group encryption */
     public readonly logGroupKmsKey: kms.Key;
 
@@ -173,6 +177,10 @@ export class KubernetesBaseStack extends cdk.Stack {
         // =====================================================================
         const vpcName = props.vpcName ?? `shared-vpc-${targetEnvironment}`;
         this.vpc = ec2.Vpc.fromLookup(this, 'SharedVpc', { vpcName });
+
+        // EKS subnet discovery tags live in SharedVpcStack — see vpc-stack.ts.
+        // Tagging on imported subnets here would be a no-op because cdk.Tags
+        // does not propagate to ec2.Vpc.fromLookup() resources.
 
         // =====================================================================
         // Security Groups (config-driven via SecurityGroupConstruct)
@@ -290,6 +298,26 @@ export class KubernetesBaseStack extends cdk.Stack {
                 );
             }
         }
+
+        // =====================================================================
+        // EKS Workers Security Group (Karpenter-launched nodes)
+        // =====================================================================
+        this.eksWorkersSg = new ec2.SecurityGroup(this, 'EksWorkersSg', {
+            vpc: this.vpc,
+            securityGroupName: `eks-workers-${props.targetEnvironment}`,
+            description: 'EKS Karpenter-launched worker nodes — node-to-node + ELB ingress',
+            allowAllOutbound: true,
+        });
+        this.eksWorkersSg.addIngressRule(
+            this.eksWorkersSg,
+            ec2.Port.allTraffic(),
+            'Node-to-node communication',
+        );
+
+        new ssm.StringParameter(this, 'EksWorkersSgIdParam', {
+            parameterName: `${props.ssmPrefix}/eks/workers-sg-id`,
+            stringValue: this.eksWorkersSg.securityGroupId,
+        });
 
         // =====================================================================
         // KMS Key for CloudWatch Log Group Encryption

@@ -1,0 +1,32 @@
+# @format
+# Destroy EKS in Staging — manual only.
+# Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 9.2
+#
+# Security: this workflow only forwards inputs/secrets to the reusable
+# `_destroy-eks.yml`. It does NOT interpolate any `github.event.*` body /
+# title / commit-message / branch-ref into shell, so the workflow-injection
+# class of bug documented at
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+# does not apply.
+
+name: Destroy EKS in Staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: destroy-eks-staging
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    name: Destroy
+    uses: ./.github/workflows/_destroy-eks.yml
+    with:
+      environment: staging
+      cdk-environment: staging
+    secrets: inherit

@@ -1,0 +1,33 @@
+# @format
+# Deploy EKS to Staging — manual only.
+# Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 9.2
+#
+# Security: this workflow only forwards inputs/secrets to the reusable
+# `_deploy-eks.yml`. No untrusted free-text (issue title, PR body, commit
+# message) is interpolated, so the workflow-injection class of bug
+# documented at
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+# does not apply.
+
+name: Deploy EKS to Staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-eks-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    uses: ./.github/workflows/_deploy-eks.yml
+    with:
+      environment: staging
+      cdk-environment: staging
+      require-approval: never
+    secrets: inherit

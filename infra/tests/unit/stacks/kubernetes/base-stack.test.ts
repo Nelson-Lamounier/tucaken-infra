@@ -100,8 +100,8 @@ describe('KubernetesBaseStack', () => {
     // Security Groups — Existence & Configuration
     // =========================================================================
     describe('Security Groups — Existence', () => {
-        it('should create exactly 5 security groups (4 custom + 1 NLB)', () => {
-            template.resourceCountIs('AWS::EC2::SecurityGroup', 5);
+        it('should create exactly 6 security groups (4 custom + 1 NLB + 1 EKS workers)', () => {
+            template.resourceCountIs('AWS::EC2::SecurityGroup', 6);
         });
 
         it('should create cluster base SG with all outbound allowed', () => {
@@ -651,8 +651,8 @@ describe('KubernetesBaseStack', () => {
     // SSM Parameters
     // =========================================================================
     describe('SSM Parameters', () => {
-        it('should create 13 SSM parameters for cross-stack discovery', () => {
-            template.resourceCountIs('AWS::SSM::Parameter', 14);
+        it('should create 15 SSM parameters for cross-stack discovery', () => {
+            template.resourceCountIs('AWS::SSM::Parameter', 15);
         });
 
         it('should create SSM parameters under the /k8s/development prefix', () => {
@@ -665,7 +665,7 @@ describe('KubernetesBaseStack', () => {
             const expectedPrefixes = paramNames.filter(
                 (name) => name.startsWith('/k8s/development/'),
             );
-            expect(expectedPrefixes).toHaveLength(14);
+            expect(expectedPrefixes).toHaveLength(15);
         });
 
         it('should publish the security group ID to SSM', () => {
@@ -884,14 +884,14 @@ describe('KubernetesBaseStack', () => {
     // =========================================================================
     describe('Resource Counts', () => {
         it('should create expected number of core resources', () => {
-            template.resourceCountIs('AWS::EC2::SecurityGroup', 5);
+            template.resourceCountIs('AWS::EC2::SecurityGroup', 6);
             template.resourceCountIs('AWS::EC2::EIP', 1);
             template.resourceCountIs('AWS::KMS::Key', 1);
             template.resourceCountIs('AWS::KMS::Alias', 1);
             template.resourceCountIs('AWS::Route53::HostedZone', 1);
             template.resourceCountIs('AWS::Route53::RecordSet', 1);
             template.resourceCountIs('AWS::S3::Bucket', 3);
-            template.resourceCountIs('AWS::SSM::Parameter', 14);
+            template.resourceCountIs('AWS::SSM::Parameter', 15);
         });
     });
 });

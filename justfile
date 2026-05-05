@@ -313,6 +313,15 @@ ci-synth-validate:
     #!/usr/bin/env bash
     set -uo pipefail
     cd infra
+    # Synth-time defaults — this recipe validates synth shape (no deploy).
+    # The fail-loud guard in app.ts requires AWS_ACCOUNT_ID; we default to
+    # the dev account ID because `--no-lookups` reads `cdk.context.json` and
+    # that cache is keyed by account ID. A throwaway 12-digit placeholder
+    # would miss the cache and fail. Real account IDs come from GH
+    # Environment vars during deploy workflows; this default only fires
+    # in CI synth-validation jobs.
+    export AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-771826808455}"
+    export ROOT_ACCOUNT="${ROOT_ACCOUNT:-711387127421}"
     FAILURES=0
 
     echo "==========================================="

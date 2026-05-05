@@ -27,6 +27,11 @@ const ALLOWED_FILES = [
     'aspects/tagging-aspect.ts',
     'constructs/compute/constructs/auto-scaling-group.ts',
     'stacks/kubernetes/worker-asg-stack.ts',
+    // EKS subnet discovery tags — exact key/value semantics required by
+    // EKS + AWS LB Controller; can't be expressed via TaggingAspect.
+    'shared/vpc-stack.ts',
+    // EKS cluster identification tag — propagates to dependent resources.
+    'stacks/kubernetes/eks-cluster-stack.ts',
 ];
 
 function isAllowed(filePath: string): boolean {

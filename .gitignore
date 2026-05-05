@@ -94,3 +94,6 @@ docker-compose.mcp.yml
 mcp-servers/*/dist/
 mcp-servers/*/build/
 CI-FrontEnd.yml
+
+# Local git worktrees (superpowers convention)
+.worktrees/

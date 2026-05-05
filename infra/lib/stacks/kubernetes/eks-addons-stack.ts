@@ -39,6 +39,13 @@ export class EksAddonsStack extends cdk.Stack {
             resolveConflicts: 'OVERWRITE',
         });
 
+        // V1 addons must run on the system MNG (`dedicated=system:NoSchedule`)
+        // because Karpenter has not yet provisioned workload nodes when these
+        // charts install. Without this toleration, ALB controller pods are
+        // Pending → its mutating webhook has no endpoints → every Service
+        // create (including Karpenter's) fails admission.
+        const systemToleration = [{ key: 'dedicated', value: 'system', effect: 'NoSchedule' }];
+
         new eks.HelmChart(this, 'ExternalSecrets', {
             cluster: props.cluster,
             chart: 'external-secrets',
@@ -47,7 +54,12 @@ export class EksAddonsStack extends cdk.Stack {
             namespace: 'external-secrets',
             createNamespace: true,
             version: props.versions.externalSecrets,
-            values: { serviceAccount: { name: 'external-secrets', create: true } },
+            values: {
+                serviceAccount: { name: 'external-secrets', create: true },
+                tolerations: systemToleration,
+                webhook: { tolerations: systemToleration },
+                certController: { tolerations: systemToleration },
+            },
         });
 
         new eks.HelmChart(this, 'AlbController', {
@@ -60,6 +72,7 @@ export class EksAddonsStack extends cdk.Stack {
             values: {
                 clusterName: props.cluster.clusterName,
                 serviceAccount: { name: 'aws-load-balancer-controller', create: true },
+                tolerations: systemToleration,
             },
         });
 
@@ -76,6 +89,7 @@ export class EksAddonsStack extends cdk.Stack {
                 policy: 'upsert-only',
                 txtOwnerId: `eks-${props.targetEnvironment}`,
                 serviceAccount: { name: 'external-dns', create: true },
+                tolerations: systemToleration,
             },
         });
 
@@ -97,7 +111,7 @@ export class EksAddonsStack extends cdk.Stack {
                     interruptionQueue: props.karpenterInterruptionQueueName,
                 },
                 serviceAccount: { name: 'karpenter', create: true },
-                tolerations: [{ key: 'dedicated', value: 'system', effect: 'NoSchedule' }],
+                tolerations: systemToleration,
             },
         });
 
@@ -108,7 +122,12 @@ export class EksAddonsStack extends cdk.Stack {
             repository: 'https://kubernetes-sigs.github.io/aws-ebs-csi-driver',
             namespace: 'kube-system',
             version: props.versions.ebsCsi,
-            values: { controller: { serviceAccount: { name: 'ebs-csi-controller-sa', create: true } } },
+            values: {
+                controller: {
+                    serviceAccount: { name: 'ebs-csi-controller-sa', create: true },
+                    tolerations: systemToleration,
+                },
+            },
         });
     }
 }

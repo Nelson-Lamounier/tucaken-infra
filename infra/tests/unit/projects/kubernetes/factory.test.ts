@@ -16,6 +16,8 @@
  */
 
 // --- Set env vars BEFORE any CDK/config imports ---
+process.env.AWS_ACCOUNT_ID = '123456789012';
+process.env.ROOT_ACCOUNT = '711387127421';
 process.env.CDK_DEFAULT_ACCOUNT = '123456789012';
 process.env.CDK_DEFAULT_REGION = 'eu-west-1';
 process.env.DOMAIN_NAME = 'dev.nelsonlamounier.com';

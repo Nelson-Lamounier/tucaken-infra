@@ -1,0 +1,33 @@
+# @format
+# Destroy EKS in Production — manual only, gated by GH Environment approval.
+# Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 9.2
+#
+# Security: this workflow only forwards inputs/secrets to the reusable
+# `_destroy-eks.yml`. It does NOT interpolate any `github.event.*` body /
+# title / commit-message / branch-ref into shell, so the workflow-injection
+# class of bug documented at
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+# does not apply. Production approval is enforced via the GH Environment
+# protection rule (required reviewers).
+
+name: Destroy EKS in Production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: destroy-eks-production
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    name: Destroy
+    uses: ./.github/workflows/_destroy-eks.yml
+    with:
+      environment: production
+      cdk-environment: production
+    secrets: inherit

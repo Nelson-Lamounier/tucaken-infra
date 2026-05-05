@@ -30,3 +30,4 @@ export * from './eks-system-node-group-stack';
 export * from './eks-access-stack';
 export * from './eks-pod-identity-stack';
 export * from './eks-karpenter-stack';
+export * from './eks-addons-stack';

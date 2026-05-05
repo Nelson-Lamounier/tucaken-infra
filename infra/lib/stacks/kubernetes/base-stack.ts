@@ -50,7 +50,6 @@ import * as cr from 'aws-cdk-lib/custom-resources';
 
 import { Construct } from 'constructs';
 
-import { getEksConfig } from '../../config/eks';
 import { Environment } from '../../config/environments';
 import {
     K8sConfigs,
@@ -179,29 +178,9 @@ export class KubernetesBaseStack extends cdk.Stack {
         const vpcName = props.vpcName ?? `shared-vpc-${targetEnvironment}`;
         this.vpc = ec2.Vpc.fromLookup(this, 'SharedVpc', { vpcName });
 
-        // =====================================================================
-        // EKS Subnet Discovery Tags
-        //
-        // EKS + AWS LB Controller discover subnets via well-known tags:
-        //   - kubernetes.io/role/elb=1            → public subnets (NLB/ALB internet-facing)
-        //   - kubernetes.io/role/internal-elb=1   → private subnets (internal LB)
-        //   - kubernetes.io/cluster/<name>=shared → cluster ownership
-        //
-        // We use 'shared' (NOT 'owned') because this VPC is provisioned outside
-        // any single cluster lifecycle and outlives any specific EKS cluster.
-        // 'owned' would imply the cluster controller can delete the VPC/subnets
-        // on cluster teardown — which is unsafe for our shared VPC topology.
-        // See: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 5.1
-        // =====================================================================
-        const eksClusterName = getEksConfig(targetEnvironment).clusterName;
-        for (const subnet of this.vpc.publicSubnets) {
-            cdk.Tags.of(subnet).add('kubernetes.io/role/elb', '1');
-            cdk.Tags.of(subnet).add(`kubernetes.io/cluster/${eksClusterName}`, 'shared');
-        }
-        for (const subnet of this.vpc.privateSubnets) {
-            cdk.Tags.of(subnet).add('kubernetes.io/role/internal-elb', '1');
-            cdk.Tags.of(subnet).add(`kubernetes.io/cluster/${eksClusterName}`, 'shared');
-        }
+        // EKS subnet discovery tags live in SharedVpcStack — see vpc-stack.ts.
+        // Tagging on imported subnets here would be a no-op because cdk.Tags
+        // does not propagate to ec2.Vpc.fromLookup() resources.
 
         // =====================================================================
         // Security Groups (config-driven via SecurityGroupConstruct)

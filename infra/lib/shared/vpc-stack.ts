@@ -16,6 +16,7 @@ import * as cdk from 'aws-cdk-lib/core';
 
 import { Construct } from 'constructs';
 
+import { getEksConfig } from '../config/eks';
 import { Environment } from '../config/environments';
 
 /**
@@ -156,6 +157,21 @@ export class SharedVpcStack extends cdk.Stack {
                 },
             ],
         });
+
+        // EKS subnet discovery tags. EKS + AWS LB Controller find subnets via:
+        //   - kubernetes.io/role/elb=1 (public, internet-facing LBs)
+        //   - kubernetes.io/cluster/<name>=shared (shared, NOT owned — VPC outlives any cluster)
+        // V1 dev runs EKS workers on public subnets (no NAT GW, cost-guardrail).
+        // See docs/superpowers/specs/2026-05-05-eks-migration-design.md § 5.1.
+        const eksClusterName = getEksConfig(props.targetEnvironment).clusterName;
+        for (const subnet of this.vpc.publicSubnets) {
+            cdk.Tags.of(subnet).add('kubernetes.io/role/elb', '1');
+            cdk.Tags.of(subnet).add(`kubernetes.io/cluster/${eksClusterName}`, 'shared');
+        }
+        for (const subnet of this.vpc.privateSubnets) {
+            cdk.Tags.of(subnet).add('kubernetes.io/role/internal-elb', '1');
+            cdk.Tags.of(subnet).add(`kubernetes.io/cluster/${eksClusterName}`, 'shared');
+        }
 
         // Configure Gateway Endpoints (free)
         this.configureGatewayEndpoints(props.gatewayEndpoints);

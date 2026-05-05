@@ -101,8 +101,36 @@ export interface EnvironmentConfig {
 }
 
 /**
+ * Resolve the AWS account ID for a target environment from process.env.
+ *
+ * Single source of truth: each CDK invocation targets exactly one environment,
+ * and that environment's account ID is supplied by the runner via
+ * `AWS_ACCOUNT_ID` (set by the GH Actions workflow from `vars.AWS_ACCOUNT_ID`
+ * scoped to the GH Environment, or from `.env` for local development).
+ *
+ * MANAGEMENT is the only exception: its account is the org root, which is
+ * separately supplied via `ROOT_ACCOUNT` because cross-account constructs
+ * (DNS validation roles) reference both the target env's account AND the
+ * root account in the same synth.
+ *
+ * Throws if the required env var is missing — fail loud, not silent.
+ */
+function resolveAccount(env: Environment): string {
+    const key = env === Environment.MANAGEMENT ? 'ROOT_ACCOUNT' : 'AWS_ACCOUNT_ID';
+    const value = process.env[key];
+    if (!value) {
+        throw new Error(
+            `${key} env var is required to resolve the ${env} account. ` +
+            `Set it in your .env file or GH Environment vars (vars.AWS_ACCOUNT_ID / vars.ROOT_ACCOUNT).`
+        );
+    }
+    return value;
+}
+
+/**
  * Environment configurations — cross-project identity.
- * Each environment targets a dedicated AWS account.
+ * Each environment targets a dedicated AWS account, but the account ID is
+ * resolved lazily from process.env (single source of truth — no hardcoded IDs).
  *
  * IMPORTANT: The primary region is hardcoded, NOT derived from
  * CDK_DEFAULT_REGION. When the Edge deploy job configures AWS credentials
@@ -112,22 +140,22 @@ export interface EnvironmentConfig {
  */
 const environments: Record<Environment, EnvironmentConfig> = {
     [Environment.DEVELOPMENT]: {
-        account: '771826808455',
+        get account() { return resolveAccount(Environment.DEVELOPMENT); },
         region: 'eu-west-1',
         edgeRegion: 'us-east-1',
     },
     [Environment.STAGING]: {
-        account: '692738841103',
+        get account() { return resolveAccount(Environment.STAGING); },
         region: 'eu-west-1',
         edgeRegion: 'us-east-1',
     },
     [Environment.PRODUCTION]: {
-        account: '607700977986',
+        get account() { return resolveAccount(Environment.PRODUCTION); },
         region: 'eu-west-1',
         edgeRegion: 'us-east-1',
     },
     [Environment.MANAGEMENT]: {
-        account: fromEnv('ROOT_ACCOUNT') ?? '711387127421',
+        get account() { return resolveAccount(Environment.MANAGEMENT); },
         region: 'eu-west-1',
         edgeRegion: 'us-east-1',
     },

@@ -243,6 +243,20 @@ const k8sStacks: StackConfig[] = [
     description: 'AccessEntry × N — IAM principal → Kubernetes RBAC bindings',
     dependsOn: ['eksCluster'],
   },
+  {
+    id: 'eksAlbCerts',
+    name: 'EKS ALB Certificates Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksAlbCerts', env),
+    description:
+      'Wildcard ACM certs (eu-west-1) for the shared public ALB — nelsonlamounier.com, tucaken.io, tucaken.com',
+  },
+  {
+    id: 'eksPublicWaf',
+    name: 'EKS Public WAF Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksPublicWaf', env),
+    description:
+      'Host-scoped REGIONAL WAFv2 WebACL (IP allowlist on admin/ops/tucaken hosts, rate limit on api host, AWS Managed Rule Sets globally)',
+  },
 ];
 
 registerProject({

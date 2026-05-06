@@ -3,9 +3,9 @@ process.env.AWS_ACCOUNT_ID = '123456789012';
 
 import { Template } from 'aws-cdk-lib/assertions';
 
-import { TEST_ENV_EU, createMockEksCluster } from '../../../fixtures';
 import { Environment } from '../../../../lib/config/environments';
 import { EksAddonsStack } from '../../../../lib/stacks/kubernetes/eks-addons-stack';
+import { TEST_ENV_EU, createMockEksCluster } from '../../../fixtures';
 
 describe('EksAddonsStack', () => {
     it('should add EBS CSI managed addon (foundational addons live in EksPodIdentityStack)', () => {

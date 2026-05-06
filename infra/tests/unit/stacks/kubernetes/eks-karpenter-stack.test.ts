@@ -1,33 +1,21 @@
 /** @format */
 process.env.AWS_ACCOUNT_ID = '123456789012';
 
-import { KubectlV34Layer } from '@aws-cdk/lambda-layer-kubectl-v34';
-
 import { Template } from 'aws-cdk-lib/assertions';
-import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as cdk from 'aws-cdk-lib/core';
 
 import { Environment } from '../../../../lib/config/environments';
 import { EksKarpenterStack } from '../../../../lib/stacks/kubernetes/eks-karpenter-stack';
+import { TEST_ENV_EU, createMockEksCluster } from '../../../fixtures';
 
 describe('EksKarpenterStack', () => {
     it('should create SQS interruption queue and 4 EventBridge rules', () => {
-        const app = new cdk.App();
-        const clusterStack = new cdk.Stack(app, 'ClusterStack', {
-            env: { account: '123456789012', region: 'eu-west-1' },
-        });
-        const cluster = new eks.Cluster(clusterStack, 'Cluster', {
-            clusterName: 'k8s-eks-development',
-            version: eks.KubernetesVersion.V1_34,
-            kubectlLayer: new KubectlV34Layer(clusterStack, 'KubectlLayer'),
-            defaultCapacity: 0,
-        });
+        const { app, clusterStack, cluster } = createMockEksCluster();
         const nodeRole = new iam.Role(clusterStack, 'NodeRole', {
             assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
         });
         const stack = new EksKarpenterStack(app, 'Karp', {
-            env: { account: '123456789012', region: 'eu-west-1' },
+            env: TEST_ENV_EU,
             targetEnvironment: Environment.DEVELOPMENT,
             cluster,
             workerNodeRole: nodeRole,

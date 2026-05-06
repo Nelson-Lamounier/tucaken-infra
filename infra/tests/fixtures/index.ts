@@ -39,6 +39,13 @@ export {
     type StackWithHelperResult,
 } from './test-app';
 
+// Mock EKS cluster
+export {
+    createMockEksCluster,
+    type MockEksClusterOptions,
+    type MockEksClusterResult,
+} from './mock-eks';
+
 // Mock AWS resources
 export {
     createMockVpc,

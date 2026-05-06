@@ -1,85 +1,52 @@
 /** @format */
 process.env.AWS_ACCOUNT_ID = '123456789012';
 
-import { KubectlV34Layer } from '@aws-cdk/lambda-layer-kubectl-v34';
-
 import { Template } from 'aws-cdk-lib/assertions';
-import * as eks from 'aws-cdk-lib/aws-eks';
-import * as cdk from 'aws-cdk-lib/core';
 
+import { type PodIdentityBinding } from '../../../../lib/config/eks';
 import { Environment } from '../../../../lib/config/environments';
 import { EksPodIdentityStack } from '../../../../lib/stacks/kubernetes/eks-pod-identity-stack';
+import { TEST_ENV_EU, createMockEksCluster } from '../../../fixtures';
+
+const newStack = (bindings: PodIdentityBinding[], hostedZoneIds: string[] = []) => {
+    const { app, cluster } = createMockEksCluster();
+    return new EksPodIdentityStack(app, 'PodId', {
+        env: TEST_ENV_EU,
+        targetEnvironment: Environment.DEVELOPMENT,
+        cluster,
+        bindings,
+        karpenterInterruptionQueueArn: 'arn:aws:sqs:eu-west-1:123456789012:karpenter',
+        workerNodeRoleArn: 'arn:aws:iam::123456789012:role/KarpenterNodeRole',
+        hostedZoneIds,
+    });
+};
 
 describe('EksPodIdentityStack', () => {
-    it('should create one PodIdentityAssociation per binding', () => {
-        const app = new cdk.App();
-        const clusterStack = new cdk.Stack(app, 'ClusterStack', {
-            env: { account: '123456789012', region: 'eu-west-1' },
-        });
-        const cluster = new eks.Cluster(clusterStack, 'Cluster', {
-            clusterName: 'k8s-eks-development',
-            version: eks.KubernetesVersion.V1_34,
-            kubectlLayer: new KubectlV34Layer(clusterStack, 'KubectlLayer'),
-            defaultCapacity: 0,
-        });
-        const stack = new EksPodIdentityStack(app, 'PodId', {
-            env: { account: '123456789012', region: 'eu-west-1' },
-            targetEnvironment: Environment.DEVELOPMENT,
-            cluster,
-            bindings: [
-                { namespace: 'karpenter', serviceAccount: 'karpenter', purpose: 'karpenter' },
-                {
-                    namespace: 'kube-system',
-                    serviceAccount: 'aws-load-balancer-controller',
-                    purpose: 'alb-controller',
-                },
-                {
-                    namespace: 'external-secrets',
-                    serviceAccount: 'external-secrets',
-                    purpose: 'external-secrets',
-                },
-            ],
-            karpenterInterruptionQueueArn: 'arn:aws:sqs:eu-west-1:123456789012:karpenter',
-            workerNodeRoleArn: 'arn:aws:iam::123456789012:role/KarpenterNodeRole',
-            hostedZoneIds: ['Z1234567890ABC'],
-        });
+    it('should create one PodIdentityAssociation per binding plus foundational addons', () => {
+        const stack = newStack([
+            { namespace: 'karpenter', serviceAccount: 'karpenter', purpose: 'karpenter' },
+            { namespace: 'kube-system', serviceAccount: 'aws-load-balancer-controller', purpose: 'alb-controller' },
+            { namespace: 'external-secrets', serviceAccount: 'external-secrets', purpose: 'external-secrets' },
+        ], ['Z1234567890ABC']);
+
         const t = Template.fromStack(stack);
         t.resourceCountIs('AWS::EKS::PodIdentityAssociation', 3);
         t.hasResourceProperties('AWS::EKS::PodIdentityAssociation', {
             Namespace: 'karpenter',
             ServiceAccount: 'karpenter',
         });
-        // Foundational managed addons live in this stack so they survive a
-        // Helm-chart rollback in EksAddonsStack.
+        // Foundational managed addons live here so they survive a Helm-chart
+        // rollback in EksAddonsStack.
         t.resourceCountIs('AWS::EKS::Addon', 4);
-        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'vpc-cni' });
-        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'eks-pod-identity-agent' });
-        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'coredns' });
-        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'kube-proxy' });
+        for (const name of ['vpc-cni', 'eks-pod-identity-agent', 'coredns', 'kube-proxy']) {
+            t.hasResourceProperties('AWS::EKS::Addon', { AddonName: name });
+        }
     });
 
     it('should expose roles map keyed by purpose', () => {
-        const app = new cdk.App();
-        const clusterStack = new cdk.Stack(app, 'ClusterStack', {
-            env: { account: '123456789012', region: 'eu-west-1' },
-        });
-        const cluster = new eks.Cluster(clusterStack, 'Cluster', {
-            clusterName: 'k8s-eks-development',
-            version: eks.KubernetesVersion.V1_34,
-            kubectlLayer: new KubectlV34Layer(clusterStack, 'KubectlLayer'),
-            defaultCapacity: 0,
-        });
-        const stack = new EksPodIdentityStack(app, 'PodId', {
-            env: { account: '123456789012', region: 'eu-west-1' },
-            targetEnvironment: Environment.DEVELOPMENT,
-            cluster,
-            bindings: [
-                { namespace: 'karpenter', serviceAccount: 'karpenter', purpose: 'karpenter' },
-            ],
-            karpenterInterruptionQueueArn: 'arn:aws:sqs:eu-west-1:123456789012:karpenter',
-            workerNodeRoleArn: 'arn:aws:iam::123456789012:role/KarpenterNodeRole',
-            hostedZoneIds: [],
-        });
+        const stack = newStack([
+            { namespace: 'karpenter', serviceAccount: 'karpenter', purpose: 'karpenter' },
+        ]);
         expect(stack.roles.karpenter).toBeDefined();
     });
 });

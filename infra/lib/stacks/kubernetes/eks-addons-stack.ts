@@ -21,7 +21,22 @@ export interface EksAddonsStackProps extends cdk.StackProps {
     readonly region: string;
     readonly karpenterInterruptionQueueName: string;
     readonly workerNodeRoleArn: string;
-    readonly hostedZoneDomain: string;
+    /**
+     * Apex domains ExternalDNS reconciles (e.g. ['nelsonlamounier.com',
+     * 'tucaken.io', 'tucaken.com']). Each domain becomes a `--domain-filter`
+     * arg; ExternalDNS only acts on Ingress/Service hostnames whose suffix
+     * matches one of these.
+     */
+    readonly hostedZoneDomains: readonly string[];
+    /**
+     * Optional cross-account IAM role ARN that holds Route53 write
+     * permissions for the target hosted zones. When set, ExternalDNS is
+     * configured with `--aws-assume-role=<arn>` and uses the assumed
+     * identity for every R53 call. The Pod Identity role for `external-dns`
+     * (in `EksPodIdentityStack`) must independently grant `sts:AssumeRole`
+     * on the same ARN.
+     */
+    readonly crossAccountDnsRoleArn?: string;
     readonly versions: {
         readonly karpenter: string;
         readonly albController: string;
@@ -133,11 +148,14 @@ export class EksAddonsStack extends cdk.Stack {
             wait: true,
             values: {
                 provider: 'aws',
-                domainFilters: [props.hostedZoneDomain],
+                domainFilters: props.hostedZoneDomains,
                 policy: 'upsert-only',
                 txtOwnerId: `eks-${props.targetEnvironment}`,
                 serviceAccount: { name: 'external-dns', create: true },
                 tolerations: systemToleration,
+                ...(props.crossAccountDnsRoleArn
+                    ? { extraArgs: [`--aws-assume-role=${props.crossAccountDnsRoleArn}`] }
+                    : {}),
             },
         });
         externalDns.node.addDependency(albController);

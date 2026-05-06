@@ -27,6 +27,15 @@ export interface EksPodIdentityStackProps extends cdk.StackProps {
     readonly karpenterInterruptionQueueArn: string;
     readonly workerNodeRoleArn: string;
     readonly hostedZoneIds: readonly string[];
+    /**
+     * Cross-account role ARN that holds the actual Route53 write permissions
+     * (e.g. arn:aws:iam::<mgmt>:role/Route53DnsValidationRole). When set,
+     * ExternalDNS gets `sts:AssumeRole` on this role and writes records via
+     * the assumed identity (configured in EksAddonsStack via
+     * `--aws-assume-role`). When unset, ExternalDNS falls back to direct
+     * writes against `hostedZoneIds` in this account.
+     */
+    readonly crossAccountDnsRoleArn?: string;
 }
 
 export class EksPodIdentityStack extends cdk.Stack {
@@ -227,7 +236,19 @@ export class EksPodIdentityStack extends cdk.Stack {
                 break;
             }
             case 'external-dns':
-                if (props.hostedZoneIds.length > 0) {
+                if (props.crossAccountDnsRoleArn) {
+                    // Cross-account zones (e.g. dev cluster writing into mgmt-account
+                    // hosted zones). ExternalDNS calls sts:AssumeRole into this role
+                    // and the role's own policy handles route53:ChangeResourceRecordSets
+                    // on the target zones. Local role keeps no R53 perms.
+                    role.addToPolicy(
+                        new iam.PolicyStatement({
+                            actions: ['sts:AssumeRole'],
+                            resources: [props.crossAccountDnsRoleArn],
+                        }),
+                    );
+                } else if (props.hostedZoneIds.length > 0) {
+                    // Same-account zones — write records directly.
                     role.addToPolicy(
                         new iam.PolicyStatement({
                             actions: ['route53:ChangeResourceRecordSets'],
@@ -236,13 +257,13 @@ export class EksPodIdentityStack extends cdk.Stack {
                             ),
                         }),
                     );
+                    role.addToPolicy(
+                        new iam.PolicyStatement({
+                            actions: ['route53:ListHostedZones', 'route53:ListResourceRecordSets'],
+                            resources: ['*'],
+                        }),
+                    );
                 }
-                role.addToPolicy(
-                    new iam.PolicyStatement({
-                        actions: ['route53:ListHostedZones', 'route53:ListResourceRecordSets'],
-                        resources: ['*'],
-                    }),
-                );
                 break;
             case 'external-secrets':
                 role.addToPolicy(

@@ -776,6 +776,11 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
 
         const karpenterQueueArn = `arn:aws:sqs:${env.region}:${env.account}:${eksConfig.clusterName}-karpenter`;
 
+        // Apex domains ExternalDNS reconciles. Sourced statically rather than
+        // from EksConfig so the migration to ALB+ACM (Plan 5b) is reviewable
+        // in one place; future enhancement: surface as a config field per env.
+        const externalDnsApexDomains = ['nelsonlamounier.com', 'tucaken.io', 'tucaken.com'];
+
         const eksPodId = new EksPodIdentityStack(
             scope,
             stackId(this.namespace, 'EksPodIdentity', environment),
@@ -786,13 +791,11 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 karpenterInterruptionQueueArn: karpenterQueueArn,
                 workerNodeRoleArn: eksSystemNg.nodeRole.roleArn,
                 hostedZoneIds: edgeConfig.hostedZoneId ? [edgeConfig.hostedZoneId] : [],
+                crossAccountDnsRoleArn: edgeConfig.crossAccountRoleArn,
             },
         );
         eksPodId.addDependency(eksSystemNg);
         stacks.push(eksPodId); stackMap.eksPodIdentity = eksPodId;
-
-        const hostedZoneDomain = (edgeConfig.domainName ?? 'nelsonlamounier.com')
-            .split('.').slice(-2).join('.');
 
         const eksAddons = new EksAddonsStack(
             scope,
@@ -804,7 +807,8 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 region: env.region!,
                 karpenterInterruptionQueueName: `${eksConfig.clusterName}-karpenter`,
                 workerNodeRoleArn: eksSystemNg.nodeRole.roleArn,
-                hostedZoneDomain,
+                hostedZoneDomains: externalDnsApexDomains,
+                crossAccountDnsRoleArn: edgeConfig.crossAccountRoleArn,
                 versions: eksConfig.versions,
             },
         );

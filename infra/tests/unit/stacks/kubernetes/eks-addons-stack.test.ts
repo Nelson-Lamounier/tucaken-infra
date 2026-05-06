@@ -1,36 +1,24 @@
 /** @format */
 process.env.AWS_ACCOUNT_ID = '123456789012';
 
-import { KubectlV34Layer } from '@aws-cdk/lambda-layer-kubectl-v34';
-
 import { Template } from 'aws-cdk-lib/assertions';
-import * as eks from 'aws-cdk-lib/aws-eks';
-import * as cdk from 'aws-cdk-lib/core';
 
+import { TEST_ENV_EU, createMockEksCluster } from '../../../fixtures';
 import { Environment } from '../../../../lib/config/environments';
 import { EksAddonsStack } from '../../../../lib/stacks/kubernetes/eks-addons-stack';
 
 describe('EksAddonsStack', () => {
-    it('should add VPC CNI managed addon', () => {
-        const app = new cdk.App();
-        const clusterStack = new cdk.Stack(app, 'ClusterStack', {
-            env: { account: '123456789012', region: 'eu-west-1' },
-        });
-        const cluster = new eks.Cluster(clusterStack, 'Cluster', {
-            clusterName: 'k8s-eks-development',
-            version: eks.KubernetesVersion.V1_34,
-            kubectlLayer: new KubectlV34Layer(clusterStack, 'KubectlLayer'),
-            defaultCapacity: 0,
-        });
+    it('should add EBS CSI managed addon (foundational addons live in EksPodIdentityStack)', () => {
+        const { app, cluster } = createMockEksCluster();
         const stack = new EksAddonsStack(app, 'Addons', {
-            env: { account: '123456789012', region: 'eu-west-1' },
+            env: TEST_ENV_EU,
             targetEnvironment: Environment.DEVELOPMENT,
             cluster,
             vpcId: 'vpc-aaa',
             region: 'eu-west-1',
             karpenterInterruptionQueueName: 'k8s-eks-development-karpenter',
             workerNodeRoleArn: 'arn:aws:iam::123456789012:role/Worker',
-            hostedZoneDomain: 'nelsonlamounier.com',
+            hostedZoneDomains: ['nelsonlamounier.com'],
             versions: {
                 karpenter: '1.0.6',
                 albController: '1.8.4',
@@ -40,9 +28,6 @@ describe('EksAddonsStack', () => {
             },
         });
         const t = Template.fromStack(stack);
-        // EBS CSI Driver only — vpc-cni / eks-pod-identity-agent / coredns /
-        // kube-proxy moved to EksPodIdentityStack so they survive a Helm
-        // chart rollback in this stack.
         t.resourceCountIs('AWS::EKS::Addon', 1);
         t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'aws-ebs-csi-driver' });
     });

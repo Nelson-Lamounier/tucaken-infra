@@ -188,7 +188,9 @@ export class EksPublicWafConstruct extends Construct {
 
         this.webAcl = new wafv2.CfnWebACL(this, 'WebAcl', {
             name: `${namePrefix}-${envName}`,
-            description: `Public WAF for the shared EKS ALB (${envName})`,
+            // WAFv2 description allows only [\w+=:#@/\-,\.\s] — parens
+            // (and most punctuation) are rejected.
+            description: `Public WAF for the shared EKS ALB - ${envName}`,
             scope: 'REGIONAL',
             defaultAction: { allow: {} },
             visibilityConfig: {

@@ -7,10 +7,10 @@
 import { type DeployableEnvironment, Environment } from '../environments';
 
 /** EKS Kubernetes minor version. Pin once per env; bump as a deliberate task. */
-export const EKS_VERSION = '1.30';
+export const EKS_VERSION = '1.34';
 
 /** Karpenter chart version (matches EKS minor + Karpenter compatibility table). */
-export const KARPENTER_VERSION = '1.0.6';
+export const KARPENTER_VERSION = '1.12.0';
 
 /** AWS Load Balancer Controller chart version. */
 export const ALB_CONTROLLER_VERSION = '1.8.4';
@@ -65,6 +65,8 @@ export interface EksConfig {
         readonly externalSecrets: string;
         readonly ebsCsi: string;
     };
+    /** IAM principals granted EKS cluster-admin via Access Entries. */
+    readonly adminPrincipalArns: readonly string[];
 }
 
 const COMMON_BINDINGS: readonly PodIdentityBinding[] = [
@@ -92,7 +94,17 @@ const COMMON_KARPENTER: EksKarpenterNodePoolConfig = {
     cpuMax: 8,
 } as const;
 
-export const EKS_CONFIGS: Record<DeployableEnvironment, EksConfig> = {
+// SSM paths holding admin-principal ARNs per environment. Populate manually:
+//   aws ssm put-parameter --name /cdk-monitoring/development/eks/admin-principal-arns \
+//     --type StringList --value "arn:aws:iam::...,arn:aws:iam::..." --profile <profile>
+// Keeps account IDs and SSO role hashes out of source control.
+export const EKS_ADMIN_PRINCIPAL_ARNS_SSM_PATHS: Record<DeployableEnvironment, string> = {
+    [Environment.DEVELOPMENT]: '/cdk-monitoring/development/eks/admin-principal-arns',
+    [Environment.STAGING]: '/cdk-monitoring/staging/eks/admin-principal-arns',
+    [Environment.PRODUCTION]: '/cdk-monitoring/production/eks/admin-principal-arns',
+};
+
+export const EKS_CONFIGS: Record<DeployableEnvironment, Omit<EksConfig, 'adminPrincipalArns'>> = {
     [Environment.DEVELOPMENT]: {
         clusterName: 'k8s-eks-development',
         version: EKS_VERSION,
@@ -119,9 +131,12 @@ export const EKS_CONFIGS: Record<DeployableEnvironment, EksConfig> = {
     },
 };
 
-export function getEksConfig(env: Environment): EksConfig {
+export function getEksConfig(
+    env: Environment,
+    adminPrincipalArns: readonly string[] = [],
+): EksConfig {
     if (env === Environment.MANAGEMENT) {
         throw new Error('EKS not deployed to management env');
     }
-    return EKS_CONFIGS[env as DeployableEnvironment];
+    return { ...EKS_CONFIGS[env as DeployableEnvironment], adminPrincipalArns };
 }

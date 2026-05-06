@@ -57,5 +57,6 @@
     ]
   },
   "ssm:account=771826808455:parameterName=/k8s/development/security-group-id:region=eu-west-1": "sg-03685810192a97ef3",
-  "ssm:account=771826808455:parameterName=/k8s/development/general-instance-role-arn:region=eu-west-1": "arn:aws:iam::771826808455:role/GeneralPool-development-LaunchTemplateInstanceRoleD-vLCVxTGlaDpA"
+  "ssm:account=771826808455:parameterName=/k8s/development/general-instance-role-arn:region=eu-west-1": "arn:aws:iam::771826808455:role/GeneralPool-development-LaunchTemplateInstanceRoleD-vLCVxTGlaDpA",
+  "ssm:account=771826808455:parameterName=/cdk-monitoring/development/eks/admin-principal-arns:region=eu-west-1": "arn:aws:iam::771826808455:role/aws-reserved/sso.amazonaws.com/eu-west-1/AWSReservedSSO_AdministratorAccess_1f8059107593636a"
 }

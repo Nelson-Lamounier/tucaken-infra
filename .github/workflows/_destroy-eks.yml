@@ -81,7 +81,7 @@ jobs:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_ENV: ${{ inputs.cdk-environment }}
           STACK: ${{ needs.setup.outputs.eks-karpenter }}
-        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
 
   destroy-addons:
     needs: [setup, destroy-karpenter]
@@ -103,7 +103,7 @@ jobs:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_ENV: ${{ inputs.cdk-environment }}
           STACK: ${{ needs.setup.outputs.eks-addons }}
-        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
 
   destroy-pod-identity:
     needs: [setup, destroy-addons]
@@ -125,7 +125,7 @@ jobs:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_ENV: ${{ inputs.cdk-environment }}
           STACK: ${{ needs.setup.outputs.eks-pod-identity }}
-        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
 
   destroy-system-ng:
     needs: [setup, destroy-pod-identity]
@@ -147,7 +147,7 @@ jobs:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_ENV: ${{ inputs.cdk-environment }}
           STACK: ${{ needs.setup.outputs.eks-system-ng }}
-        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
 
   destroy-access:
     needs: [setup, destroy-system-ng]
@@ -169,7 +169,7 @@ jobs:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_ENV: ${{ inputs.cdk-environment }}
           STACK: ${{ needs.setup.outputs.eks-access }}
-        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
 
   destroy-cluster:
     needs: [setup, destroy-access]
@@ -191,4 +191,4 @@ jobs:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_ENV: ${{ inputs.cdk-environment }}
           STACK: ${{ needs.setup.outputs.eks-cluster }}
-        run: npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"

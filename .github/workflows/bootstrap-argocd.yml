@@ -1,0 +1,54 @@
+# @format
+# Bootstrap ArgoCD on an EKS cluster (one-shot, idempotent).
+# Trigger: workflow_dispatch.
+# Re-run any time — every step is idempotent (helm upgrade --install,
+# kubectl apply); re-running on a healthy cluster is a no-op aside from
+# Helm release bookkeeping.
+#
+# Run this once after `Deploy EKS to <env>` reports success. After the
+# root-app is applied, ArgoCD reconciles
+# `argocd-apps/eks/<env>/` from the kubernetes-bootstrap repo.
+#
+# Security: consumes only inputs.*, vars.*, secrets.*. No
+# github.event.* free-text is interpolated.
+
+name: Bootstrap ArgoCD on EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [development, staging, production]
+        default: development
+      kubernetes-bootstrap-ref:
+        description: "kubernetes-bootstrap ref (branch/tag/sha)"
+        required: false
+        type: string
+        default: main
+      argocd-chart-version:
+        description: "argo-cd Helm chart version"
+        required: false
+        type: string
+        default: "7.7.5"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: bootstrap-argocd-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  install:
+    uses: ./.github/workflows/_install-argocd.yml
+    with:
+      environment: ${{ inputs.environment }}
+      cluster-name: k8s-eks-${{ inputs.environment }}
+      argocd-chart-version: ${{ inputs.argocd-chart-version }}
+      kubernetes-bootstrap-ref: ${{ inputs.kubernetes-bootstrap-ref }}
+    secrets:
+      AWS_OIDC_ROLE: ${{ secrets.AWS_OIDC_ROLE }}

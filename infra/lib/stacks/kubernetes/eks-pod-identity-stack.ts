@@ -32,6 +32,58 @@ export class EksPodIdentityStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: EksPodIdentityStackProps) {
         super(scope, id, props);
 
+        // Foundational EKS managed addons live HERE — not in EksAddonsStack —
+        // so a Helm-chart failure downstream cannot trigger a CFN rollback
+        // that deletes the agent. Without the agent DaemonSet present on
+        // every node, every PodIdentityAssociation downstream is a no-op:
+        // workloads hit 169.254.170.23 and get `connection refused`,
+        // CrashLoopBackOff, then Helm `wait: true` times out → CREATE_FAILED
+        // → rollback → addon deleted → next deploy hits the same loop.
+        new eks.CfnAddon(this, 'VpcCni', {
+            clusterName: props.cluster.clusterName,
+            addonName: 'vpc-cni',
+            resolveConflicts: 'OVERWRITE',
+        });
+
+        new eks.CfnAddon(this, 'PodIdentityAgent', {
+            clusterName: props.cluster.clusterName,
+            addonName: 'eks-pod-identity-agent',
+            resolveConflicts: 'OVERWRITE',
+        });
+
+        // CoreDNS — EKS auto-installs the Deployment without our system
+        // toleration. Default scheduling fails on a single-pool cluster
+        // where every node has `dedicated=system:NoSchedule`. Pending
+        // CoreDNS → no cluster DNS → every Helm chart that resolves an
+        // AWS endpoint at boot (Karpenter, ALB controller, ESO) fails
+        // its API connectivity check and CrashLoops, which in turn
+        // causes the Helm `wait: true` custom resource to time out and
+        // rolls the addons stack back. Managed addon with explicit
+        // tolerations side-steps the issue and stays put across stack
+        // rollbacks because it lives here, not in EksAddonsStack.
+        new eks.CfnAddon(this, 'CoreDns', {
+            clusterName: props.cluster.clusterName,
+            addonName: 'coredns',
+            resolveConflicts: 'OVERWRITE',
+            configurationValues: JSON.stringify({
+                tolerations: [
+                    { key: 'dedicated', value: 'system', effect: 'NoSchedule' },
+                    { key: 'CriticalAddonsOnly', operator: 'Exists' },
+                ],
+            }),
+        });
+
+        // kube-proxy — same scheduling issue as CoreDNS would apply if
+        // EKS shipped it as a Deployment, but it's a DaemonSet that
+        // tolerates everything by default. Still pin via managed addon
+        // so version is in lock-step with the cluster control plane
+        // (kube-proxy/kubelet skew is the #1 EKS upgrade footgun).
+        new eks.CfnAddon(this, 'KubeProxy', {
+            clusterName: props.cluster.clusterName,
+            addonName: 'kube-proxy',
+            resolveConflicts: 'OVERWRITE',
+        });
+
         const podIdentityPrincipal = new iam.ServicePrincipal('pods.eks.amazonaws.com');
 
         for (const b of props.bindings) {
@@ -39,6 +91,17 @@ export class EksPodIdentityStack extends cdk.Stack {
                 assumedBy: podIdentityPrincipal,
                 description: `Pod Identity role for ${b.namespace}/${b.serviceAccount}`,
             });
+            // EKS Pod Identity requires `sts:TagSession` on top of the default
+            // `sts:AssumeRole` so the service can attach session tags
+            // (eks-cluster-arn, kubernetes-namespace, etc). Without it, the
+            // PodIdentityAssociation create call rejects the role with
+            // "Trust policy of the role provided is invalid".
+            role.assumeRolePolicy?.addStatements(
+                new iam.PolicyStatement({
+                    actions: ['sts:TagSession'],
+                    principals: [podIdentityPrincipal],
+                }),
+            );
             this.attachPurposePolicies(role, b.purpose, props);
             this.roles[b.purpose] = role;
 
@@ -68,21 +131,53 @@ export class EksPodIdentityStack extends cdk.Stack {
                         resources: [props.karpenterInterruptionQueueArn],
                     }),
                 );
+                // EKS control-plane introspection — Karpenter calls
+                // DescribeCluster at startup to resolve the cluster endpoint
+                // and CA cert. Without this, the controller crashes with
+                // 'failed to resolve cluster endpoint'.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        actions: ['eks:DescribeCluster'],
+                        resources: ['*'],
+                    }),
+                );
+                // Karpenter v1 manages EC2 instance profiles for nodes it
+                // launches — creates one per EC2NodeClass, attaches the
+                // worker node role, deletes on NodePool teardown. All these
+                // actions must succeed or Karpenter blocks scheduling.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        actions: [
+                            'iam:CreateInstanceProfile',
+                            'iam:DeleteInstanceProfile',
+                            'iam:GetInstanceProfile',
+                            'iam:ListInstanceProfiles',
+                            'iam:TagInstanceProfile',
+                            'iam:AddRoleToInstanceProfile',
+                            'iam:RemoveRoleFromInstanceProfile',
+                        ],
+                        resources: ['*'],
+                    }),
+                );
                 role.addToPolicy(
                     new iam.PolicyStatement({
                         actions: [
                             'ec2:RunInstances',
                             'ec2:CreateTags',
                             'ec2:CreateLaunchTemplate',
+                            'ec2:CreateFleet',
                             'ec2:DescribeInstances',
                             'ec2:DescribeImages',
                             'ec2:DescribeInstanceTypes',
+                            'ec2:DescribeInstanceTypeOfferings',
                             'ec2:DescribeSubnets',
                             'ec2:DescribeSecurityGroups',
                             'ec2:DescribeAvailabilityZones',
                             'ec2:DescribeSpotPriceHistory',
                             'ec2:DescribeLaunchTemplates',
+                            'ec2:DescribeLaunchTemplateVersions',
                             'ec2:TerminateInstances',
+                            'ec2:DeleteLaunchTemplate',
                             'pricing:GetProducts',
                         ],
                         resources: ['*'],

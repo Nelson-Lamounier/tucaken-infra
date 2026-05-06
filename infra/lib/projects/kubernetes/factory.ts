@@ -29,7 +29,7 @@
 
 import * as cdk from 'aws-cdk-lib/core';
 
-import { getEksConfig } from '../../config/eks';
+import { getEksConfig, EKS_ADMIN_PRINCIPAL_ARNS_SSM_PATHS } from '../../config/eks';
 import {
     Environment,
     cdkEnvironment,
@@ -737,6 +737,12 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
         //
         // Source of truth: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 7.1
         // =================================================================
+        // Admin principal ARNs resolved inside EksAccessStack (SSM lookup
+        // requires Stack scope, not App scope). Path passed through props.
+        const adminArnsSsmPath = EKS_ADMIN_PRINCIPAL_ARNS_SSM_PATHS[
+            environment as keyof typeof EKS_ADMIN_PRINCIPAL_ARNS_SSM_PATHS
+        ];
+
         const eksConfig = getEksConfig(environment);
 
         const eksClusterStack = new EksClusterStack(
@@ -794,6 +800,8 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             {
                 env, targetEnvironment: environment,
                 cluster: eksClusterStack.cluster,
+                vpcId: baseStack.vpc.vpcId,
+                region: env.region!,
                 karpenterInterruptionQueueName: `${eksConfig.clusterName}-karpenter`,
                 workerNodeRoleArn: eksSystemNg.nodeRole.roleArn,
                 hostedZoneDomain,
@@ -810,7 +818,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 env, targetEnvironment: environment,
                 cluster: eksClusterStack.cluster,
                 workerNodeRole: eksSystemNg.nodeRole,
-                workerSecurityGroupId: baseStack.eksWorkersSg.securityGroupId,
+                workerSecurityGroupIdSsmPath: `${ssmPrefix}/eks/workers-sg-id`,
                 subnetTagKey: `kubernetes.io/cluster/${eksConfig.clusterName}`,
                 karpenter: eksConfig.karpenter,
             },
@@ -818,10 +826,15 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
         eksKarp.addDependency(eksAddons);
         stacks.push(eksKarp); stackMap.eksKarpenter = eksKarp;
 
-        // Access entries: optional GH OIDC + admin role from env vars; skip if neither set.
+        // Access entries: config-defined admins + optional GH OIDC / extra admin
+        // from env vars (CI injects GH_OIDC_ROLE_ARN; ADMIN_ROLE_ARN for ad-hoc).
         const ghOidcRoleArn = process.env.GH_OIDC_ROLE_ARN;
         const adminRoleArn = process.env.ADMIN_ROLE_ARN;
-        const accessPrincipals = [ghOidcRoleArn, adminRoleArn].filter((a): a is string => !!a);
+        const accessPrincipals = Array.from(new Set([
+            ...eksConfig.adminPrincipalArns,
+            ghOidcRoleArn,
+            adminRoleArn,
+        ].filter((a): a is string => !!a)));
         const eksAccess = new EksAccessStack(
             scope,
             stackId(this.namespace, 'EksAccess', environment),
@@ -829,6 +842,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 env, targetEnvironment: environment,
                 cluster: eksClusterStack.cluster,
                 principalArns: accessPrincipals,
+                adminPrincipalArnsSsmPath: adminArnsSsmPath,
             },
         );
         eksAccess.addDependency(eksClusterStack);

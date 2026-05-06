@@ -118,6 +118,18 @@ bootstrap account profile *ARGS:
       --toolkit-stack-name CDKToolkit \
       {{ARGS}}
 
+# Apply the CDKCloudFormationEx + AssumeCDKRoles policies and re-bootstrap
+# the target account. Wraps `infra/scripts/bootstrap/environment-deployment.sh`,
+# which reads ACCOUNT_ID / REGION / PROFILE / CDK_QUALIFIER from the repo
+# root `.env` file. Use after editing
+# `infra/scripts/bootstrap/policies/CDKCloudFormationEx.json` to push the
+# updated policy + re-bootstrap.
+#
+# Usage: just bootstrap-env
+[group('cdk')]
+bootstrap-env:
+    bash infra/scripts/bootstrap/environment-deployment.sh
+
 # List all CloudFormation stacks in the account
 # Shows: stack name, status, creation time, and drift status.
 # Usage: just cfn-stacks development

@@ -1,7 +1,7 @@
 /** @format */
 process.env.AWS_ACCOUNT_ID = '123456789012';
 
-import { KubectlV30Layer } from '@aws-cdk/lambda-layer-kubectl-v30';
+import { KubectlV34Layer } from '@aws-cdk/lambda-layer-kubectl-v34';
 
 import { Template } from 'aws-cdk-lib/assertions';
 import * as eks from 'aws-cdk-lib/aws-eks';
@@ -18,8 +18,8 @@ describe('EksPodIdentityStack', () => {
         });
         const cluster = new eks.Cluster(clusterStack, 'Cluster', {
             clusterName: 'k8s-eks-development',
-            version: eks.KubernetesVersion.V1_30,
-            kubectlLayer: new KubectlV30Layer(clusterStack, 'KubectlLayer'),
+            version: eks.KubernetesVersion.V1_34,
+            kubectlLayer: new KubectlV34Layer(clusterStack, 'KubectlLayer'),
             defaultCapacity: 0,
         });
         const stack = new EksPodIdentityStack(app, 'PodId', {
@@ -49,6 +49,13 @@ describe('EksPodIdentityStack', () => {
             Namespace: 'karpenter',
             ServiceAccount: 'karpenter',
         });
+        // Foundational managed addons live in this stack so they survive a
+        // Helm-chart rollback in EksAddonsStack.
+        t.resourceCountIs('AWS::EKS::Addon', 4);
+        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'vpc-cni' });
+        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'eks-pod-identity-agent' });
+        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'coredns' });
+        t.hasResourceProperties('AWS::EKS::Addon', { AddonName: 'kube-proxy' });
     });
 
     it('should expose roles map keyed by purpose', () => {
@@ -58,8 +65,8 @@ describe('EksPodIdentityStack', () => {
         });
         const cluster = new eks.Cluster(clusterStack, 'Cluster', {
             clusterName: 'k8s-eks-development',
-            version: eks.KubernetesVersion.V1_30,
-            kubectlLayer: new KubectlV30Layer(clusterStack, 'KubectlLayer'),
+            version: eks.KubernetesVersion.V1_34,
+            kubectlLayer: new KubectlV34Layer(clusterStack, 'KubectlLayer'),
             defaultCapacity: 0,
         });
         const stack = new EksPodIdentityStack(app, 'PodId', {

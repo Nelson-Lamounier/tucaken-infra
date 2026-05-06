@@ -1,0 +1,136 @@
+# @format
+# Reusable: install ArgoCD on an EKS cluster, idempotent.
+# Caller: bootstrap-argocd.yml.
+# Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 7.3
+#       docs/superpowers/plans/2026-05-05-eks-migration-04-argocd-bootstrap.md
+#
+# What this does (re-runnable on every dispatch):
+#   1. Configures kubectl against the target EKS cluster.
+#   2. helm upgrade --install argo-cd (chart 7.7.5) using
+#      kubernetes-bootstrap/charts/argocd-eks/values.yaml.
+#   3. Waits for every argocd Deployment to become Available.
+#   4. Applies the cluster's root-app manifest from kubernetes-bootstrap.
+#   5. Installs the argocd CLI in the runner for diagnostic steps.
+#
+# What it does NOT do:
+#   - SSH deploy-key wiring. The root-app uses HTTPS against the public
+#     kubernetes-bootstrap repo, so read-side reconciliation needs no
+#     credentials. Image Updater (write side) manages its own deploy key
+#     inside its workload chart.
+#
+# Security: consumes only inputs.*, vars.*, secrets.*. No github.event.*
+# free-text is interpolated into shell. All workflow-input values that
+# reach `run:` are first hoisted into env: vars and quoted, per
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+name: Install ArgoCD on EKS (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (development | staging | production)"
+        required: true
+        type: string
+      cluster-name:
+        description: "EKS cluster name (e.g. k8s-eks-development)"
+        required: true
+        type: string
+      argocd-chart-version:
+        description: "argo-cd Helm chart version"
+        required: false
+        type: string
+        default: "7.7.5"
+      kubernetes-bootstrap-ref:
+        description: "Branch/tag/sha of Nelson-Lamounier/kubernetes-bootstrap to read values + root-app from"
+        required: false
+        type: string
+        default: "main"
+    secrets:
+      AWS_OIDC_ROLE:
+        description: "AWS OIDC role ARN with EKS Access Entry cluster-admin"
+        required: true
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+jobs:
+  install:
+    name: Install ArgoCD
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout cdk-monitoring (this repo, for actions/)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Checkout kubernetes-bootstrap (values + root-app)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: Nelson-Lamounier/kubernetes-bootstrap
+          ref: ${{ inputs.kubernetes-bootstrap-ref }}
+          path: kubernetes-bootstrap
+
+      - name: Configure AWS Credentials
+        uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        env:
+          CLUSTER: ${{ inputs.cluster-name }}
+        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      - name: Setup Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: v3.16.2
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: v1.31.2
+
+      - name: Install argocd CLI
+        env:
+          ARGOCD_VERSION: v2.13.0
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/argocd \
+            "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
+          sudo install -m 0755 /tmp/argocd /usr/local/bin/argocd
+          argocd version --client --short
+
+      - name: Helm upgrade --install argocd
+        env:
+          CHART_VERSION: ${{ inputs.argocd-chart-version }}
+        run: |
+          set -euo pipefail
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update argo
+          helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd --create-namespace \
+            --version "$CHART_VERSION" \
+            --values kubernetes-bootstrap/charts/argocd-eks/values.yaml \
+            --wait --timeout 10m
+
+      - name: Wait for ArgoCD deployments
+        run: |
+          kubectl -n argocd wait \
+            --for=condition=available deployment --all --timeout=5m
+
+      - name: Apply root Application
+        env:
+          ENV: ${{ inputs.environment }}
+        run: |
+          kubectl apply -f "kubernetes-bootstrap/argocd-apps/eks/root-app-${ENV}.yaml"
+
+      - name: Show ArgoCD state (diagnostic)
+        if: always()
+        run: |
+          kubectl -n argocd get pods,svc
+          kubectl -n argocd get applications.argoproj.io || true

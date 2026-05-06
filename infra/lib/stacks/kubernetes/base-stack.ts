@@ -305,7 +305,7 @@ export class KubernetesBaseStack extends cdk.Stack {
         this.eksWorkersSg = new ec2.SecurityGroup(this, 'EksWorkersSg', {
             vpc: this.vpc,
             securityGroupName: `eks-workers-${props.targetEnvironment}`,
-            description: 'EKS Karpenter-launched worker nodes — node-to-node + ELB ingress',
+            description: 'EKS Karpenter-launched worker nodes - node-to-node + ELB ingress',
             allowAllOutbound: true,
         });
         this.eksWorkersSg.addIngressRule(

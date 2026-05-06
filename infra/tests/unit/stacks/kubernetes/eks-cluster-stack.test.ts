@@ -22,7 +22,7 @@ describe('EksClusterStack', () => {
             targetEnvironment: Environment.DEVELOPMENT,
             vpc,
             clusterName: 'k8s-eks-development',
-            version: '1.30',
+            version: '1.34',
         });
         template = Template.fromStack(stack);
     });
@@ -34,7 +34,7 @@ describe('EksClusterStack', () => {
     it('should set the cluster name and Kubernetes version', () => {
         const json = JSON.stringify(template.toJSON());
         expect(json).toContain('k8s-eks-development');
-        expect(json).toContain('1.30');
+        expect(json).toContain('1.34');
     });
 
     it('should retain the KMS key', () => {

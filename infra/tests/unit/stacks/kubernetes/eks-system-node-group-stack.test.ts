@@ -1,7 +1,7 @@
 /** @format */
 process.env.AWS_ACCOUNT_ID = '123456789012';
 
-import { KubectlV30Layer } from '@aws-cdk/lambda-layer-kubectl-v30';
+import { KubectlV34Layer } from '@aws-cdk/lambda-layer-kubectl-v34';
 
 import { Template, Match } from 'aws-cdk-lib/assertions';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
@@ -23,8 +23,8 @@ describe('EksSystemNodeGroupStack', () => {
         const vpc = new ec2.Vpc(clusterStack, 'Vpc', { maxAzs: 3 });
         const cluster = new eks.Cluster(clusterStack, 'Cluster', {
             clusterName: 'k8s-eks-development',
-            version: eks.KubernetesVersion.V1_30,
-            kubectlLayer: new KubectlV30Layer(clusterStack, 'KubectlLayer'),
+            version: eks.KubernetesVersion.V1_34,
+            kubectlLayer: new KubectlV34Layer(clusterStack, 'KubectlLayer'),
             vpc,
             defaultCapacity: 0,
         });

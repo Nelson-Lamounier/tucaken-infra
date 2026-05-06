@@ -315,6 +315,8 @@ sm-a/                          ← entire bootstrap orchestrator deprecated
 
 Every deprecated YAML gets a top-of-file comment matching the TSDoc pattern (purpose, why deprecated, why kept, destroy order if applicable).
 
+**Status (V1, additive):** ✅ Done (2026-05-05) — see Plan 4 (`docs/superpowers/plans/2026-05-05-eks-migration-04-argocd-bootstrap.md`). `argocd-apps/eks/development/` created in `kubernetes-bootstrap` (PR #4). Root app `eks-root-development` reconciles the (initially empty) directory with `allowEmpty: true`. Kubeadm tree untouched. Runbook `docs/runbooks/argocd-on-eks.md` documents the one-time Helm install + deploy-key wiring. The `_deprecated_kubeadm/` rename + `sm-a` deprecation are deferred to Plan 6 (post-cutover).
+
 ### 7.4 Chart fate table
 
 | Chart | V1 fate | V2 fate | Notes |

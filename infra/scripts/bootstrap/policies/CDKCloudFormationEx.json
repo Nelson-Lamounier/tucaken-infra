@@ -192,6 +192,18 @@
       "Resource": "*"
     },
     {
+      "Sid": "EksClusterAndNodegroups",
+      "Effect": "Allow",
+      "Action": ["eks:*"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PricingForKarpenter",
+      "Effect": "Allow",
+      "Action": ["pricing:GetProducts"],
+      "Resource": "*"
+    },
+    {
       "Sid": "FinOpsServices",
       "Effect": "Allow",
       "Action": "budgets:*",

@@ -104,13 +104,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-cdk/lambda-layer-kubectl-v30@npm:^2.0.4":
-  version: 2.0.4
-  resolution: "@aws-cdk/lambda-layer-kubectl-v30@npm:2.0.4"
+"@aws-cdk/lambda-layer-kubectl-v34@npm:^2.2.1":
+  version: 2.2.1
+  resolution: "@aws-cdk/lambda-layer-kubectl-v34@npm:2.2.1"
   peerDependencies:
-    aws-cdk-lib: ^2.85.0
+    aws-cdk-lib: ^2.224.0
     constructs: ^10.0.5
-  checksum: 10c0/df9de518a9e8cdb753a17560fcc3f7d5e77bcc3df9bb4dfe7890cc4d21884776331716992d921065ec255203944758a3bfdb0b2b0371dd9e333a49a5e9fee320
+  checksum: 10c0/64774f5227c98206a6d5bb413d5635897dda1d629515edc233066ac6b396e309946fb99b7b044ad006bc41ae92fb9ce57aef5f576acc564cec7fc4b636e28549
   languageName: node
   linkType: hard
 
@@ -7662,7 +7662,7 @@ __metadata:
     "@aws-cdk/aws-bedrock-alpha": "npm:^2.243.0-alpha.0"
     "@aws-cdk/integ-runner": "npm:^2.197.8"
     "@aws-cdk/integ-tests-alpha": "npm:^2.197.0-alpha.0"
-    "@aws-cdk/lambda-layer-kubectl-v30": "npm:^2.0.4"
+    "@aws-cdk/lambda-layer-kubectl-v34": "npm:^2.2.1"
     "@aws-lambda-powertools/logger": "npm:^2.30.2"
     "@aws-sdk/client-acm": "npm:^3.1001.0"
     "@aws-sdk/client-api-gateway": "npm:^3.1001.0"

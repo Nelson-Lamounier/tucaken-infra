@@ -15,6 +15,7 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
 
 import { Construct } from 'constructs';
@@ -26,7 +27,12 @@ export interface EksKarpenterStackProps extends cdk.StackProps {
     readonly targetEnvironment: Environment;
     readonly cluster: eks.ICluster;
     readonly workerNodeRole: iam.IRole;
-    readonly workerSecurityGroupId: string;
+    /**
+     * SSM parameter path that holds the EKS workers security group ID.
+     * Resolved at deploy time via SSM dynamic reference — avoids CFN
+     * cross-stack exports (repo convention; see CLAUDE.md).
+     */
+    readonly workerSecurityGroupIdSsmPath: string;
     readonly subnetTagKey: string;
     readonly karpenter: EksKarpenterNodePoolConfig;
 }
@@ -36,6 +42,14 @@ export class EksKarpenterStack extends cdk.Stack {
 
     constructor(scope: Construct, id: string, props: EksKarpenterStackProps) {
         super(scope, id, props);
+
+        // Resolve the workers SG ID at deploy time from SSM. Avoids the
+        // CFN cross-stack export that would otherwise tie EksKarpenter's
+        // template to BaseStack's export name (CLAUDE.md convention).
+        const workerSecurityGroupId = ssm.StringParameter.valueForStringParameter(
+            this,
+            props.workerSecurityGroupIdSsmPath,
+        );
 
         this.interruptionQueue = new sqs.Queue(this, 'InterruptionQueue', {
             queueName: `${props.cluster.clusterName}-karpenter`,
@@ -85,10 +99,14 @@ export class EksKarpenterStack extends cdk.Stack {
                     kind: 'EC2NodeClass',
                     metadata: { name: 'workloads-default-class' },
                     spec: {
+                        // Karpenter v1 requires amiSelectorTerms. The AL2023
+                        // alias resolves to the EKS-optimized AL2023 AMI for
+                        // the cluster's Kubernetes version automatically.
                         amiFamily: 'AL2023',
+                        amiSelectorTerms: [{ alias: 'al2023@latest' }],
                         role: cdk.Fn.select(1, cdk.Fn.split('/', props.workerNodeRole.roleArn)),
                         subnetSelectorTerms: [{ tags: { [props.subnetTagKey]: 'shared' } }],
-                        securityGroupSelectorTerms: [{ id: props.workerSecurityGroupId }],
+                        securityGroupSelectorTerms: [{ id: workerSecurityGroupId }],
                         tags: { 'eks-cluster-pool': 'workloads-default' },
                     },
                 },

@@ -44,66 +44,99 @@ Internet
 
 ---
 
-## § 0 — Open Questions (MUST resolve before § 1)
+## § 0 — Resolved Questions (signed off 2026-05-06)
 
-**Each open question gates execution.** Do not start cleanup until every item below is answered and the answers are recorded in this file.
+All open questions answered. Phase 1 unblocked.
 
-### 0.1 Hosted zone topology audit
-ExternalDNS Pod Identity role currently grants `route53:ChangeResourceRecordSets` only on `arn:aws:route53:::hostedzone/Z04763221QPB6CZ9R77GM`. The dev SSO admin cannot read that zone (`AccessDenied` on `GetHostedZone`).
+### 0.1 Hosted zone topology — RESOLVED
 
-- [ ] In which account does `Z04763221QPB6CZ9R77GM` live? (Run `aws route53 get-hosted-zone --id Z04763221QPB6CZ9R77GM` against mgmt-account profile.)
-- [ ] What domain is it? (Likely `nelsonlamounier.com` or a sub-domain.)
-- [ ] Where do `tucaken.io` and `tucaken.com` live? (Production hosted zones — almost certainly mgmt account; ExternalDNS dev role has no access.)
-- [ ] Who else writes to `Z04763221QPB6CZ9R77GM`? Audit existing record set count and any non-ExternalDNS authorship.
+All 3 hosted zones live in **mgmt-account `711387127421`**:
+- `nelsonlamounier.com` → `Z04763221QPB6CZ9R77GM` (11 records).
+- `tucaken.com` → `Z0985246TCY2EVREXYCY` (6 records).
+- `tucaken.io` → `Z08895352CON78PXZQ6IB` (6 records).
 
-### 0.2 ACM certificate strategy
-ALB requires certificates in the same region as the ALB (eu-west-1). CloudFront requires us-east-1.
+ExternalDNS dev-account role's policy resource ARN references the cross-account `nelsonlamounier.com` zone but lacks `sts:AssumeRole`, so direct `ChangeResourceRecordSets` would currently fail with AccessDenied. No TXT records exist yet (no records ExternalDNS would have written) — confirms ExternalDNS has been a no-op since install. No other writers detected. Safe to keep `--txt-owner-id=eks-development`.
 
-- [ ] **eu-west-1 ALB cert(s)**: one wildcard cert covering all dev domains, OR per-domain certs attached via SNI? AWS Load Balancer Controller can attach up to 25 certs per ALB.
-- [ ] **DNS validation**: ACM creates `_acme-challenge.<domain>` CNAME records. ExternalDNS does NOT manage these — needs either CDK-side ACM construct with `ValidationMethod: DNS` and `hostedZone` (and the DNS validation cross-account role) OR manual one-time creation.
-- [ ] **Cert renewal**: ACM auto-renews if the validation CNAME stays put. Confirm validation records are persistent (CDK-managed, not ephemeral).
-- [ ] **Wildcard scope**: `*.dev.nelsonlamounier.com` covers admin + workloads but not `nelsonlamounier.com` apex; need separate or SAN.
-- [ ] **Existing certs**: 3 ISSUED certs for `nelsonlamounier.com` already in eu-west-1 ACM — reuse one or provision fresh.
+### 0.2 ACM certificate strategy — RESOLVED
 
-### 0.3 ExternalDNS multi-domain configuration
-Current state: `--domain-filter=nelsonlamounier.com` only.
+**Single hostname space across all environments** (no `dev.` / `staging.` prefixes; solo developer simplification). Three eu-west-1 wildcard certs cover everything:
 
-- [ ] Add `--domain-filter=tucaken.io` and `--domain-filter=tucaken.com` — but ExternalDNS dev role can't write to those zones (mgmt-account).
-- [ ] Two paths:
-   - (a) **Single ExternalDNS, role chaining**: dev role assumes a cross-account R53 role (already exists at `arn:aws:iam::711387127421:role/Route53DnsValidationRole` per SSM `/k8s/development/cross-account-dns-role-arn`) for tucaken zones. Requires ExternalDNS args `--aws-assume-role` per zone.
-   - (b) **Two ExternalDNS instances**: one in dev account (nelsonlamounier), one configured to assume into mgmt for tucaken. Adds operational complexity.
-- [ ] Decision: which approach.
-- [ ] **TXT-owner-id**: currently `eks-development`. Will collide with any other ExternalDNS writing to the same zones. Confirm no other writers.
+| Cert | SANs | Provisioning |
+|---|---|---|
+| nelsonlamounier wildcard | `nelsonlamounier.com`, `*.nelsonlamounier.com` | **Reuse existing** `arn:aws:acm:eu-west-1:771826808455:certificate/ebdbea79-d5ab-4559-ad77-dea2146dc1c0` (already ISSUED). |
+| tucaken.io wildcard | `tucaken.io`, `*.tucaken.io` | New cert via CDK `acm.Certificate` with DNS validation through cross-account role. |
+| tucaken.com wildcard | `tucaken.com`, `*.tucaken.com` | New cert via CDK `acm.Certificate` with DNS validation through cross-account role. |
 
-### 0.4 Admin paths (`/argocd`, `/grafana`, `/prometheus`)
-Today on kubeadm: Traefik `IngressRoute` with `IPAllowlist` middleware on `ops.nelsonlamounier.com/argocd` etc. Need EKS equivalent.
+All 3 ARNs published to SSM at `/k8s/development/eks/alb-cert-arns/{nelsonlamounier,tucaken-io,tucaken-com}`. Workload Ingresses reference them via `alb.ingress.kubernetes.io/certificate-arn` (controller picks the right cert per host via SNI).
 
-- [ ] **Same ALB or separate?** With one shared ALB, admin paths can be host-based (`ops.dev.nelsonlamounier.com/argocd → argocd-server`) and gated by WAF rule scoped to that hostname.
-- [ ] **WAF IP-allowlist**: WebACL with an IP set rule scoped to `Host: ops.dev.nelsonlamounier.com`. Cost: ~$5/month + $1/rule.
-- [ ] **Source IP preservation**: ALB IP-target mode preserves source IP; WAF acts on it. Verify.
-- [ ] **Allowlist source**: SSM-stored CIDRs (existing pattern), refreshed via ESO. Confirm CIDRs are still relevant.
+ACM auto-renews via persistent DNS validation CNAMEs (CDK manages the `_acme-challenge.*` records through the cross-account role).
 
-### 0.5 CloudFront fate per environment
-3 distributions hardcode the dead kubeadm EIP today:
-- `EIXKG0VM7CBIS` `nelsonlamounier.com` (S3 + EIP)
-- `EAQTGLWU2USOL` `tucaken.io` + `www.tucaken.io` (EIP)
-- `E132LV40IHEC8R` `tucaken.com` + `www.tucaken.com` (EIP)
+### 0.3 ExternalDNS — RESOLVED: single instance + role chaining
 
-- [ ] **Dev environment**: kill all 3 distributions for dev; route Route53 directly at the ALB. ALB serves HTTPS via ACM; no caching tier in dev.
-- [ ] **Production / staging**: keep CloudFront in front of ALB; just swap origin from EIP → ALB DNS name. Caching, edge POPs, WAF tier preserved.
-- [ ] **S3 nextjs assets**: still served via CloudFront for prod (the static `/_next` paths). For dev, ALB can proxy to a local Service or skip caching.
+- ExternalDNS Pod Identity role (`EksPodIdentityStack`) gains `sts:AssumeRole` on `arn:aws:iam::711387127421:role/Route53DnsValidationRole`.
+- Cross-account role's policy must include `route53:ChangeResourceRecordSets` on all 3 zones (audit/extend in Phase 2).
+- Helm values (`EksAddonsStack`):
+  - `--domain-filter=nelsonlamounier.com`
+  - `--domain-filter=tucaken.io`
+  - `--domain-filter=tucaken.com`
+  - `--aws-assume-role=arn:aws:iam::711387127421:role/Route53DnsValidationRole`
+  - `--policy=upsert-only` (retain — never delete records on its own).
+  - `--txt-owner-id=eks-development` (retain).
+- Single instance handles all 3 zones via the assumed role.
 
-### 0.6 IngressGroup design
-- [ ] Single group `public` for all workload Ingresses (one ALB).
-- [ ] Group order (`alb.ingress.kubernetes.io/group.order`) per workload to control listener-rule precedence.
-- [ ] Default backend: a 404 service or pinned to one workload (probably nextjs apex).
-- [ ] Health checks: `/healthz` on each workload — confirm every chart exposes this path.
+### 0.4 Admin paths — RESOLVED
 
-### 0.7 Cleanup scope
-- [ ] Delete `argocd-apps/eks/development/traefik.yaml`. The Traefik Service + NLB will be removed by ArgoCD prune.
-- [ ] Delete `argocd-apps/eks/development/cert-manager.yaml` (controller App) + `cert-manager-config-eks-development` (issuer App) — ALB+ACM doesn't need them.
-- [ ] Decide fate of `charts/traefik/`, `charts/cert-manager-config/`: delete vs leave-but-unused. Suggest delete (kubeadm gone, no consumer).
-- [ ] Delete `charts/argocd-ingress/` (kubeadm-only Traefik IngressRoute for ArgoCD admin). Replace with EKS Ingress in `argocd-apps/eks/development/argocd-ingress.yaml`.
+| Decision | Answer |
+|---|---|
+| Same ALB or separate | **Same ALB**, single `IngressGroup: public`, host-based gating. |
+| WAF resource | New WAFv2 WebACL `eks-public-development` deployed via CDK in cdk-monitoring. |
+| Allowlist scope | Scope-down on `Host: admin.nelsonlamounier.com` AND `Host: ops.nelsonlamounier.com` → IP-set rule (allow these CIDRs only). |
+| Allowlist CIDR source | New SSM StringList `/shared/development/admin-allowlist-cidrs`. Initially populated with operator's home IP; refresh manually as needed (cron + ESO is a Phase 2+ enhancement). |
+| Public-api hardening | Same WebACL, separate scope-down on `Host: api.nelsonlamounier.com` with: AWSManagedRulesCommonRuleSet, AWSManagedRulesKnownBadInputsRuleSet, AWSManagedRulesSQLiRuleSet, AWSManagedRulesAmazonIpReputationList; rate-limit rule **2000 req/5min/IP** (AWS default; tune later). |
+| nextjs / tucaken fronts | Apply the AWS Managed Rule Sets only (no rate limit, no IP allowlist). |
+| Source IP preservation | ALB IP-target mode preserves source IP — WAF rules act on the actual client IP. |
+| Cost estimate | $5 base + $1×4 managed rule sets + $1×1 IP-set rule + $1×1 rate-limit rule ≈ **$11/month**. |
+
+### 0.5 CloudFront fate — RESOLVED: kill all 3 distributions across all environments
+
+ALB is the public endpoint everywhere. AWS Shield Standard at ALB. No CDN tier. If static-asset CDN is ever needed, add CloudFront in front of S3 only (not in front of ALB).
+
+Phase 5 of this plan deletes:
+- `EdgeStack` (dev + any env) — distribution `EIXKG0VM7CBIS`, S3 `nextjs-article-assets-development` origin stays for direct app access.
+- `TucakenEdgeStack` (dev + any env) — distributions `EAQTGLWU2USOL`, `E132LV40IHEC8R`.
+- 8 us-east-1 ACM certs become orphaned (free to leave; cleanup PR optional).
+
+Route53 records (apex + www aliases) become A/AAAA aliases pointing at the ALB DNS name, written by ExternalDNS from workload Ingress hostnames.
+
+### 0.6 IngressGroup design — RESOLVED
+
+Single ALB, single group `public`. Bare hostnames (no env prefix).
+
+| Workload | Host(s) | group.order | WAF tier |
+|---|---|---|---|
+| admin-api | `admin.nelsonlamounier.com` | `100` | IP allowlist |
+| public-api | `api.nelsonlamounier.com` | `200` | Managed rules + 2000/5m rate limit |
+| tucaken-app .io | `tucaken.io`, `www.tucaken.io` | `300` | Managed rules |
+| tucaken-app .com | `tucaken.com`, `www.tucaken.com` | `400` | Managed rules |
+| ops admin (argocd/grafana/prometheus) | `ops.nelsonlamounier.com` | `500` | IP allowlist |
+| nextjs (apex catch-all) | `nelsonlamounier.com`, `www.nelsonlamounier.com` | `900` | Managed rules |
+
+Default backend: ALB returns 404 for unmatched rules — no default-backend Service needed.
+
+Health checks: `/healthz` on each workload Service. Audit each workload chart in Phase 6 to confirm the path exists.
+
+### 0.7 Cleanup scope — RESOLVED: aggressive cleanup in Phase 1
+
+Delete:
+- `argocd-apps/eks/development/traefik.yaml` (App).
+- `argocd-apps/eks/development/cert-manager.yaml` (App, both manifest entries).
+- `charts/traefik/` (entire directory).
+- `charts/cert-manager-config/` (entire directory).
+- `charts/argocd-ingress/` (kubeadm-only Traefik IngressRoute; replace via Phase 4 ALB Ingress).
+
+Keep (still in use):
+- `charts/argocd-eks/values.yaml` (ArgoCD bootstrap workflow).
+- All other `argocd-apps/eks/development/*.yaml` Apps from Plan 5 foundation.
 
 ---
 
@@ -253,7 +286,7 @@ Net change versus Plan 5 V1: NLB→ALB cost-neutral; +$10 WAF; -Traefik chart ma
 
 | Section | State | Date |
 |---|---|---|
-| § 0 Open Questions | 🔴 unresolved — must finish before § 1 starts | 2026-05-06 |
+| § 0 Open Questions | ✅ resolved | 2026-05-06 |
 | Phase 1 Cleanup | 🔴 not started | — |
 | Phase 2 DNS+ACM | 🔴 not started | — |
 | Phase 3 Workload template | 🔴 not started | — |

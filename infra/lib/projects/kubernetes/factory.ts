@@ -894,7 +894,18 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             {
                 env, targetEnvironment: environment,
                 allowlistCidrsSsmPath: `/shared/${environment}/admin-allowlist-cidrs`,
-                allowlistedHosts: ['admin.nelsonlamounier.com', 'ops.nelsonlamounier.com'],
+                allowlistedHosts: [
+                    'admin.nelsonlamounier.com',
+                    'ops.nelsonlamounier.com',
+                    // Tucaken pre-launch IP gate — application is still
+                    // under development. Drop these four entries when
+                    // going public; the AWS Managed Rule Sets and ACM
+                    // wildcards remain.
+                    'tucaken.io',
+                    'www.tucaken.io',
+                    'tucaken.com',
+                    'www.tucaken.com',
+                ],
                 rateLimitedHosts: ['api.nelsonlamounier.com'],
                 rateLimitPerIp: 2000,
                 ssmPrefix,

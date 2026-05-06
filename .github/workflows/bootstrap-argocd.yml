@@ -50,4 +50,5 @@ jobs:
       cluster-name: k8s-eks-${{ inputs.environment }}
       argocd-chart-version: ${{ inputs.argocd-chart-version }}
       kubernetes-bootstrap-ref: ${{ inputs.kubernetes-bootstrap-ref }}
-    secrets: inherit
+    secrets:
+      AWS_OIDC_ROLE: ${{ secrets.AWS_OIDC_ROLE }}

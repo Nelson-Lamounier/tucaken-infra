@@ -38,7 +38,7 @@ export class EksAccessStack extends cdk.Stack {
 
         const allArns = Array.from(new Set([...props.principalArns, ...fromSsm]));
         for (const arn of allArns) {
-            const slug = arn.split('/').pop()!.replace(/[^a-zA-Z0-9]/g, '');
+            const slug = arn.split('/').pop()!.replaceAll(/[^a-zA-Z0-9]/g, '');
             new eks.AccessEntry(this, `Entry${slug}`, {
                 cluster: props.cluster,
                 principal: arn,

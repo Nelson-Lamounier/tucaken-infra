@@ -51,6 +51,39 @@ export class EksPodIdentityStack extends cdk.Stack {
             resolveConflicts: 'OVERWRITE',
         });
 
+        // CoreDNS — EKS auto-installs the Deployment without our system
+        // toleration. Default scheduling fails on a single-pool cluster
+        // where every node has `dedicated=system:NoSchedule`. Pending
+        // CoreDNS → no cluster DNS → every Helm chart that resolves an
+        // AWS endpoint at boot (Karpenter, ALB controller, ESO) fails
+        // its API connectivity check and CrashLoops, which in turn
+        // causes the Helm `wait: true` custom resource to time out and
+        // rolls the addons stack back. Managed addon with explicit
+        // tolerations side-steps the issue and stays put across stack
+        // rollbacks because it lives here, not in EksAddonsStack.
+        new eks.CfnAddon(this, 'CoreDns', {
+            clusterName: props.cluster.clusterName,
+            addonName: 'coredns',
+            resolveConflicts: 'OVERWRITE',
+            configurationValues: JSON.stringify({
+                tolerations: [
+                    { key: 'dedicated', value: 'system', effect: 'NoSchedule' },
+                    { key: 'CriticalAddonsOnly', operator: 'Exists' },
+                ],
+            }),
+        });
+
+        // kube-proxy — same scheduling issue as CoreDNS would apply if
+        // EKS shipped it as a Deployment, but it's a DaemonSet that
+        // tolerates everything by default. Still pin via managed addon
+        // so version is in lock-step with the cluster control plane
+        // (kube-proxy/kubelet skew is the #1 EKS upgrade footgun).
+        new eks.CfnAddon(this, 'KubeProxy', {
+            clusterName: props.cluster.clusterName,
+            addonName: 'kube-proxy',
+            resolveConflicts: 'OVERWRITE',
+        });
+
         const podIdentityPrincipal = new iam.ServicePrincipal('pods.eks.amazonaws.com');
 
         for (const b of props.bindings) {

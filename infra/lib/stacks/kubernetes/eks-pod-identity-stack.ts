@@ -189,6 +189,21 @@ export class EksPodIdentityStack extends cdk.Stack {
                         resources: [props.workerNodeRoleArn],
                     }),
                 );
+                // Karpenter resolves AMI aliases (e.g. `al2023@latest`) by
+                // reading EKS-published SSM parameters under
+                // /aws/service/eks/optimized-ami/*. Without this, alias
+                // discovery silently returns zero AMIs and EC2NodeClass
+                // stays AMIsReady=Unknown ("DependenciesNotReady"), which
+                // blocks every NodePool from provisioning.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        actions: ['ssm:GetParameter'],
+                        resources: [
+                            `arn:aws:ssm:${cdk.Stack.of(this).region}::parameter/aws/service/eks/optimized-ami/*`,
+                            `arn:aws:ssm:${cdk.Stack.of(this).region}::parameter/aws/service/bottlerocket/*`,
+                        ],
+                    }),
+                );
                 break;
             case 'alb-controller':
                 // V1: coarse policy. Replace with vendored AWS-published JSON

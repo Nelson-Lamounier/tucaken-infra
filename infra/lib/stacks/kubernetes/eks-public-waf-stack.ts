@@ -18,6 +18,7 @@
  * Lives in eu-west-1 because REGIONAL WebACLs must share a region with
  * the ALB they attach to.
  */
+import { CfnPodIdentityAssociation } from 'aws-cdk-lib/aws-eks';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -220,7 +221,7 @@ def handler(event, context):
             }));
 
             // Pod Identity association: tucaken-app/waf-annotator → role
-            new (require('aws-cdk-lib/aws-eks').CfnPodIdentityAssociation)(this, 'WafAnnotatorPodIdentity', {
+            new CfnPodIdentityAssociation(this, 'WafAnnotatorPodIdentity', {
                 clusterName: props.clusterName,
                 namespace: 'tucaken-app',
                 serviceAccount: 'waf-annotator',

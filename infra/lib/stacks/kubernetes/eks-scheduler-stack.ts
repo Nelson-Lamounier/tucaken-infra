@@ -45,14 +45,21 @@ export class EksSchedulerStack extends cdk.Stack {
 
         lambdaRole.addToPolicy(
             new iam.PolicyStatement({
+                actions: ['eks:ListNodegroups'],
+                resources: [cluster.clusterArn],
+            }),
+        );
+
+        lambdaRole.addToPolicy(
+            new iam.PolicyStatement({
                 actions: [
                     'eks:UpdateNodegroupConfig',
                     'eks:DescribeNodegroup',
-                    'eks:ListNodegroups',
                 ],
+                // nodegroup ARN format: arn:partition:eks:region:account:nodegroup/cluster-name/ng-name/id
+                // NOT under the cluster ARN — different resource namespace
                 resources: [
-                    cluster.clusterArn,
-                    `${cluster.clusterArn}/nodegroup/*`,
+                    `arn:${cdk.Aws.PARTITION}:eks:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:nodegroup/${cluster.clusterName}/*/*`,
                 ],
             }),
         );
@@ -77,12 +84,17 @@ export class EksSchedulerStack extends cdk.Stack {
         );
 
         // DescribeInstances requires * — no resource-level restriction exists for Describe APIs.
+        // eks:UpdateNodegroupConfig/DescribeNodegroup require nodegroup/*/*  (wildcard over ng-name + uuid).
         NagSuppressions.addResourceSuppressions(lambdaRole, [
             {
                 id: 'AwsSolutions-IAM5',
                 reason: 'ec2:DescribeInstances has no resource-level restriction in IAM. ' +
-                        'ec2:TerminateInstances is tag-conditioned to eks-cluster-pool=workloads-default.',
-                appliesTo: ['Resource::*'],
+                        'ec2:TerminateInstances is tag-conditioned to eks-cluster-pool=workloads-default. ' +
+                        'eks nodegroup actions scoped to nodegroup/<cluster>/*/* (uuid not known at synth time).',
+                appliesTo: [
+                    'Resource::*',
+                    { regex: '/^Resource::.*:nodegroup\\/.*\\/\\*\\/\\*/' },
+                ],
             },
         ], true);
 
@@ -108,7 +120,7 @@ def handler(event, context):
     client.update_nodegroup_config(
         clusterName=os.environ['CLUSTER_NAME'],
         nodegroupName=os.environ['NODEGROUP_NAME'],
-        scalingConfig={'minSize': 3, 'desiredSize': 3, 'maxSize': 4},
+        scalingConfig={'minSize': 3, 'desiredSize': 3},
     )
     log.info('Scaled MNG to 3')
     return {'status': 'scaled-up'}
@@ -133,7 +145,7 @@ def handler(event, context):
     eks.update_nodegroup_config(
         clusterName=os.environ['CLUSTER_NAME'],
         nodegroupName=os.environ['NODEGROUP_NAME'],
-        scalingConfig={'minSize': 0, 'desiredSize': 0, 'maxSize': 4},
+        scalingConfig={'minSize': 0, 'desiredSize': 0},
     )
     log.info('Scaled MNG to 0')
     resp = ec2.describe_instances(

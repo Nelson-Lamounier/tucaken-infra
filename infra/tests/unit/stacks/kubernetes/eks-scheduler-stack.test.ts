@@ -8,6 +8,12 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { EksSchedulerStack } from '../../../../lib/stacks/kubernetes/eks-scheduler-stack';
 import { TEST_ENV_EU, createMockEksCluster } from '../../../fixtures';
 
+/** CDK renders single-action statements as a plain string, multi-action as an array. */
+function hasAction(stmt: Record<string, unknown>, action: string): boolean {
+    const a = stmt['Action'];
+    return a === action || (Array.isArray(a) && (a as string[]).includes(action));
+}
+
 function buildStack(): Template {
     const { app, cluster } = createMockEksCluster();
 
@@ -48,16 +54,22 @@ describe('EksSchedulerStack', () => {
         });
     });
 
-    it('should grant Lambda execution role eks:UpdateNodegroupConfig', () => {
-        template.hasResourceProperties('AWS::IAM::Policy', {
-            PolicyDocument: {
-                Statement: Match.arrayWith([
-                    Match.objectLike({
-                        Action: Match.arrayWith(['eks:UpdateNodegroupConfig']),
-                    }),
-                ]),
-            },
-        });
+    it('should put eks:UpdateNodegroupConfig in a separate statement from eks:ListNodegroups', () => {
+        // ListNodegroups scoped to cluster ARN; UpdateNodegroupConfig to nodegroup ARN —
+        // they must NOT be in the same statement.
+        const policies = template.findResources('AWS::IAM::Policy');
+        const statements = Object.values(policies).flatMap(
+            (p: Record<string, unknown>) =>
+                ((p as any).Properties.PolicyDocument.Statement as Record<string, unknown>[]),
+        );
+        const listStmt = statements.find((s) => hasAction(s, 'eks:ListNodegroups'));
+        const updateStmt = statements.find((s) => hasAction(s, 'eks:UpdateNodegroupConfig'));
+        expect(listStmt).toBeDefined();
+        expect(updateStmt).toBeDefined();
+        // They are separate statements (different IAM resources)
+        expect(listStmt).not.toStrictEqual(updateStmt);
+        expect(hasAction(listStmt!, 'eks:UpdateNodegroupConfig')).toBe(false);
+        expect(hasAction(updateStmt!, 'eks:ListNodegroups')).toBe(false);
     });
 
     it('should scope ec2:TerminateInstances to workload tag on Lambda execution role', () => {

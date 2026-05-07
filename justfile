@@ -306,6 +306,48 @@ dora-metrics:
 etcd-restore-rto:
     ./scripts/local/etcd-restore-rto-test.sh
 
+# Scale dev EKS cluster up (manual override — auto-start runs at 04:00 Dublin time)
+[group('eks')]
+dev-start env='development':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    CLUSTER="k8s-eks-{{env}}"
+    PROFILE=$(just _profile {{env}})
+    NG=$(aws eks list-nodegroups --cluster-name "$CLUSTER" \
+         --region eu-west-1 --profile "$PROFILE" \
+         --query 'nodegroups[0]' --output text)
+    aws eks update-nodegroup-config --cluster-name "$CLUSTER" \
+         --nodegroup-name "$NG" \
+         --scaling-config minSize=3,maxSize=4,desiredSize=3 \
+         --region eu-west-1 --profile "$PROFILE"
+    echo "Cluster starting — system nodes ready in ~3 min"
+
+# Scale dev EKS cluster down immediately (use before 23:00 Dublin backstop)
+[group('eks')]
+dev-shutdown env='development':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    CLUSTER="k8s-eks-{{env}}"
+    PROFILE=$(just _profile {{env}})
+    NG=$(aws eks list-nodegroups --cluster-name "$CLUSTER" \
+         --region eu-west-1 --profile "$PROFILE" \
+         --query 'nodegroups[0]' --output text)
+    aws eks update-nodegroup-config --cluster-name "$CLUSTER" \
+         --nodegroup-name "$NG" \
+         --scaling-config minSize=0,maxSize=4,desiredSize=0 \
+         --region eu-west-1 --profile "$PROFILE"
+    INSTANCES=$(aws ec2 describe-instances \
+         --filters "Name=tag:eks-cluster-pool,Values=workloads-default" \
+                   "Name=instance-state-name,Values=running" \
+         --query 'Reservations[].Instances[].InstanceId' \
+         --output text --region eu-west-1 --profile "$PROFILE")
+    if [ -n "$INSTANCES" ]; then
+        aws ec2 terminate-instances --instance-ids $INSTANCES \
+             --region eu-west-1 --profile "$PROFILE"
+        echo "Workload nodes terminated: $INSTANCES"
+    fi
+    echo "Cluster shutting down"
+
 
 # =============================================================================
 # CI SCRIPTS (Non-interactive — used by GitHub Actions)

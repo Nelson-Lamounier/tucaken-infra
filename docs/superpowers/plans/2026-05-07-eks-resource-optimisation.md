@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Eliminate 5 idle Karpenter workload nodes by moving monitoring onto system nodes, enable bin-packing via `WhenUnderutilized`, and add dev scheduled auto-start/stop with Ireland DST-safe EventBridge Scheduler.
+**Goal:** Achieve production-ready EKS resource allocation: zero idle Karpenter nodes at rest, bin-packing for all workloads, safe eviction for all apps, and dev scheduled start/stop.
 
-**Architecture:** Monitoring Helm charts in `kubernetes-bootstrap` gain `dedicated=system:NoSchedule` tolerations + preferred system node affinity; Karpenter NodePool switches to `WhenUnderutilized` (both envs); new `EksSchedulerStack` deploys two inline-Python Lambdas behind EventBridge Scheduler crons with `scheduleExpressionTimezone: Europe/Dublin` (dev only); Justfile adds `dev-start` and `dev-shutdown` recipes for manual override.
+**Architecture:** ALL cluster addons (cert-manager, traefik, metrics-server, argo-rollouts, argocd-image-updater) and monitoring charts gain `dedicated=system:NoSchedule` tolerations + preferred system node affinity — Karpenter provisions workload nodes only when application pods are scheduled. Karpenter NodePool switches to `WhenUnderutilized` for active bin-packing. All application workloads (nextjs, admin-api, public-api, tucaken-app, pipelines) gain PodDisruptionBudgets + resource requests/limits so eviction is safe and Karpenter can make accurate scheduling decisions. New `EksSchedulerStack` deploys two inline-Python Lambdas behind EventBridge Scheduler crons (`scheduleExpressionTimezone: Europe/Dublin`) for dev auto-start/stop. Justfile adds `dev-start` and `dev-shutdown` recipes for manual override.
 
 **Tech Stack:** AWS CDK v2 TypeScript, Python 3.14 Lambda (inline), AWS EventBridge Scheduler (`aws-cdk-lib/aws-scheduler`), Karpenter v1 NodePool CRD, Helm values YAML (kubernetes-bootstrap)
 
@@ -22,7 +22,9 @@
 | **Create** | `infra/tests/unit/kubernetes/eks-scheduler-stack.test.ts` | CDK assertions for scheduler stack |
 | Modify | `infra/lib/projects/kubernetes/factory.ts` | Register `EksSchedulerStack` (dev only) |
 | Modify | `justfile` | `dev-start`, `dev-shutdown` recipes |
-| Modify | `kubernetes-bootstrap` (separate repo) | Monitoring chart tolerations + node affinity |
+| Modify | `kubernetes-bootstrap` (separate repo) — monitoring charts | Tolerations + node affinity → system nodes |
+| Modify | `kubernetes-bootstrap` (separate repo) — cluster addon charts | cert-manager, traefik, metrics-server, argo-rollouts, argocd-image-updater → system nodes |
+| Modify | `kubernetes-bootstrap` (separate repo) — application charts | PDB + resource requests/limits on all wave 8 + wave 10 apps |
 
 ---
 
@@ -780,17 +782,322 @@ system nodes are at capacity."
 
 ---
 
+## Task 7: Cluster addon charts → system nodes (kubernetes-bootstrap)
+
+> **Repo:** `kubernetes-bootstrap`. Switch to it before this task.
+
+**Why:** cert-manager, traefik, metrics-server, argo-rollouts, and argocd-image-updater currently land on Karpenter workload nodes. Moving them to system nodes means zero Karpenter nodes survive when no application pods are scheduled — not just zero idle monitoring nodes.
+
+**Files:** Helm values for each addon chart in `argocd-apps/eks/`
+
+The toleration + affinity block to add is identical for all charts below. Call it **SYSTEM_SCHEDULING_BLOCK**:
+
+```yaml
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: system
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-role
+              operator: In
+              values: [system]
+```
+
+- [ ] **Step 1: Locate all addon values files**
+
+```bash
+find argocd-apps/eks -name "*.yaml" | xargs grep -l "cert-manager\|traefik\|metrics-server\|argo-rollouts\|argocd-image-updater" 2>/dev/null
+```
+
+- [ ] **Step 2: Add SYSTEM_SCHEDULING_BLOCK to cert-manager**
+
+In the cert-manager Helm values, add under the chart root key:
+```yaml
+# cert-manager controller
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: system
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-role
+              operator: In
+              values: [system]
+# webhook + cainjector use same toleration
+webhook:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: system
+      effect: NoSchedule
+cainjector:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: system
+      effect: NoSchedule
+startupapicheck:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: system
+      effect: NoSchedule
+```
+
+- [ ] **Step 3: Add SYSTEM_SCHEDULING_BLOCK to traefik**
+
+```yaml
+deployment:
+  podSpec:
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: system
+        effect: NoSchedule
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+                - key: node-role
+                  operator: In
+                  values: [system]
+```
+
+- [ ] **Step 4: Add SYSTEM_SCHEDULING_BLOCK to metrics-server**
+
+```yaml
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: system
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-role
+              operator: In
+              values: [system]
+```
+
+- [ ] **Step 5: Add SYSTEM_SCHEDULING_BLOCK to argo-rollouts**
+
+```yaml
+controller:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: system
+      effect: NoSchedule
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: node-role
+                operator: In
+                values: [system]
+dashboard:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: system
+      effect: NoSchedule
+```
+
+- [ ] **Step 6: Add SYSTEM_SCHEDULING_BLOCK to argocd-image-updater**
+
+```yaml
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: system
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-role
+              operator: In
+              values: [system]
+```
+
+- [ ] **Step 7: Validate YAML syntax for all modified files**
+
+```bash
+for f in $(git diff --name-only); do
+  python3 -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" "$f" && echo "OK: $f"
+done
+```
+
+Expected: `OK: <path>` for each file, no errors.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add $(git diff --name-only)
+git commit -m "feat(addons): move cluster addons to system nodes
+
+cert-manager, traefik, metrics-server, argo-rollouts, argocd-image-updater
+now prefer system nodes. Zero Karpenter workload nodes survive at rest —
+Karpenter only provisions when application pods are explicitly scheduled."
+```
+
+---
+
+## Task 8: Application workload production readiness (kubernetes-bootstrap)
+
+> **Repo:** `kubernetes-bootstrap`. Switch to it before this task.
+
+**Why:** `WhenUnderutilized` evicts pods and reschedules them to bin-pack nodes. Without PodDisruptionBudgets, multiple replicas of the same service can be evicted simultaneously — causing downtime. Without resource requests, Karpenter cannot make accurate bin-packing decisions and may over-provision nodes.
+
+**Apps to cover:**
+- Wave 8 (pipelines): `article-pipeline`, `ingestion`, `job-strategist`, `resume-import`
+- Wave 10 (user-facing): `admin-api`, `nextjs`, `public-api`, `tucaken-app`
+
+**Files:** Each app's Helm values or Kubernetes manifest in `argocd-apps/eks/`
+
+- [ ] **Step 1: Audit current resource requests across all 8 apps**
+
+```bash
+find argocd-apps/eks -name "*.yaml" | xargs grep -l "admin-api\|nextjs\|public-api\|tucaken-app\|article-pipeline\|ingestion\|job-strategist\|resume-import" 2>/dev/null
+```
+
+For each file found, check if `resources.requests` and `resources.limits` exist. Note any missing.
+
+- [ ] **Step 2: Add PodDisruptionBudget to all wave 10 user-facing apps**
+
+For `admin-api`, `nextjs`, `public-api`, `tucaken-app` — add a PDB manifest or Helm values block:
+
+```yaml
+# PDB pattern — add to each app's values or as a standalone manifest
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+```
+
+If the chart doesn't support PDB via values, add a standalone manifest alongside the ArgoCD Application:
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: <app-name>-pdb
+  namespace: <app-namespace>
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: <app-name>
+```
+
+- [ ] **Step 3: Add resource requests + limits to all 8 apps**
+
+Use these baselines — adjust per app if you know actual usage:
+
+| App | CPU request | CPU limit | Memory request | Memory limit |
+|-----|-------------|-----------|----------------|--------------|
+| nextjs | 100m | 500m | 256Mi | 512Mi |
+| admin-api | 100m | 500m | 256Mi | 512Mi |
+| public-api | 100m | 500m | 256Mi | 512Mi |
+| tucaken-app | 100m | 500m | 256Mi | 512Mi |
+| article-pipeline | 200m | 1000m | 512Mi | 1Gi |
+| ingestion | 200m | 1000m | 512Mi | 1Gi |
+| job-strategist | 200m | 1000m | 512Mi | 1Gi |
+| resume-import | 100m | 500m | 256Mi | 512Mi |
+
+In each app's Helm values:
+```yaml
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+```
+
+- [ ] **Step 4: Add topology spread constraints to wave 10 apps (multi-replica only)**
+
+For any app with `replicaCount > 1`, add AZ spread to prevent all pods landing on one AZ:
+
+```yaml
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app: <app-name>
+```
+
+- [ ] **Step 5: Validate YAML syntax for all modified files**
+
+```bash
+for f in $(git diff --name-only); do
+  python3 -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" "$f" && echo "OK: $f"
+done
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add $(git diff --name-only)
+git commit -m "feat(apps): add PDB, resource limits, and topology spread to all workloads
+
+All wave 8 pipeline apps and wave 10 user-facing apps now have:
+- PodDisruptionBudget (maxUnavailable: 1) — safe for WhenUnderutilized eviction
+- Resource requests/limits — accurate Karpenter bin-packing
+- Topology spread (wave 10 multi-replica apps) — AZ resilience"
+```
+
+---
+
 ## Verification: End-to-End Check
 
-After deploying all CDK changes and ArgoCD syncing the monitoring charts:
+After deploying all CDK changes and ArgoCD syncing all charts:
 
-- [ ] **Check node count drops to 3 (system only)**
+- [ ] **Check node count at rest (no active app deployments)**
 
 ```bash
 kubectl get nodes --context <dev-context>
 ```
 
 Expected: 3 nodes, all with label `node-role=system`.
+
+- [ ] **Check all addon + monitoring pods land on system nodes**
+
+```bash
+kubectl get pods -A -o wide --context <dev-context> | grep -v "app-namespace"
+```
+
+Expected: all system/addon/monitoring pods show system node names in NODE column.
+
+- [ ] **Verify PDBs exist for all wave 10 apps**
+
+```bash
+kubectl get pdb -A --context <dev-context>
+```
+
+Expected: PDB entry for `admin-api`, `nextjs`, `public-api`, `tucaken-app`.
 
 - [ ] **Check monitoring pods land on system nodes**
 

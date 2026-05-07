@@ -195,15 +195,12 @@ export class EksKarpenterStack extends cdk.Stack {
                             },
                         },
                         disruption: {
-                            // WhenUnderutilized continuously evaluates whether pods
-                            // can be bin-packed onto fewer nodes. This is the correct
-                            // policy for a dev cluster with low pod density — avoids
-                            // idle nodes each holding a single workload pod.
+                            // WhenEmptyOrUnderutilized actively bin-packs: evicts pods
+                            // from underutilised nodes so they can be deleted.
                             // WhenEmpty (previous) only removed fully empty nodes,
                             // leaving underutilised nodes permanently running.
-                            consolidationPolicy: 'WhenUnderutilized',
-                            // consolidateAfter is only valid on WhenEmpty; omit here.
-                            budgets: [{ nodes: '10%' }],
+                            consolidationPolicy: 'WhenEmptyOrUnderutilized',
+                            consolidateAfter: '1m',
                         },
                         limits: { cpu: 100 },
                     },

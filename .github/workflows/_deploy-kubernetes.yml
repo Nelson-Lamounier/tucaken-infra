@@ -10,22 +10,18 @@
 # Deploys the 9-stack K8s (kubeadm) infrastructure via CDK.
 # Provisions AWS resources; does NOT bootstrap Kubernetes.
 #
-# ─── Stack Deployment Order (10 stacks) ────────────────────────────
-#   0.  ✅ Verify BFF ECR  (pre-flight: confirm admin-api ECR repo exists
-#                           in Shared-Infra before any container push job)
+# ─── Stack Deployment Order (active stacks only) ─────────────────────
+# kubeadm stacks (ControlPlane, Workers, AppIam, Observability, Edge)
+# are deprecated — see infra/lib/stacks/kubernetes/deprecated/.
+# EKS stacks are deployed by _deploy-eks.yml.
+#
+#   0.  ✅ Verify BFF ECR  (pre-flight: confirm admin-api ECR repo exists)
 #   1.  Data             (DynamoDB + S3 + SSM Parameters)
 #   1b. ✅ Verify Data    (Integration test — DynamoDB, S3, SSM, CFn outputs)
 #   2.  Base             (VPC networking + SG + KMS + EBS + EIP)
 #   2b. ✅ Verify Base    (Integration test — VPC, SGs, KMS, EBS, EIP, Route53)
 #   2c. API              (API Gateway + Lambda) [parallel with 2, depends on 1]
-#   2d. Observability    (CloudWatch dashboard) [parallel with 2c, depends on 2b]
-#   2e. PlatformRds      (PostgreSQL 18 + SM secret + SSM params) [parallel, depends on 2b]
-#   3.  Compute          (Control Plane EC2 + ASG + AMI-refresh EventBridge/SFN)
-#   3b. General Pool ASG (Kubernetes-native worker nodes — general purpose)
-#   3c. Monitoring Pool  (Kubernetes-native worker nodes — observability taint)
-#   4.  AppIam           (Application-tier IAM grants)
-#   5.  Edge             (CloudFront + ACM + WAF in us-east-1)
-#   5b. ✅ Verify Edge    (Integration test — behaviour order, auth cookies, Set-Cookie)
+#   2d. PlatformRds      (PostgreSQL + SM secret + SSM params) [depends on 2b]
 #
 # ─── Post-Deploy ────────────────────────────────────────────────────
 #   6.  Deployment Failure Alert    (halt + preserve + alert)
@@ -89,16 +85,10 @@ jobs:
       commit-sha: ${{ github.sha }}
       commit-short-sha: ${{ steps.pipeline-setup.outputs.short-sha }}
       node-version: ${{ steps.setup-tools.outputs.node-version }}
-      # Stack names from synthesize-ci.ts (10-stack architecture)
+      # Active stack names (kubeadm stacks deprecated; EKS stacks in _deploy-eks.yml)
       data-stack: ${{ steps.synth.outputs.data }}
       base-stack: ${{ steps.synth.outputs.base }}
-      controlplane-stack: ${{ steps.synth.outputs.controlPlane }}
-      # ASG pool stacks — Kubernetes-native worker nodes
-      general-pool-stack: ${{ steps.synth.outputs.generalPool }}
-      monitoring-pool-stack: ${{ steps.synth.outputs.monitoringPool }}
-      appiam-stack: ${{ steps.synth.outputs.appIam }}
       api-stack: ${{ steps.synth.outputs.api }}
-      observability-stack: ${{ steps.synth.outputs.observability }}
       platform-rds-stack: ${{ steps.synth.outputs.platformRds }}
 
 
@@ -449,440 +439,6 @@ jobs:
         run: just ci-integration-test kubernetes/base-stack $CDK_ENV --verbose
 
   # ===========================================================================
-  # Deploy Compute Stack — Control Plane EC2 + ASG
-  # ===========================================================================
-  deploy-controlplane:
-    name: Deploy Control Plane
-    needs: [setup, deploy-base, verify-base-stack]
-    if: >-
-      always()
-      && needs.deploy-base.result == 'success'
-      && needs.verify-base-stack.result == 'success'
-    uses: ./.github/workflows/_deploy-stack.yml
-    with:
-      stack-name: ${{ needs.setup.outputs.controlplane-stack }}
-      project: kubernetes
-      environment: ${{ inputs.environment }}
-
-      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-      require-approval: ${{ inputs.require-approval }}
-      outputs-directory: "deployment-outputs"
-    secrets: inherit
-
-  # ===========================================================================
-  # Verify Control Plane Stack — Integration Tests Gate
-  #
-  # Runs integration tests that call real AWS APIs to validate the control
-  # plane deployment. Verifies EIP association to the running instance,
-  # security group attachment (cluster base, control plane, ingress), port
-  # rules on each SG, and CloudFormation outputs. Gates worker deployments.
-  # ===========================================================================
-  verify-controlplane-stack:
-    name: Verify Control Plane
-    needs: [setup, deploy-controlplane]
-    if: always() && needs.deploy-controlplane.result == 'success'
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
-    timeout-minutes: 10
-    environment: ${{ inputs.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Configure AWS Credentials
-        uses: ./.github/actions/configure-aws
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Environment and Dependencies
-        uses: ./.github/actions/setup-node-yarn
-        with:
-          node-version: ${{ needs.setup.outputs.node-version }}
-
-      - name: Install Dependencies
-        run: yarn install --immutable
-        working-directory: infra
-
-      - name: Run Control Plane Integration Tests
-        env:
-          CDK_ENV: ${{ inputs.cdk-environment }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-        run: just ci-integration-test kubernetes/control-plane-stack $CDK_ENV --verbose
-
-  # ===========================================================================
-  # Smoke Test AMI Refresh Lambdas (3b-gate)
-  #
-  # Invokes each of the three AMI refresh Lambda functions (UpdateLaunchTemplate,
-  # StartInstanceRefresh, CheckRefreshStatus) with a canary payload immediately
-  # after the ControlPlane stack is deployed. The test does NOT require real SSM
-  # data — it only distinguishes "crashes before SDK init" (TypeError = bundling
-  # regression) from "reaches real business logic" (SSM miss = Lambda is alive).
-  #
-  # Gates both worker pool deployments: if the Lambdas are broken, rolling
-  # worker instances after an AMI bake will silently fail.
-  # ===========================================================================
-  smoke-test-ami-refresh:
-    name: Smoke Test AMI Refresh Lambdas
-    needs: [setup, deploy-controlplane]
-    if: always() && needs.deploy-controlplane.result == 'success'
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
-    timeout-minutes: 5
-    environment: ${{ inputs.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Configure AWS Credentials
-        uses: ./.github/actions/configure-aws
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Discover AMI Refresh Lambda Functions
-        id: discover
-        shell: bash
-        env:
-          STACK_NAME: ${{ needs.setup.outputs.controlplane-stack }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-        run: |
-          set -euo pipefail
-
-          LAMBDAS=$(aws cloudformation list-stack-resources \
-            --stack-name "$STACK_NAME" \
-            --region "$AWS_REGION" \
-            --query 'StackResourceSummaries[?ResourceType==`AWS::Lambda::Function` && contains(LogicalResourceId, `AmiRefresh`)].PhysicalResourceId' \
-            --output json | jq -c '.')
-
-          COUNT=$(echo "$LAMBDAS" | jq 'length')
-          if [ "$COUNT" -lt 3 ]; then
-            echo "::error::Expected 3 AmiRefresh Lambdas in $STACK_NAME, found $COUNT"
-            aws cloudformation list-stack-resources \
-              --stack-name "$STACK_NAME" \
-              --region "$AWS_REGION" \
-              --query 'StackResourceSummaries[?ResourceType==`AWS::Lambda::Function`].[LogicalResourceId,PhysicalResourceId]' \
-              --output table
-            exit 1
-          fi
-
-          echo "Discovered $COUNT AMI refresh Lambda functions:"
-          echo "$LAMBDAS" | jq -r '.[]' | sed 's/^/  /'
-          echo "lambda_names=$LAMBDAS" >> "$GITHUB_OUTPUT"
-
-      - name: Invoke AMI Refresh Lambdas (canary)
-        shell: bash
-        env:
-          LAMBDA_NAMES: ${{ steps.discover.outputs.lambda_names }}
-          CDK_ENV: ${{ inputs.cdk-environment }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-        run: |
-          set -euo pipefail
-
-          PAYLOAD='{"paramName":"/k8s/'"$CDK_ENV"'/golden-ami/latest","role":"workers"}'
-          FAILED=0
-
-          while IFS= read -r FN; do
-            echo ""
-            echo "── Invoking: $FN"
-
-            aws lambda invoke \
-              --function-name "$FN" \
-              --payload "$PAYLOAD" \
-              --cli-binary-format raw-in-base64-out \
-              --region "$AWS_REGION" \
-              /tmp/response.json \
-              --output json > /tmp/invoke_result.json
-
-            STATUS=$(jq -r '.StatusCode' /tmp/invoke_result.json)
-            FUNCTION_ERROR=$(jq -r '.FunctionError // empty' /tmp/invoke_result.json)
-
-            if [ "$STATUS" != "200" ]; then
-              echo "::error::$FN returned HTTP $STATUS — Lambda service error"
-              FAILED=1
-              continue
-            fi
-
-            if [ -n "$FUNCTION_ERROR" ]; then
-              ERROR_TYPE=$(jq -r '.errorType // ""' /tmp/response.json)
-              ERROR_MSG=$(jq -r '.errorMessage // ""' /tmp/response.json | head -c 200)
-
-              if echo "$ERROR_TYPE" | grep -qE "^(TypeError|ReferenceError|SyntaxError)$"; then
-                echo "::error::$FN crashed with $ERROR_TYPE: $ERROR_MSG"
-                echo "::error::Handler fails before any business logic — likely a bundling or client-instantiation regression."
-                FAILED=1
-              else
-                echo "  ⚠ Business error (Lambda is alive): $ERROR_TYPE — $ERROR_MSG"
-                echo "  Expected when SSM parameters are not yet populated."
-              fi
-            else
-              echo "  ✓ $FN succeeded"
-            fi
-          done < <(echo "$LAMBDA_NAMES" | jq -r '.[]')
-
-          if [ "$FAILED" != "0" ]; then
-            echo ""
-            echo "One or more AMI refresh Lambdas failed the canary check."
-            echo "Check CloudWatch logs: aws logs tail /aws/lambda/<fn-name> --since 10m --region $AWS_REGION"
-            exit 1
-          fi
-
-          echo ""
-          echo "All AMI refresh Lambdas passed the canary check."
-
-  # ===========================================================================
-  # Deploy General Pool ASG Stack (3b) — General-Purpose ASG Pool
-  #
-  # Kubernetes-native KubernetesWorkerAsgStack (no taint).
-  # Hosts Next.js, tucaken-app, ArgoCD, and system components.
-  # ===========================================================================
-  deploy-general-pool:
-    name: Deploy General Pool ASG
-    needs: [setup, deploy-controlplane, verify-controlplane-stack, smoke-test-ami-refresh]
-    if: >-
-      always()
-      && needs.deploy-controlplane.result == 'success'
-      && needs.verify-controlplane-stack.result == 'success'
-      && needs.smoke-test-ami-refresh.result == 'success'
-    uses: ./.github/workflows/_deploy-stack.yml
-    with:
-      stack-name: ${{ needs.setup.outputs.general-pool-stack }}
-      project: kubernetes
-      environment: ${{ inputs.environment }}
-
-      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-      require-approval: ${{ inputs.require-approval }}
-      outputs-directory: "deployment-outputs"
-    secrets: inherit
-
-  # ===========================================================================
-  # Verify General Pool ASG Stack — Validate Launch Template, ASG, IAM, SSM tags
-  # ===========================================================================
-  verify-general-pool-stack:
-    name: Verify General Pool ASG
-    needs: [setup, deploy-general-pool]
-    if: always() && needs.deploy-general-pool.result == 'success'
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
-    timeout-minutes: 10
-    environment: ${{ inputs.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Configure AWS Credentials
-        uses: ./.github/actions/configure-aws
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Environment and Dependencies
-        uses: ./.github/actions/setup-node-yarn
-        with:
-          node-version: ${{ needs.setup.outputs.node-version }}
-
-      - name: Install Dependencies
-        run: yarn install --immutable
-        working-directory: infra
-
-      - name: Run General Pool Integration Tests
-        env:
-          CDK_ENV: ${{ inputs.cdk-environment }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-          WORKER_POOL: general
-        run: just ci-integration-test kubernetes/worker-asg-stack $CDK_ENV --testNamePattern="general-pool" --verbose
-
-  # ===========================================================================
-  # Deploy Monitoring Pool ASG Stack (3f) — Observability ASG Pool
-  #
-  # Parameterised KubernetesWorkerAsgStack for the monitoring pool.
-  # Tainted `dedicated=monitoring:NoSchedule` by the bootstrap script.
-  # Hosts Prometheus, Grafana, Loki, Tempo, and Alloy.
-  # ===========================================================================
-  deploy-monitoring-pool:
-    name: Deploy Monitoring Pool ASG
-    needs: [setup, deploy-controlplane, verify-controlplane-stack, smoke-test-ami-refresh, deploy-general-pool, verify-general-pool-stack]
-    if: >-
-      always()
-      && needs.deploy-controlplane.result == 'success'
-      && needs.verify-controlplane-stack.result == 'success'
-      && needs.smoke-test-ami-refresh.result == 'success'
-      && needs.deploy-general-pool.result == 'success'
-      && needs.verify-general-pool-stack.result == 'success'
-    uses: ./.github/workflows/_deploy-stack.yml
-    with:
-      stack-name: ${{ needs.setup.outputs.monitoring-pool-stack }}
-      project: kubernetes
-      environment: ${{ inputs.environment }}
-
-      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-      require-approval: ${{ inputs.require-approval }}
-      outputs-directory: "deployment-outputs"
-    secrets: inherit
-
-  # ===========================================================================
-  # Verify Monitoring Pool ASG Stack — Validate Launch Template, ASG, IAM, SNS, SSM tags
-  # ===========================================================================
-  verify-monitoring-pool-stack:
-    name: Verify Monitoring Pool ASG
-    needs: [setup, deploy-monitoring-pool]
-    if: always() && needs.deploy-monitoring-pool.result == 'success'
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
-    timeout-minutes: 10
-    environment: ${{ inputs.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Configure AWS Credentials
-        uses: ./.github/actions/configure-aws
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Environment and Dependencies
-        uses: ./.github/actions/setup-node-yarn
-        with:
-          node-version: ${{ needs.setup.outputs.node-version }}
-
-      - name: Install Dependencies
-        run: yarn install --immutable
-        working-directory: infra
-
-      - name: Run Monitoring Pool Integration Tests
-        env:
-          CDK_ENV: ${{ inputs.cdk-environment }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-          WORKER_POOL: monitoring
-        run: just ci-integration-test kubernetes/worker-asg-stack $CDK_ENV --testNamePattern="monitoring-pool" --verbose
-
-  # ===========================================================================
-  # Verify Launch Template AMI Consistency
-  #
-  # Confirms that every compute Launch Template (control-plane, general-pool,
-  # monitoring-pool) references the same AMI ID currently published to SSM
-  # by the kubernetes-bootstrap Golden AMI pipeline.
-  #
-  # A mismatch means the compute stack was not redeployed after the last AMI
-  # bake — any future ASG replacement would launch the stale image. This job
-  # runs in parallel with the individual pool verify jobs and gates AppIam.
-  #
-  # Vacuous pass when the SSM parameter does not yet exist (Day-0).
-  # ===========================================================================
-  verify-launch-template-ami:
-    name: Verify Launch Template AMI
-    needs:
-      - setup
-      - deploy-controlplane
-      - deploy-general-pool
-      - deploy-monitoring-pool
-    if: >-
-      always()
-      && needs.deploy-controlplane.result == 'success'
-      && needs.deploy-general-pool.result == 'success'
-      && needs.deploy-monitoring-pool.result == 'success'
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
-    timeout-minutes: 10
-    environment: ${{ inputs.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Configure AWS Credentials
-        uses: ./.github/actions/configure-aws
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Environment and Dependencies
-        uses: ./.github/actions/setup-node-yarn
-        with:
-          node-version: ${{ needs.setup.outputs.node-version }}
-
-      - name: Install Dependencies
-        run: yarn install --immutable
-        working-directory: infra
-
-      - name: Run Launch Template AMI Integration Tests
-        env:
-          CDK_ENV: ${{ inputs.cdk-environment }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-        run: just ci-integration-test kubernetes/launch-template-ami $CDK_ENV --verbose
-
-  # ===========================================================================
-  # Deploy AppIam Stack (4/8) — Application-tier IAM grants
-  #
-  # Hard-gated on both ASG pool verify jobs and the LT AMI check. If any pool
-  # stack fails or a stale AMI is detected, IAM grants must not proceed.
-  # ===========================================================================
-  deploy-appiam:
-    name: Deploy App IAM
-    needs:
-      - setup
-      - verify-bff-ecr
-      - deploy-general-pool
-      - deploy-monitoring-pool
-      - verify-general-pool-stack
-      - verify-monitoring-pool-stack
-      - verify-launch-template-ami
-    if: >-
-      always()
-      && needs.verify-bff-ecr.result == 'success'
-      && needs.deploy-general-pool.result == 'success'
-      && needs.deploy-monitoring-pool.result == 'success'
-      && needs.verify-general-pool-stack.result == 'success'
-      && needs.verify-monitoring-pool-stack.result == 'success'
-      && needs.verify-launch-template-ami.result == 'success'
-    uses: ./.github/workflows/_deploy-stack.yml
-    with:
-      stack-name: ${{ needs.setup.outputs.appiam-stack }}
-      project: kubernetes
-      environment: ${{ inputs.environment }}
-
-      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-      require-approval: ${{ inputs.require-approval }}
-      outputs-directory: "deployment-outputs"
-    secrets: inherit
-
-
-  # ===========================================================================
-  # Deploy Observability Stack (2f) — CloudWatch Pre-Deployment Dashboard
-  #
-  # Runs in parallel with Golden AMI, SSM Automation, and API stacks.
-  # Depends only on Base stack (SSM parameters must exist).
-  # Cost: $3.00/month — all metrics are standard AWS service metrics.
-  # ===========================================================================
-  deploy-observability:
-    name: Deploy Observability
-    needs: [setup, deploy-base, verify-base-stack]
-    if: >-
-      always()
-      && needs.deploy-base.result == 'success'
-      && needs.verify-base-stack.result == 'success'
-    uses: ./.github/workflows/_deploy-stack.yml
-    with:
-      stack-name: ${{ needs.setup.outputs.observability-stack }}
-      project: kubernetes
-      environment: ${{ inputs.environment }}
-
-      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-      require-approval: ${{ inputs.require-approval }}
-      outputs-directory: "deployment-outputs"
-    secrets: inherit
-
-  # ===========================================================================
   # Deploy Platform RDS Stack (2e) — PostgreSQL 18 + Secrets Manager + SSM
   #
   # Runs in parallel with ControlPlane, Observability, and API stacks.
@@ -923,14 +479,10 @@ jobs:
       [
         setup,
         verify-bff-ecr,
-        deploy-controlplane,
-        smoke-test-ami-refresh,
-        deploy-general-pool,
-        deploy-monitoring-pool,
+        deploy-data,
+        deploy-base,
         deploy-api,
-        deploy-observability,
         deploy-platform-rds,
-        verify-launch-template-ami,
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -939,14 +491,10 @@ jobs:
       always()
       && (
         needs.verify-bff-ecr.result == 'failure'
-        || needs.deploy-controlplane.result == 'failure'
-        || needs.smoke-test-ami-refresh.result == 'failure'
-        || needs.deploy-general-pool.result == 'failure'
-        || needs.deploy-monitoring-pool.result == 'failure'
+        || needs.deploy-data.result == 'failure'
+        || needs.deploy-base.result == 'failure'
         || needs.deploy-api.result == 'failure'
-        || needs.deploy-observability.result == 'failure'
         || needs.deploy-platform-rds.result == 'failure'
-        || needs.verify-launch-template-ami.result == 'failure'
       )
       && inputs.cdk-environment != 'development'
 
@@ -977,15 +525,16 @@ jobs:
           CDK_ENV: ${{ inputs.cdk-environment }}
           JOB_RESULTS: >-
             {
-              "control-plane": "${{ needs.deploy-controlplane.result }}",
-              "general-pool": "${{ needs.deploy-general-pool.result }}",
-              "monitoring-pool": "${{ needs.deploy-monitoring-pool.result }}"
+              "data": "${{ needs.deploy-data.result }}",
+              "base": "${{ needs.deploy-base.result }}",
+              "api": "${{ needs.deploy-api.result }}",
+              "platform-rds": "${{ needs.deploy-platform-rds.result }}"
             }
           RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           COMMIT_URL: "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
         run: |
           just ci-failure-report \
-            --stacks "${{ needs.setup.outputs.data-stack }},${{ needs.setup.outputs.base-stack }},${{ needs.setup.outputs.controlplane-stack }},${{ needs.setup.outputs.general-pool-stack }},${{ needs.setup.outputs.monitoring-pool-stack }},${{ needs.setup.outputs.appiam-stack }},${{ needs.setup.outputs.api-stack }}" \
+            --stacks "${{ needs.setup.outputs.data-stack }},${{ needs.setup.outputs.base-stack }},${{ needs.setup.outputs.api-stack }},${{ needs.setup.outputs.platform-rds-stack }}" \
             --region ${{ env.AWS_REGION }} \
             --ssm-prefix "/k8s/${{ inputs.cdk-environment }}"
 
@@ -998,14 +547,9 @@ jobs:
       - setup
       - verify-bff-ecr
       - deploy-data
-      - deploy-controlplane
-      - smoke-test-ami-refresh
-      - deploy-general-pool
-      - deploy-monitoring-pool
+      - deploy-base
       - deploy-api
-      - deploy-observability
       - deploy-platform-rds
-      - verify-launch-template-ami
       - deployment-failure-alert
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1077,14 +621,9 @@ jobs:
         if: steps.prereqs.outputs.skip != 'true'
         env:
           DEPLOY_DATA_RESULT: ${{ needs.deploy-data.result }}
-          DEPLOY_CONTROLPLANE_RESULT: ${{ needs.deploy-controlplane.result }}
-          DEPLOY_GENERAL_POOL_RESULT: ${{ needs.deploy-general-pool.result || 'skipped' }}
-          DEPLOY_MON_POOL_RESULT: ${{ needs.deploy-monitoring-pool.result || 'skipped' }}
+          DEPLOY_BASE_RESULT: ${{ needs.deploy-base.result }}
           DEPLOY_API_RESULT: ${{ needs.deploy-api.result || 'skipped' }}
-          DEPLOY_OBSERVABILITY_RESULT: ${{ needs.deploy-observability.result || 'skipped' }}
           DEPLOY_PLATFORM_RDS_RESULT: ${{ needs.deploy-platform-rds.result || 'skipped' }}
-          VERIFY_RESULT: "moved-to-ssm-pipeline"
-          SMOKE_TESTS_RESULT: ${{ needs.smoke-test-ami-refresh.result || 'skipped' }}
           ALERT_RESULT: ${{ needs.deployment-failure-alert.result || 'skipped' }}
           COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit-short-sha }}
         run: just ci-summary kubernetes ${{ inputs.cdk-environment }}

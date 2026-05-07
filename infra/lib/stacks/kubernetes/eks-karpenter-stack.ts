@@ -127,7 +127,11 @@ export class EksKarpenterStack extends cdk.Stack {
                             { id: workerSecurityGroupId },
                             { id: props.cluster.clusterSecurityGroupId },
                         ],
-                        tags: { 'eks-cluster-pool': 'workloads-default' },
+                        tags: {
+                            'eks-cluster-pool': 'workloads-default',
+                            // Human-readable name visible in AWS Console EC2 inventory.
+                            Name: 'k8s-eks-workload',
+                        },
                     },
                 },
             ],
@@ -143,6 +147,12 @@ export class EksKarpenterStack extends cdk.Stack {
                     metadata: { name: 'workloads-default' },
                     spec: {
                         template: {
+                            metadata: {
+                                // Exposes as label_node_role in kube-state-metrics,
+                                // matching the MNG node labelling convention and
+                                // the Grafana cluster dashboard filter variable.
+                                labels: { 'node-role': 'workload' },
+                            },
                             spec: {
                                 nodeClassRef: {
                                     group: 'karpenter.k8s.aws',
@@ -184,7 +194,17 @@ export class EksKarpenterStack extends cdk.Stack {
                                 expireAfter: '720h',
                             },
                         },
-                        disruption: { consolidationPolicy: 'WhenUnderutilized', consolidateAfter: '1m' },
+                        disruption: {
+                            // WhenUnderutilized continuously evaluates whether pods
+                            // can be bin-packed onto fewer nodes. This is the correct
+                            // policy for a dev cluster with low pod density — avoids
+                            // idle nodes each holding a single workload pod.
+                            // WhenEmpty (previous) only removed fully empty nodes,
+                            // leaving underutilised nodes permanently running.
+                            consolidationPolicy: 'WhenUnderutilized',
+                            // consolidateAfter is only valid on WhenEmpty; omit here.
+                            budgets: [{ nodes: '10%' }],
+                        },
                         limits: { cpu: 100 },
                     },
                 },

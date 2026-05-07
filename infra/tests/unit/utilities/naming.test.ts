@@ -71,7 +71,8 @@ describe('Naming Utilities', () => {
 
         it('should have expected k8s stack keys', () => {
             expect(Object.keys(STACK_REGISTRY.kubernetes)).toStrictEqual(
-                ['data', 'base', 'api', 'platformRds', 'controlPlane',
+                ['data', 'base', 'api', 'platformRds',
+                 'controlPlane', 'generalPool', 'monitoringPool', 'appIam', 'observability',
                  'eksCluster', 'eksSystemNg', 'eksPodIdentity',
                  'eksAddons', 'eksKarpenter', 'eksScheduler', 'eksAccess', 'eksAlbCerts', 'eksPublicWaf']
             );

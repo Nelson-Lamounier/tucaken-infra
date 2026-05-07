@@ -36,8 +36,12 @@ export const STACK_REGISTRY = {
         base: 'Base',
         api: 'Api',
         platformRds: 'PlatformRds',
-        // Deprecated kubeadm-era stacks — kept for integration test references
+        // Deprecated kubeadm-era stacks — kept for CI synth script + integration test references
         controlPlane: 'ControlPlane',
+        generalPool: 'GeneralPool',
+        monitoringPool: 'MonitoringPool',
+        appIam: 'AppIam',
+        observability: 'Observability',
         // EKS V1 stacks (primary deployment)
         eksCluster: 'EksCluster',
         eksSystemNg: 'EksSystemNg',

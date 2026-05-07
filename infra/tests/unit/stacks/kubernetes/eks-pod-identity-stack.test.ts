@@ -35,10 +35,10 @@ describe('EksPodIdentityStack', () => {
             Namespace: 'karpenter',
             ServiceAccount: 'karpenter',
         });
-        // Foundational managed addons live here so they survive a Helm-chart
-        // rollback in EksAddonsStack.
-        t.resourceCountIs('AWS::EKS::Addon', 4);
-        for (const name of ['vpc-cni', 'eks-pod-identity-agent', 'coredns', 'kube-proxy']) {
+        // vpc-cni and kube-proxy live in EksSystemNodeGroupStack (moved to break
+        // the node-ready deadlock). Only eks-pod-identity-agent and coredns here.
+        t.resourceCountIs('AWS::EKS::Addon', 2);
+        for (const name of ['eks-pod-identity-agent', 'coredns']) {
             t.hasResourceProperties('AWS::EKS::Addon', { AddonName: name });
         }
     });

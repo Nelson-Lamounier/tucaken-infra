@@ -32,7 +32,8 @@ export interface PodIdentityBinding {
         | 'alb-controller'
         | 'external-dns'
         | 'external-secrets'
-        | 'ebs-csi';
+        | 'ebs-csi'
+        | 'grafana-alerting';
 }
 
 export interface EksMngConfig {
@@ -67,6 +68,8 @@ export interface EksConfig {
     };
     /** IAM principals granted EKS cluster-admin via Access Entries. */
     readonly adminPrincipalArns: readonly string[];
+    /** SNS topic ARN for Grafana alert delivery. Omit to disable SNS alerting. */
+    readonly grafanaAlertingTopicArn?: string;
 }
 
 const COMMON_BINDINGS: readonly PodIdentityBinding[] = [
@@ -75,6 +78,7 @@ const COMMON_BINDINGS: readonly PodIdentityBinding[] = [
     { namespace: 'kube-system', serviceAccount: 'external-dns', purpose: 'external-dns' },
     { namespace: 'external-secrets', serviceAccount: 'external-secrets', purpose: 'external-secrets' },
     { namespace: 'kube-system', serviceAccount: 'ebs-csi-controller-sa', purpose: 'ebs-csi' },
+    { namespace: 'monitoring', serviceAccount: 'grafana', purpose: 'grafana-alerting' },
 ] as const;
 
 const COMMON_VERSIONS = {
@@ -112,6 +116,7 @@ export const EKS_CONFIGS: Record<DeployableEnvironment, Omit<EksConfig, 'adminPr
         podIdentityBindings: COMMON_BINDINGS,
         karpenter: COMMON_KARPENTER,
         versions: COMMON_VERSIONS,
+        grafanaAlertingTopicArn: 'arn:aws:sns:eu-west-1:771826808455:k8s-bootstrap-alarm',
     },
     [Environment.STAGING]: {
         clusterName: 'k8s-eks-staging',

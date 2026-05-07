@@ -383,6 +383,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 workerNodeRoleArn: eksSystemNg.nodeRole.roleArn,
                 hostedZoneIds: edgeConfig.hostedZoneId ? [edgeConfig.hostedZoneId] : [],
                 crossAccountDnsRoleArn: edgeConfig.crossAccountRoleArn,
+                grafanaAlertingTopicArn: eksConfig.grafanaAlertingTopicArn,
             },
         );
         eksPodId.addDependency(eksSystemNg);

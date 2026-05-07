@@ -36,6 +36,8 @@ export interface EksPodIdentityStackProps extends cdk.StackProps {
      * writes against `hostedZoneIds` in this account.
      */
     readonly crossAccountDnsRoleArn?: string;
+    /** SNS topic ARN that Grafana publishes alerts to. Required when a grafana-alerting binding is present. */
+    readonly grafanaAlertingTopicArn?: string;
 }
 
 export class EksPodIdentityStack extends cdk.Stack {
@@ -272,6 +274,17 @@ export class EksPodIdentityStack extends cdk.Stack {
                         'service-role/AmazonEBSCSIDriverPolicy',
                     ),
                 );
+                break;
+            case 'grafana-alerting':
+                if (props.grafanaAlertingTopicArn) {
+                    role.addToPolicy(
+                        new iam.PolicyStatement({
+                            sid: 'GrafanaPublishAlerts',
+                            actions: ['sns:Publish'],
+                            resources: [props.grafanaAlertingTopicArn],
+                        }),
+                    );
+                }
                 break;
         }
     }

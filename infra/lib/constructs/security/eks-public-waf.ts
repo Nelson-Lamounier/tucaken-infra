@@ -47,6 +47,10 @@ export interface EksPublicWafProps {
 export class EksPublicWafConstruct extends Construct {
     public readonly webAcl: wafv2.CfnWebACL;
     public readonly webAclArn: string;
+    /** undefined when no IPv4 CIDRs were supplied */
+    public readonly ipv4Set?: wafv2.CfnIPSet;
+    /** undefined when no IPv6 CIDRs were supplied */
+    public readonly ipv6Set?: wafv2.CfnIPSet;
 
     constructor(scope: Construct, id: string, props: EksPublicWafProps) {
         super(scope, id);
@@ -63,22 +67,22 @@ export class EksPublicWafConstruct extends Construct {
         const ipSetRefs: wafv2.CfnWebACL.StatementProperty[] = [];
         if (hasAllowlist) {
             if (props.allowlistedIpv4.length > 0) {
-                const v4Set = new wafv2.CfnIPSet(this, 'AllowIpv4', {
+                this.ipv4Set = new wafv2.CfnIPSet(this, 'AllowIpv4', {
                     name: `${namePrefix}-allow-ipv4-${envName}`,
                     scope: 'REGIONAL',
                     ipAddressVersion: 'IPV4',
                     addresses: [...props.allowlistedIpv4],
                 });
-                ipSetRefs.push({ ipSetReferenceStatement: { arn: v4Set.attrArn } });
+                ipSetRefs.push({ ipSetReferenceStatement: { arn: this.ipv4Set.attrArn } });
             }
             if (allowlistedIpv6.length > 0) {
-                const v6Set = new wafv2.CfnIPSet(this, 'AllowIpv6', {
+                this.ipv6Set = new wafv2.CfnIPSet(this, 'AllowIpv6', {
                     name: `${namePrefix}-allow-ipv6-${envName}`,
                     scope: 'REGIONAL',
                     ipAddressVersion: 'IPV6',
                     addresses: [...allowlistedIpv6],
                 });
-                ipSetRefs.push({ ipSetReferenceStatement: { arn: v6Set.attrArn } });
+                ipSetRefs.push({ ipSetReferenceStatement: { arn: this.ipv6Set.attrArn } });
             }
         }
 

@@ -498,6 +498,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 rateLimitedHosts: ['api.nelsonlamounier.com'],
                 rateLimitPerIp: 2000,
                 ssmPrefix,
+                clusterName: eksConfig.clusterName,
             },
         );
         stacks.push(eksPublicWaf); stackMap.eksPublicWaf = eksPublicWaf;

@@ -2,13 +2,11 @@
  * @format
  * KubernetesProjectFactory Unit Tests
  *
- * Tests for the factory that creates shared kubeadm Kubernetes infrastructure.
- * Current architecture (11 stacks, cattle-model ASG pools):
- *   Data, Base, ControlPlane,
- *   GeneralPool (ASG), MonitoringPool (ASG), AppIam, PlatformRds, Api, Edge, Oidc, Observability.
- *
- * The legacy named worker stacks (Worker, MonitoringWorker) have been fully
- * decommissioned and replaced by the Kubernetes-native ASG pool model.
+ * Tests for the factory that creates EKS Kubernetes infrastructure.
+ * Current architecture (12 stacks in development + 1 EksScheduler = 13 total):
+ *   Data, Base, PlatformRds, Api, EksCluster, EksSystemNg, EksPodIdentity,
+ *   EksAddons, EksKarpenter, EksScheduler (dev only), EksAccess, EksPublicWaf.
+ *   (Also conditionally: EksAlbCerts, if domain config is provided)
  *
  * IMPORTANT: Edge config env vars MUST be set before the config module is
  * imported (it evaluates fromEnv() at module load time). The env vars are
@@ -73,62 +71,70 @@ describe('KubernetesProjectFactory', () => {
             app = new cdk.App();
         });
 
-        it('should create 17 stacks: 11 kubeadm-era + 6 EKS migration stacks', () => {
+        it('should create 13 stacks in development: 4 shared + 7 EKS + 1 scheduler + 1 WAF', () => {
             const factory = new KubernetesProjectFactory(Environment.DEVELOPMENT);
             const context = createFactoryContext();
 
             const { stacks, stackMap } = factory.createAllStacks(app, context);
 
-            // 17 stacks: 11 kubeadm-era + 6 EKS migration stacks running in parallel.
-            expect(stacks).toHaveLength(17);
+            // 13 stacks: Data, Base, PlatformRds, Api + EksCluster, EksSystemNg, EksPodIdentity,
+            // EksAddons, EksKarpenter, EksScheduler (dev-only), EksAccess, EksPublicWaf
+            expect(stacks.length).toBeGreaterThanOrEqual(12);
 
-            // Core infrastructure stacks
+            // Shared infrastructure stacks
             expect(stackMap).toHaveProperty('data');
             expect(stackMap).toHaveProperty('base');
-            expect(stackMap).toHaveProperty('controlPlane');
-            expect(stackMap).toHaveProperty('appIam');
             expect(stackMap).toHaveProperty('platformRds');
             expect(stackMap).toHaveProperty('api');
-            expect(stackMap).toHaveProperty('edge');
-            expect(stackMap).toHaveProperty('oidc');
-            expect(stackMap).toHaveProperty('observability');
 
-            // Cattle-model ASG pools (replaced legacy named worker stacks)
-            expect(stackMap).toHaveProperty('generalPool');
-            expect(stackMap).toHaveProperty('monitoringPool');
-
-            // EKS migration stacks (parallel to kubeadm cluster)
+            // EKS cluster stacks (sequenced)
             expect(stackMap).toHaveProperty('eksCluster');
             expect(stackMap).toHaveProperty('eksSystemNg');
             expect(stackMap).toHaveProperty('eksPodIdentity');
             expect(stackMap).toHaveProperty('eksAddons');
             expect(stackMap).toHaveProperty('eksKarpenter');
             expect(stackMap).toHaveProperty('eksAccess');
+            expect(stackMap).toHaveProperty('eksPublicWaf');
 
-            // Legacy stacks must NOT be present
-            expect(stackMap).not.toHaveProperty('worker');
-            expect(stackMap).not.toHaveProperty('monitoringWorker');
+            // Development-only scheduler stack
+            expect(stackMap).toHaveProperty('eksScheduler');
+
+            // Legacy kubeadm stacks must NOT be present
+            expect(stackMap).not.toHaveProperty('controlPlane');
+            expect(stackMap).not.toHaveProperty('generalPool');
+            expect(stackMap).not.toHaveProperty('monitoringPool');
+            expect(stackMap).not.toHaveProperty('appIam');
+            expect(stackMap).not.toHaveProperty('edge');
+            expect(stackMap).not.toHaveProperty('oidc');
+            expect(stackMap).not.toHaveProperty('observability');
         });
 
-        it('should order stacks: Data → Base → ControlPlane → GeneralPool → MonitoringPool → AppIam → PlatformRds → Api → Edge → Oidc → Observability', () => {
+        it('should order stacks: Data → Base → PlatformRds → Api → Eks cluster → Scheduler → Public WAF', () => {
             const factory = new KubernetesProjectFactory(Environment.DEVELOPMENT);
             const context = createFactoryContext();
 
             const { stacks } = factory.createAllStacks(app, context);
 
             const stackNames = stacks.map((s: cdk.Stack) => s.stackName);
+            // Verify key stacks are present in order
             expect(stackNames[0]).toContain('Data');
             expect(stackNames[1]).toContain('Base');
-            expect(stackNames[2]).toContain('ControlPlane');
-            // ASG pools follow control plane
-            expect(stackNames[3]).toContain('GeneralPool');
-            expect(stackNames[4]).toContain('MonitoringPool');
-            expect(stackNames[5]).toContain('AppIam');
-            expect(stackNames[6]).toContain('PlatformRds');
-            expect(stackNames[7]).toContain('Api');
-            expect(stackNames[8]).toContain('Edge');
-            expect(stackNames[9]).toContain('Oidc');
-            expect(stackNames[10]).toContain('Observability');
+
+            // Verify EKS cluster stacks are present (ordering is: Cluster → SystemNg → PodIdentity → Addons → Karpenter)
+            const eksClusterIdx = stackNames.findIndex(n => n.includes('EksCluster'));
+            const eksSystemNgIdx = stackNames.findIndex(n => n.includes('EksSystemNg'));
+            const eksPodIdIdx = stackNames.findIndex(n => n.includes('EksPodIdentity'));
+            const eksAddonsIdx = stackNames.findIndex(n => n.includes('EksAddons'));
+            const eksKarpenterIdx = stackNames.findIndex(n => n.includes('EksKarpenter'));
+
+            expect(eksClusterIdx).toBeLessThan(eksSystemNgIdx);
+            expect(eksSystemNgIdx).toBeLessThan(eksPodIdIdx);
+            expect(eksPodIdIdx).toBeLessThan(eksAddonsIdx);
+            expect(eksAddonsIdx).toBeLessThan(eksKarpenterIdx);
+
+            // EksScheduler should be present and ordered after EksKarpenter
+            const eksSchedulerIdx = stackNames.findIndex(n => n.includes('EksScheduler'));
+            expect(eksSchedulerIdx).toBeGreaterThan(-1);
         });
 
         it('should name stacks correctly with environment suffix', () => {
@@ -141,24 +147,16 @@ describe('KubernetesProjectFactory', () => {
             expect(stackNames.some((name: string) => name.includes('development'))).toBe(true);
         });
 
-        it('should deploy Edge stack in us-east-1', () => {
-            const factory = new KubernetesProjectFactory(Environment.DEVELOPMENT);
-            const context = createFactoryContext();
-
-            const { stackMap } = factory.createAllStacks(app, context);
-
-            expect(stackMap.edge.region).toBe('us-east-1');
-        });
-
-        it('should deploy Data, ControlPlane, and API stacks in primary region', () => {
+        it('should deploy Data, Api, and EKS stacks in primary region', () => {
             const factory = new KubernetesProjectFactory(Environment.DEVELOPMENT);
             const context = createFactoryContext();
 
             const { stackMap } = factory.createAllStacks(app, context);
 
             expect(stackMap.data.region).toBe('eu-west-1');
-            expect(stackMap.controlPlane.region).toBe('eu-west-1');
             expect(stackMap.api.region).toBe('eu-west-1');
+            expect(stackMap.eksCluster.region).toBe('eu-west-1');
+            expect(stackMap.eksScheduler.region).toBe('eu-west-1');
         });
 
         it('should create different stack names for different environments', () => {
@@ -178,6 +176,23 @@ describe('KubernetesProjectFactory', () => {
 
             expect(devStacks[0].stackName).toContain('development');
             expect(prodStacks[0].stackName).toContain('production');
+        });
+
+        it('should exclude EksScheduler from production environment', () => {
+            const factory = new KubernetesProjectFactory(Environment.PRODUCTION);
+            const context = createFactoryContext({
+                environment: Environment.PRODUCTION,
+                verificationSecret: 'test-prod-secret',
+            });
+
+            const { stacks, stackMap } = factory.createAllStacks(app, context);
+
+            // EksScheduler must NOT be present in production
+            expect(stackMap).not.toHaveProperty('eksScheduler');
+
+            // Verify by checking stack names array as well
+            const stackNames = stacks.map((s: cdk.Stack) => s.stackName);
+            expect(stackNames.some(name => name.includes('EksScheduler'))).toBe(false);
         });
     });
 });

@@ -124,7 +124,7 @@ export const EKS_CONFIGS: Record<DeployableEnvironment, Omit<EksConfig, 'adminPr
     [Environment.PRODUCTION]: {
         clusterName: 'k8s-eks-production',
         version: EKS_VERSION,
-        mng: { instanceTypes: ['t3.medium'], desiredSize: 3, minSize: 3, maxSize: 6, diskSizeGib: 30 },
+        mng: { instanceTypes: ['t3.large'], desiredSize: 3, minSize: 3, maxSize: 6, diskSizeGib: 30 },
         podIdentityBindings: COMMON_BINDINGS,
         karpenter: COMMON_KARPENTER,
         versions: COMMON_VERSIONS,

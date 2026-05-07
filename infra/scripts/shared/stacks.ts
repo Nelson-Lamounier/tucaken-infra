@@ -110,15 +110,12 @@ registerProject({
 });
 
 // =============================================================================
-// K8S PROJECT (kubeadm Kubernetes Cluster — 10-Stack Architecture)
-// Synth outputs all 10 stacks. Infra pipeline deploys Data→Base→
-// Compute→GeneralPool→MonitoringPool→AppIam→Edge→Observability→PlatformRds.
-// API stack is deployed separately from core infrastructure.
-// Bootstrap/app manifests synced by independent S3 sync pipelines.
-//
-// Worker nodes are Kubernetes-native (ASG pools managed by the Cluster Autoscaler):
-//   - generalPool:    general-purpose ASG (Next.js, ArgoCD, system components)
-//   - monitoringPool: observability ASG (Prometheus, Grafana, Loki, Tempo)
+// K8S PROJECT (EKS — migrated from kubeadm on 2026-05-07)
+// Active pipeline deploys: Data → Base → API → PlatformRds (kubernetes project)
+//                          EKS stacks deployed by _deploy-eks.yml
+// Deprecated kubeadm stacks (ControlPlane, GeneralPool, MonitoringPool,
+// AppIam, Observability) are marked optional — NOT_FOUND is acceptable once
+// they are destroyed. Do not add new callers; use EKS stacks instead.
 // =============================================================================
 
 const k8sStacks: StackConfig[] = [
@@ -142,8 +139,9 @@ const k8sStacks: StackConfig[] = [
     getStackName: (env) =>
       getStackId(Project.KUBERNETES, 'controlPlane', env),
     description:
-      'kubeadm Kubernetes control plane: EC2 + ASG + SSM documents + S3 scripts bucket',
+      'kubeadm Kubernetes control plane — deprecated, pending cdk destroy',
     dependsOn: ['base'],
+    optional: true,
   },
   {
     id: 'generalPool',
@@ -151,8 +149,9 @@ const k8sStacks: StackConfig[] = [
     getStackName: (env) =>
       getStackId(Project.KUBERNETES, 'generalPool', env),
     description:
-      'General-purpose ASG pool (Next.js, ArgoCD, system components) — no taint',
+      'kubeadm general-purpose ASG pool — deprecated, pending cdk destroy',
     dependsOn: ['controlPlane'],
+    optional: true,
   },
   {
     id: 'monitoringPool',
@@ -160,16 +159,18 @@ const k8sStacks: StackConfig[] = [
     getStackName: (env) =>
       getStackId(Project.KUBERNETES, 'monitoringPool', env),
     description:
-      'Monitoring ASG pool (Prometheus, Grafana, Loki, Tempo) — dedicated=monitoring:NoSchedule taint',
+      'kubeadm monitoring ASG pool — deprecated, pending cdk destroy',
     dependsOn: ['controlPlane'],
+    optional: true,
   },
   {
     id: 'appIam',
     name: 'App IAM Stack',
     getStackName: (env) => getStackId(Project.KUBERNETES, 'appIam', env),
     description:
-      'Application-tier IAM grants: DynamoDB, S3, Secrets Manager, SSM',
+      'kubeadm application-tier IAM grants — deprecated, pending cdk destroy',
     dependsOn: ['controlPlane'],
+    optional: true,
   },
   {
     id: 'api',
@@ -185,8 +186,9 @@ const k8sStacks: StackConfig[] = [
     name: 'Observability Stack',
     getStackName: (env) => getStackId(Project.KUBERNETES, 'observability', env),
     description:
-      'CloudWatch pre-deployment dashboard for infrastructure monitoring',
+      'kubeadm CloudWatch dashboards — deprecated, pending cdk destroy',
     dependsOn: ['base'],
+    optional: true,
   },
   {
     id: 'platformRds',
@@ -263,7 +265,7 @@ registerProject({
   id: 'kubernetes',
   name: 'Kubernetes',
   description:
-    'Self-managed kubeadm Kubernetes cluster for unified workloads (requires Shared VPC)',
+    'EKS cluster + shared infrastructure (Data, Base, API, PlatformRds, EKS stacks)',
   stacks: k8sStacks,
   cdkContext: (env) => {
     const context: Record<string, string> = {

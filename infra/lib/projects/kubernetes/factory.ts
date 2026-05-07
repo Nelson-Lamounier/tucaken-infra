@@ -58,6 +58,7 @@ import {
     PlatformRdsStack,
 } from '../../stacks/kubernetes';
 import { NextJsApiStack } from '../../stacks/kubernetes/api-stack';
+import { EksSchedulerStack } from '../../stacks/kubernetes/eks-scheduler-stack';
 import { stackId, flatName } from '../../utilities/naming';
 
 // =============================================================================
@@ -419,6 +420,20 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
         );
         eksKarp.addDependency(eksAddons);
         stacks.push(eksKarp); stackMap.eksKarpenter = eksKarp;
+
+        if (environment === Environment.DEVELOPMENT) {
+            const eksScheduler = new EksSchedulerStack(
+                scope,
+                stackId(this.namespace, 'EksScheduler', environment),
+                {
+                    env,
+                    cluster: eksClusterStack.cluster,
+                    nodeGroupName: eksSystemNg.nodeGroup.nodegroupName,
+                },
+            );
+            eksScheduler.addDependency(eksSystemNg);
+            stacks.push(eksScheduler); stackMap.eksScheduler = eksScheduler;
+        }
 
         // Access entries: config-defined admins + optional GH OIDC / extra admin
         // from env vars (CI injects GH_OIDC_ROLE_ARN; ADMIN_ROLE_ARN for ad-hoc).

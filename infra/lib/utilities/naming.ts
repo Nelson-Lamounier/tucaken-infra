@@ -34,20 +34,15 @@ export const STACK_REGISTRY = {
     kubernetes: {
         data: 'Data',
         base: 'Base',
-        controlPlane: 'ControlPlane',
-        generalPool: 'GeneralPool',
-        monitoringPool: 'MonitoringPool',
-        appIam: 'AppIam',
         api: 'Api',
-        observability: 'Observability',
         platformRds: 'PlatformRds',
-        oidc: 'Oidc',
-        // EKS V1 stacks (parallel deployment alongside kubeadm)
+        // EKS V1 stacks (primary deployment)
         eksCluster: 'EksCluster',
         eksSystemNg: 'EksSystemNg',
         eksPodIdentity: 'EksPodIdentity',
         eksAddons: 'EksAddons',
         eksKarpenter: 'EksKarpenter',
+        eksScheduler: 'EksScheduler',
         eksAccess: 'EksAccess',
         eksAlbCerts: 'EksAlbCerts',
         eksPublicWaf: 'EksPublicWaf',

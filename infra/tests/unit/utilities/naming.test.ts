@@ -40,8 +40,8 @@ describe('Naming Utilities', () => {
     describe('getStackId', () => {
         it('should resolve K8s project stacks', () => {
             // K8s project namespace is empty — stack names use component only
-            expect(getStackId(Project.KUBERNETES, 'controlPlane', 'development')).toBe('ControlPlane-development');
-            expect(getStackId(Project.KUBERNETES, 'edge', 'production')).toBe('Edge-production');
+            expect(getStackId(Project.KUBERNETES, 'data', 'development')).toBe('Data-development');
+            expect(getStackId(Project.KUBERNETES, 'eksScheduler', 'production')).toBe('EksScheduler-production');
         });
 
         it('should resolve Shared project stacks', () => {
@@ -70,7 +70,10 @@ describe('Naming Utilities', () => {
         });
 
         it('should have expected k8s stack keys', () => {
-            expect(Object.keys(STACK_REGISTRY.kubernetes)).toStrictEqual(['data', 'base', 'controlPlane', 'generalPool', 'monitoringPool', 'appIam', 'api', 'edge', 'tucakenEdge', 'observability', 'platformRds', 'oidc']);
+            expect(Object.keys(STACK_REGISTRY.kubernetes)).toStrictEqual(
+                ['data', 'base', 'api', 'platformRds', 'eksCluster', 'eksSystemNg', 'eksPodIdentity',
+                 'eksAddons', 'eksKarpenter', 'eksScheduler', 'eksAccess', 'eksAlbCerts', 'eksPublicWaf']
+            );
         });
     });
 

@@ -344,11 +344,15 @@ dev-shutdown env='development':
          --region eu-west-1 --profile "$PROFILE" \
          --query 'nodegroups[0]' --output text)
     # Ensure kubeconfig is current so kubectl commands can reach the API server.
+    echo "Updating kubeconfig..."
     aws eks update-kubeconfig --name "$CLUSTER" \
-         --region eu-west-1 --profile "$PROFILE" > /dev/null
+         --region eu-west-1 --profile "$PROFILE"
     # Step 1: delete NodeClaims so Karpenter drains its own nodes and does not
     # re-provision replacements when pods go Pending during shutdown.
-    if kubectl get nodeclaims --no-headers 2>/dev/null | grep -q .; then
+    echo "Checking for Karpenter NodeClaims..."
+    NODECLAIMS=$(kubectl get nodeclaims --no-headers 2>&1)
+    echo "NodeClaims output: $NODECLAIMS"
+    if echo "$NODECLAIMS" | grep -qv "No resources found\|error\|Error"; then
         echo "Deleting Karpenter NodeClaims..."
         kubectl delete nodeclaims --all --wait=false
         echo "Waiting up to 90s for Karpenter nodes to drain..."
@@ -356,6 +360,8 @@ dev-shutdown env='development':
              --selector karpenter.sh/nodepool \
              --for=delete \
              --timeout=90s 2>/dev/null || true
+    else
+        echo "No active NodeClaims — skipping drain step"
     fi
     # Step 2: scale system MNG to zero.
     echo "Scaling system node group to zero..."

@@ -44,10 +44,10 @@ jobs:
     timeout-minutes: 5
     environment: ${{ inputs.environment || 'development' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region:     ${{ env.AWS_REGION }}

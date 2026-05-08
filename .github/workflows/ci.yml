@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Detect Changed Paths
-        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
           filters: |
@@ -195,7 +195,7 @@ jobs:
           node-version: ${{ needs.setup.outputs.node-version }}
 
       - name: Run Audit (with retry)
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
         with:
           timeout_minutes: 5
           max_attempts: 3
@@ -430,7 +430,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security
         if: always() && hashFiles('security-reports/results_sarif.sarif') != ''
-        uses: github/codeql-action/upload-sarif@b5ebac6f4c00c8ccddb7cdcd45fdb248329f808a # v3.32.2
+        uses: github/codeql-action/upload-sarif@68bde559dea0fdcac2102bfdf6230c5f70eb485e # v4.35.4
         with:
           sarif_file: security-reports/results_sarif.sarif
           category: checkov-ci

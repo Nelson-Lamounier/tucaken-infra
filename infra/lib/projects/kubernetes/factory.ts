@@ -422,6 +422,41 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
         eksKarp.addDependency(eksAddons);
         stacks.push(eksKarp); stackMap.eksKarpenter = eksKarp;
 
+        // ---------- Public WAF (eu-west-1, REGIONAL) ----------
+        // Host-scoped allowlist + managed rules + rate limit. Attached to
+        // the shared ALB via `alb.ingress.kubernetes.io/wafv2-acl-arn` on
+        // a workload Ingress. Plan 5b § 0.4.
+        //
+        // Placed before EksSchedulerStack so ipSyncFunctionName is available
+        // to pass to ScaleUpFn — ScaleUpFn invokes it after scaling the MNG
+        // so the WAF IP allowlist is refreshed from SSM on every cluster start.
+        const eksPublicWaf = new EksPublicWafStack(
+            scope,
+            stackId(this.namespace, 'EksPublicWaf', environment),
+            {
+                env, targetEnvironment: environment,
+                allowlistIpv4SsmPath: `/k8s/${environment}/monitoring/allow-ipv4`,
+                allowlistIpv6SsmPath: `/k8s/${environment}/monitoring/allow-ipv6`,
+                allowlistedHosts: [
+                    'admin.nelsonlamounier.com',
+                    'ops.nelsonlamounier.com',
+                    // Tucaken pre-launch IP gate — application is still
+                    // under development. Drop these four entries when
+                    // going public; the AWS Managed Rule Sets and ACM
+                    // wildcards remain.
+                    'tucaken.io',
+                    'www.tucaken.io',
+                    'tucaken.com',
+                    'www.tucaken.com',
+                ],
+                rateLimitedHosts: ['api.nelsonlamounier.com'],
+                rateLimitPerIp: 2000,
+                ssmPrefix,
+                clusterName: eksConfig.clusterName,
+            },
+        );
+        stacks.push(eksPublicWaf); stackMap.eksPublicWaf = eksPublicWaf;
+
         if (environment === Environment.DEVELOPMENT) {
             const eksScheduler = new EksSchedulerStack(
                 scope,
@@ -430,9 +465,11 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                     env,
                     cluster: eksClusterStack.cluster,
                     nodeGroupName: eksSystemNg.nodeGroup.nodegroupName,
+                    wafIpSyncFunctionName: eksPublicWaf.ipSyncFunctionName,
                 },
             );
             eksScheduler.addDependency(eksSystemNg);
+            eksScheduler.addDependency(eksPublicWaf);
             stacks.push(eksScheduler); stackMap.eksScheduler = eksScheduler;
         }
 
@@ -487,37 +524,6 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 'or CROSS_ACCOUNT_ROLE_ARN not set.',
             );
         }
-
-        // ---------- Public WAF (eu-west-1, REGIONAL) ----------
-        // Host-scoped allowlist + managed rules + rate limit. Attached to
-        // the shared ALB via `alb.ingress.kubernetes.io/wafv2-acl-arn` on
-        // a workload Ingress. Plan 5b § 0.4.
-        const eksPublicWaf = new EksPublicWafStack(
-            scope,
-            stackId(this.namespace, 'EksPublicWaf', environment),
-            {
-                env, targetEnvironment: environment,
-                allowlistIpv4SsmPath: `/k8s/${environment}/monitoring/allow-ipv4`,
-                allowlistIpv6SsmPath: `/k8s/${environment}/monitoring/allow-ipv6`,
-                allowlistedHosts: [
-                    'admin.nelsonlamounier.com',
-                    'ops.nelsonlamounier.com',
-                    // Tucaken pre-launch IP gate — application is still
-                    // under development. Drop these four entries when
-                    // going public; the AWS Managed Rule Sets and ACM
-                    // wildcards remain.
-                    'tucaken.io',
-                    'www.tucaken.io',
-                    'tucaken.com',
-                    'www.tucaken.com',
-                ],
-                rateLimitedHosts: ['api.nelsonlamounier.com'],
-                rateLimitPerIp: 2000,
-                ssmPrefix,
-                clusterName: eksConfig.clusterName,
-            },
-        );
-        stacks.push(eksPublicWaf); stackMap.eksPublicWaf = eksPublicWaf;
 
         cdk.Annotations.of(scope).addInfo(
             `K8s factory created ${stacks.length} stacks for ${environment}: ` +

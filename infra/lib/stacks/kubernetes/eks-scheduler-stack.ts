@@ -26,6 +26,12 @@ export interface EksSchedulerStackProps extends cdk.StackProps {
     readonly cluster: eks.ICluster;
     /** CDK token for the system MNG node group name (from EksSystemNodeGroupStack.nodeGroup.nodegroupName). */
     readonly nodeGroupName: string;
+    /**
+     * Name of the WAF ip-sync Lambda (from EksPublicWafStack.ipSyncFunctionName).
+     * When set, ScaleUpFn invokes it after scaling the MNG so the WAF IP
+     * allowlist is refreshed from SSM on every cluster start.
+     */
+    readonly wafIpSyncFunctionName?: string;
 }
 
 export class EksSchedulerStack extends cdk.Stack {
@@ -83,6 +89,17 @@ export class EksSchedulerStack extends cdk.Stack {
             }),
         );
 
+        if (props.wafIpSyncFunctionName) {
+            lambdaRole.addToPolicy(
+                new iam.PolicyStatement({
+                    actions: ['lambda:InvokeFunction'],
+                    resources: [
+                        `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:function:${props.wafIpSyncFunctionName}`,
+                    ],
+                }),
+            );
+        }
+
         // DescribeInstances requires * — no resource-level restriction exists for Describe APIs.
         // eks:UpdateNodegroupConfig/DescribeNodegroup require nodegroup/*/*  (wildcard over ng-name + uuid).
         NagSuppressions.addResourceSuppressions(lambdaRole, [
@@ -98,10 +115,13 @@ export class EksSchedulerStack extends cdk.Stack {
             },
         ], true);
 
-        const commonEnv = {
+        const commonEnv: Record<string, string> = {
             CLUSTER_NAME: cluster.clusterName,
             NODEGROUP_NAME: nodeGroupName,
         };
+        if (props.wafIpSyncFunctionName) {
+            commonEnv['WAF_IP_SYNC_FUNCTION'] = props.wafIpSyncFunctionName;
+        }
 
         const scaleUpFn = new lambda.Function(this, 'ScaleUpFn', {
             runtime: lambda.Runtime.PYTHON_3_14,
@@ -116,13 +136,18 @@ log.setLevel(logging.INFO)
 
 def handler(event, context):
     region = os.environ['AWS_REGION']
-    client = boto3.client('eks', region_name=region)
-    client.update_nodegroup_config(
+    eks = boto3.client('eks', region_name=region)
+    eks.update_nodegroup_config(
         clusterName=os.environ['CLUSTER_NAME'],
         nodegroupName=os.environ['NODEGROUP_NAME'],
         scalingConfig={'minSize': 2, 'desiredSize': 2},
     )
     log.info('Scaled MNG to 2')
+    waf_fn = os.environ.get('WAF_IP_SYNC_FUNCTION')
+    if waf_fn:
+        lam = boto3.client('lambda', region_name=region)
+        lam.invoke(FunctionName=waf_fn, InvocationType='Event')
+        log.info('Triggered WAF IP sync: %s', waf_fn)
     return {'status': 'scaled-up'}
 `),
         });

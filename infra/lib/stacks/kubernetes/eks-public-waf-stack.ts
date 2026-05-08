@@ -25,6 +25,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
+import * as cr from 'aws-cdk-lib/custom-resources';
 
 import { Construct } from 'constructs';
 
@@ -65,6 +66,8 @@ export class EksPublicWafStack extends cdk.Stack {
     public readonly webAclArn: string;
     /** IAM role ARN for the waf-annotator PostSync Job (set when clusterName is provided) */
     public readonly wafAnnotatorRoleArn?: string;
+    /** Function name of the ip-sync Lambda — pass to EksSchedulerStack so ScaleUpFn triggers it. */
+    public ipSyncFunctionName?: string;
 
     constructor(scope: Construct, id: string, props: EksPublicWafStackProps) {
         super(scope, id, props);
@@ -72,26 +75,15 @@ export class EksPublicWafStack extends cdk.Stack {
         const namePrefix = props.namePrefix ?? 'eks-public';
         const envName = props.targetEnvironment;
 
-        // Synth-time SSM lookups. Each parameter holds a comma-separated
-        // CIDR list; an unset parameter (or CDK's first-synth
-        // `dummy-value-for-` placeholder) is treated as empty.
-        const splitCidrs = (raw: string | undefined): string[] =>
-            raw && !raw.startsWith('dummy-value-for-')
-                ? raw.split(',').map((s) => s.trim()).filter(Boolean)
-                : [];
-
-        const allowlistedIpv4 = splitCidrs(
-            ssm.StringParameter.valueFromLookup(this, props.allowlistIpv4SsmPath),
-        );
-        const allowlistedIpv6 = props.allowlistIpv6SsmPath
-            ? splitCidrs(ssm.StringParameter.valueFromLookup(this, props.allowlistIpv6SsmPath))
-            : [];
-
+        // IP sets are created empty and owned entirely by the ip-sync Lambda
+        // at runtime. CloudFormation never writes CIDRs to them, so Lambda-
+        // managed values persist across redeployments without caching issues.
         const waf = new EksPublicWafConstruct(this, 'PublicWaf', {
             envName,
             namePrefix,
-            allowlistedIpv4,
-            allowlistedIpv6,
+            allowlistedIpv4: [],
+            allowlistedIpv6: [],
+            ipSetsExternallyManaged: true,
             allowlistedHosts: props.allowlistedHosts,
             rateLimitedHosts: props.rateLimitedHosts,
             rateLimitPerIp: props.rateLimitPerIp,
@@ -197,6 +189,40 @@ def handler(event, context):
                 },
                 targets: [new targets.LambdaFunction(syncFn)],
             });
+
+            // Invoke the sync Lambda once on every CDK deploy so the IP sets
+            // are immediately populated after CloudFormation creates them empty.
+            // Without this, sets stay empty until the next SSM change event.
+            const deploySync = new cr.AwsCustomResource(this, 'IpSyncOnDeploy', {
+                onCreate: {
+                    service: 'Lambda',
+                    action: 'invoke',
+                    parameters: {
+                        FunctionName: syncFn.functionName,
+                        InvocationType: 'RequestResponse',
+                    },
+                    physicalResourceId: cr.PhysicalResourceId.of('waf-ip-sync-on-deploy'),
+                },
+                onUpdate: {
+                    service: 'Lambda',
+                    action: 'invoke',
+                    parameters: {
+                        FunctionName: syncFn.functionName,
+                        InvocationType: 'RequestResponse',
+                    },
+                    physicalResourceId: cr.PhysicalResourceId.of('waf-ip-sync-on-deploy'),
+                },
+                policy: cr.AwsCustomResourcePolicy.fromStatements([
+                    new iam.PolicyStatement({
+                        actions: ['lambda:InvokeFunction'],
+                        resources: [syncFn.functionArn],
+                    }),
+                ]),
+                resourceType: 'Custom::WafIpSync',
+            });
+            deploySync.node.addDependency(syncFn);
+
+            this.ipSyncFunctionName = syncFn.functionName;
         }
 
         // =================================================================

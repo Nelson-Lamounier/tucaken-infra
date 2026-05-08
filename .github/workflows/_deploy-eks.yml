@@ -59,6 +59,8 @@ jobs:
       eks-addons: ${{ steps.synth.outputs.eksAddons }}
       eks-karpenter: ${{ steps.synth.outputs.eksKarpenter }}
       eks-access: ${{ steps.synth.outputs.eksAccess }}
+      eks-alb-certs: ${{ steps.synth.outputs.eksAlbCerts }}
+      eks-public-waf: ${{ steps.synth.outputs.eksPublicWaf }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -158,6 +160,34 @@ jobs:
       require-approval: ${{ inputs.require-approval }}
     secrets: inherit
 
+  # EksAlbCerts has no in-cluster dependency; runs in parallel after setup.
+  # The shared-DNS validation Lambda contacts mgmt-account R53 directly.
+  deploy-alb-certs:
+    name: Deploy EKS ALB Certificates (ACM wildcards)
+    needs: [setup]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-alb-certs }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
+  # EksPublicWaf is also independent — synth-time SSM lookup for the
+  # operator allowlist already happens at template generation.
+  deploy-public-waf:
+    name: Deploy EKS Public WAF (REGIONAL WebACL)
+    needs: [setup]
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-public-waf }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
   summary:
     name: EKS Deploy Summary
     needs:
@@ -167,6 +197,8 @@ jobs:
       - deploy-addons
       - deploy-karpenter
       - deploy-access
+      - deploy-alb-certs
+      - deploy-public-waf
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

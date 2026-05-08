@@ -213,7 +213,7 @@ const k8sStacks: StackConfig[] = [
     id: 'eksSystemNg',
     name: 'EKS System Node Group Stack',
     getStackName: (env) => getStackId(Project.KUBERNETES, 'eksSystemNg', env),
-    description: '3× t3.medium MNG (system taint, AZ-spread)',
+    description: '2× t3.medium MNG (system taint, AZ-spread)',
     dependsOn: ['eksCluster'],
   },
   {
@@ -237,6 +237,13 @@ const k8sStacks: StackConfig[] = [
     getStackName: (env) => getStackId(Project.KUBERNETES, 'eksKarpenter', env),
     description: 'SQS interruption queue + 4 EventBridge rules + NodePool/EC2NodeClass manifests',
     dependsOn: ['eksAddons'],
+  },
+  {
+    id: 'eksScheduler',
+    name: 'EKS Scheduler Stack',
+    getStackName: (env) => getStackId(Project.KUBERNETES, 'eksScheduler', env),
+    description: 'EventBridge Scheduler: scale-up 04:00 / scale-down 23:00 (dev only)',
+    dependsOn: ['eksSystemNg'],
   },
   {
     id: 'eksAccess',

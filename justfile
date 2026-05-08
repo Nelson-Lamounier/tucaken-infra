@@ -381,6 +381,19 @@ dev-shutdown env='development':
              --region eu-west-1 --profile "$PROFILE" > /dev/null
         echo "Force-terminated workload nodes: $INSTANCES"
     fi
+    # Step 4: force-terminate system MNG instances that are still running while
+    # the scale-to-zero update propagates (MNG scale is async, this is instant).
+    MNG_INSTANCES=$(aws ec2 describe-instances \
+         --filters "Name=tag:eks:nodegroup-name,Values=$NG" \
+                   "Name=tag:eks:cluster-name,Values=$CLUSTER" \
+                   "Name=instance-state-name,Values=running,pending" \
+         --query 'Reservations[].Instances[].InstanceId' \
+         --output text --region eu-west-1 --profile "$PROFILE")
+    if [ -n "$MNG_INSTANCES" ]; then
+        aws ec2 terminate-instances --instance-ids $MNG_INSTANCES \
+             --region eu-west-1 --profile "$PROFILE" > /dev/null
+        echo "Force-terminated system MNG nodes: $MNG_INSTANCES"
+    fi
     echo "Cluster shutting down"
 
 

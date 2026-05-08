@@ -180,6 +180,17 @@ export class EksAddonsStack extends cdk.Stack {
                 },
                 serviceAccount: { name: 'karpenter', create: true },
                 tolerations: systemToleration,
+                // Soften the chart default (DoNotSchedule) so that if both system
+                // nodes land in the same AZ the second replica still schedules.
+                // Hostname-based podAntiAffinity (chart default) still enforces
+                // node-level separation for the 2-replica HA guarantee.
+                topologySpreadConstraints: [
+                    {
+                        maxSkew: 1,
+                        topologyKey: 'topology.kubernetes.io/zone',
+                        whenUnsatisfiable: 'ScheduleAnyway',
+                    },
+                ],
             },
         });
         karpenter.node.addDependency(albController);

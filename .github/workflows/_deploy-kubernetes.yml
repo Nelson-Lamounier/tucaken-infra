@@ -149,7 +149,7 @@ jobs:
         run: just ci-synth kubernetes ${{ inputs.cdk-environment }}
 
       - name: Cache Synthesized Templates
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: infra/cdk.out/
           key: cdk-synth-k8s-${{ inputs.cdk-environment }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -176,7 +176,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Restore Synthesized Templates
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: infra/cdk.out/
           key: cdk-synth-k8s-${{ inputs.cdk-environment }}-${{ github.run_id }}-${{ github.run_attempt }}

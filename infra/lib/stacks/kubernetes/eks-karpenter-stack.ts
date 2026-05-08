@@ -106,7 +106,19 @@ export class EksKarpenterStack extends cdk.Stack {
                         amiSelectorTerms: [{ alias: 'al2023@latest' }],
                         role: cdk.Fn.select(1, cdk.Fn.split('/', props.workerNodeRole.roleArn)),
                         subnetSelectorTerms: [{ tags: { [props.subnetTagKey]: 'shared' } }],
-                        securityGroupSelectorTerms: [{ id: workerSecurityGroupId }],
+                        // BOTH SGs attach to every Karpenter-launched node:
+                        //   workerSecurityGroupId — custom `eks-workers-<env>`
+                        //     SG (BaseStack), node-to-node + future ELB rules.
+                        //   clusterSecurityGroup — EKS-auto-managed cluster
+                        //     SG carrying the control-plane ↔ kubelet rules
+                        //     EKS injects on cluster create. Without this,
+                        //     new nodes register-fail (`NodeNotFound`)
+                        //     because the API server can't reach them on
+                        //     :10250.
+                        securityGroupSelectorTerms: [
+                            { id: workerSecurityGroupId },
+                            { id: props.cluster.clusterSecurityGroupId },
+                        ],
                         tags: { 'eks-cluster-pool': 'workloads-default' },
                     },
                 },

@@ -92,7 +92,7 @@ const COMMON_VERSIONS = {
 const COMMON_KARPENTER: EksKarpenterNodePoolConfig = {
     instanceCategory: ['t'],
     instanceFamily: ['t3'],
-    capacityType: ['on-demand'],
+    capacityType: ['spot', 'on-demand'],
     architectures: ['amd64'],
     cpuMin: 2,
     cpuMax: 8,
@@ -112,7 +112,7 @@ export const EKS_CONFIGS: Record<DeployableEnvironment, Omit<EksConfig, 'adminPr
     [Environment.DEVELOPMENT]: {
         clusterName: 'k8s-eks-development',
         version: EKS_VERSION,
-        mng: { instanceTypes: ['t3.medium'], desiredSize: 3, minSize: 3, maxSize: 4, diskSizeGib: 30 },
+        mng: { instanceTypes: ['t3.medium'], desiredSize: 2, minSize: 2, maxSize: 3, diskSizeGib: 30 },
         podIdentityBindings: COMMON_BINDINGS,
         karpenter: COMMON_KARPENTER,
         versions: COMMON_VERSIONS,

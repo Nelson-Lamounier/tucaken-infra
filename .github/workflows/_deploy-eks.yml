@@ -61,6 +61,7 @@ jobs:
       eks-access: ${{ steps.synth.outputs.eksAccess }}
       eks-alb-certs: ${{ steps.synth.outputs.eksAlbCerts }}
       eks-public-waf: ${{ steps.synth.outputs.eksPublicWaf }}
+      eks-scheduler: ${{ steps.synth.outputs.eksScheduler }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -174,6 +175,21 @@ jobs:
       require-approval: ${{ inputs.require-approval }}
     secrets: inherit
 
+  # EksScheduler is dev-only: gated on environment input + non-empty stack name
+  # (synth outputs empty string for staging/production where the factory omits it).
+  deploy-scheduler:
+    name: Deploy EKS Scheduler (dev only)
+    needs: [setup, deploy-system-ng]
+    if: inputs.environment == 'development' && needs.setup.outputs.eks-scheduler != ''
+    uses: ./.github/workflows/_deploy-stack.yml
+    with:
+      stack-name: ${{ needs.setup.outputs.eks-scheduler }}
+      project: kubernetes
+      environment: ${{ inputs.environment }}
+      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+      require-approval: ${{ inputs.require-approval }}
+    secrets: inherit
+
   # EksPublicWaf is also independent — synth-time SSM lookup for the
   # operator allowlist already happens at template generation.
   deploy-public-waf:
@@ -196,6 +212,7 @@ jobs:
       - deploy-pod-identity
       - deploy-addons
       - deploy-karpenter
+      - deploy-scheduler
       - deploy-access
       - deploy-alb-certs
       - deploy-public-waf

@@ -120,9 +120,9 @@ def handler(event, context):
     client.update_nodegroup_config(
         clusterName=os.environ['CLUSTER_NAME'],
         nodegroupName=os.environ['NODEGROUP_NAME'],
-        scalingConfig={'minSize': 3, 'desiredSize': 3},
+        scalingConfig={'minSize': 2, 'desiredSize': 2},
     )
-    log.info('Scaled MNG to 3')
+    log.info('Scaled MNG to 2')
     return {'status': 'scaled-up'}
 `),
         });

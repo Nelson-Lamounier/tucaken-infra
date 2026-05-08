@@ -306,7 +306,8 @@ dora-metrics:
 etcd-restore-rto:
     ./scripts/local/etcd-restore-rto-test.sh
 
-# Scale dev EKS cluster up (manual override — auto-start runs at 04:00 Dublin time)
+# Scale dev EKS cluster up and update kubeconfig
+# Usage: just dev-start [environment]
 [group('eks')]
 dev-start env='development':
     #!/usr/bin/env bash
@@ -316,13 +317,23 @@ dev-start env='development':
     NG=$(aws eks list-nodegroups --cluster-name "$CLUSTER" \
          --region eu-west-1 --profile "$PROFILE" \
          --query 'nodegroups[0]' --output text)
+    echo "Scaling system node group up..."
     aws eks update-nodegroup-config --cluster-name "$CLUSTER" \
          --nodegroup-name "$NG" \
          --scaling-config minSize=3,maxSize=4,desiredSize=3 \
          --region eu-west-1 --profile "$PROFILE"
-    echo "Cluster starting — system nodes ready in ~3 min"
+    echo "Updating kubeconfig..."
+    aws eks update-kubeconfig --name "$CLUSTER" \
+         --region eu-west-1 --profile "$PROFILE"
+    echo "Waiting for system nodes to be Ready (timeout 5 min)..."
+    kubectl wait node \
+         --selector eks.amazonaws.com/nodegroup="$NG" \
+         --for=condition=Ready \
+         --timeout=300s
+    echo "Cluster ready"
 
-# Scale dev EKS cluster down immediately (use before 23:00 Dublin backstop)
+# Scale dev EKS cluster down — drains Karpenter nodes first to prevent re-provisioning
+# Usage: just dev-shutdown [environment]
 [group('eks')]
 dev-shutdown env='development':
     #!/usr/bin/env bash
@@ -332,19 +343,56 @@ dev-shutdown env='development':
     NG=$(aws eks list-nodegroups --cluster-name "$CLUSTER" \
          --region eu-west-1 --profile "$PROFILE" \
          --query 'nodegroups[0]' --output text)
+    # Ensure kubeconfig is current so kubectl commands can reach the API server.
+    echo "Updating kubeconfig..."
+    aws eks update-kubeconfig --name "$CLUSTER" \
+         --region eu-west-1 --profile "$PROFILE"
+    # Step 1: delete NodeClaims so Karpenter drains its own nodes and does not
+    # re-provision replacements when pods go Pending during shutdown.
+    echo "Checking for Karpenter NodeClaims..."
+    NODECLAIMS=$(kubectl get nodeclaims --no-headers 2>&1)
+    echo "NodeClaims output: $NODECLAIMS"
+    if echo "$NODECLAIMS" | grep -qv "No resources found\|error\|Error"; then
+        echo "Deleting Karpenter NodeClaims..."
+        kubectl delete nodeclaims --all --wait=false
+        echo "Waiting up to 90s for Karpenter nodes to drain..."
+        kubectl wait node \
+             --selector karpenter.sh/nodepool \
+             --for=delete \
+             --timeout=90s 2>/dev/null || true
+    else
+        echo "No active NodeClaims — skipping drain step"
+    fi
+    # Step 2: scale system MNG to zero.
+    echo "Scaling system node group to zero..."
     aws eks update-nodegroup-config --cluster-name "$CLUSTER" \
          --nodegroup-name "$NG" \
          --scaling-config minSize=0,maxSize=4,desiredSize=0 \
          --region eu-west-1 --profile "$PROFILE"
+    # Step 3: force-terminate any workload instances still running (safety net
+    # for nodes that were already being replaced when NodeClaims were deleted).
     INSTANCES=$(aws ec2 describe-instances \
          --filters "Name=tag:eks-cluster-pool,Values=workloads-default" \
-                   "Name=instance-state-name,Values=running" \
+                   "Name=instance-state-name,Values=running,pending" \
          --query 'Reservations[].Instances[].InstanceId' \
          --output text --region eu-west-1 --profile "$PROFILE")
     if [ -n "$INSTANCES" ]; then
         aws ec2 terminate-instances --instance-ids $INSTANCES \
-             --region eu-west-1 --profile "$PROFILE"
-        echo "Workload nodes terminated: $INSTANCES"
+             --region eu-west-1 --profile "$PROFILE" > /dev/null
+        echo "Force-terminated workload nodes: $INSTANCES"
+    fi
+    # Step 4: force-terminate system MNG instances that are still running while
+    # the scale-to-zero update propagates (MNG scale is async, this is instant).
+    MNG_INSTANCES=$(aws ec2 describe-instances \
+         --filters "Name=tag:eks:nodegroup-name,Values=$NG" \
+                   "Name=tag:eks:cluster-name,Values=$CLUSTER" \
+                   "Name=instance-state-name,Values=running,pending" \
+         --query 'Reservations[].Instances[].InstanceId' \
+         --output text --region eu-west-1 --profile "$PROFILE")
+    if [ -n "$MNG_INSTANCES" ]; then
+        aws ec2 terminate-instances --instance-ids $MNG_INSTANCES \
+             --region eu-west-1 --profile "$PROFILE" > /dev/null
+        echo "Force-terminated system MNG nodes: $MNG_INSTANCES"
     fi
     echo "Cluster shutting down"
 

@@ -2,7 +2,7 @@
  * @format
  * EKS System Node Group Stack — Karpenter / CoreDNS landing zone.
  *
- * 3× t3.medium nodes spread across 3 AZs hosting cluster-critical pods
+ * 2× t3.medium nodes spread across 2 AZs hosting cluster-critical pods
  * (Karpenter controller, CoreDNS, kube-proxy, addon controllers, monitoring
  * stack). Tainted `dedicated=system:NoSchedule`; workload pods land on
  * Karpenter-managed nodes.

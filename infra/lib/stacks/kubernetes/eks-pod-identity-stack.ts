@@ -286,6 +286,31 @@ export class EksPodIdentityStack extends cdk.Stack {
                     );
                 }
                 break;
+            case 'admin-api':
+                // S3 access for presigned upload URLs (resume-imports) and
+                // direct asset operations (articles). Bucket name is published
+                // by ai-applications/infra bedrock/ai-content-stack at runtime
+                // via SSM → ESO; scoped to * for dev since the ARN is not
+                // available at CDK synthesis time.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'AdminApiS3Assets',
+                        actions: [
+                            's3:PutObject',
+                            's3:GetObject',
+                            's3:DeleteObject',
+                        ],
+                        resources: ['arn:aws:s3:::*/*'],
+                    }),
+                );
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'AdminApiS3ListBucket',
+                        actions: ['s3:ListBucket'],
+                        resources: ['arn:aws:s3:::*'],
+                    }),
+                );
+                break;
         }
     }
 }

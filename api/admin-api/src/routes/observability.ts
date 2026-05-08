@@ -31,7 +31,7 @@ export function createObservabilityRouter(pool: Pool): Hono {
   router.get('/readyz', async (ctx) => {
     const client = await pool.connect();
     try {
-      await client.query({ text: 'SELECT 1', name: 'readyz_probe' });
+      await client.query('SELECT 1');
       return ctx.json({ status: 'ready' });
     } catch (err) {
       return ctx.json({ status: 'not-ready', reason: (err as Error).message }, 503);

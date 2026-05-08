@@ -861,20 +861,26 @@ async function getDnsValidationRecords(
       throw new Error("No domain validation options returned from ACM after max retries");
     }
 
-    const records: DnsValidationRecord[] = [];
-
+    // Dedupe by name+type+value. ACM returns one DomainValidationOptions
+    // entry per SAN, but a wildcard cert (`example.com` + `*.example.com`)
+    // shares a single validation record across both. Submitting the same
+    // change twice in one ChangeResourceRecordSets batch makes Route 53
+    // reject the request as "invalid set of changes".
+    const recordMap = new Map<string, DnsValidationRecord>();
     for (const validation of response.Certificate.DomainValidationOptions) {
       if (validation.ResourceRecord) {
-        records.push({
+        const record: DnsValidationRecord = {
           name: validation.ResourceRecord.Name || "",
           type: validation.ResourceRecord.Type || "CNAME",
           value: validation.ResourceRecord.Value || "",
-        });
+        };
+        recordMap.set(`${record.name}|${record.type}|${record.value}`, record);
       }
     }
+    const records: DnsValidationRecord[] = Array.from(recordMap.values());
 
     if (records.length > 0) {
-      console.log(`Found ${records.length} DNS validation record(s)`);
+      console.log(`Found ${records.length} unique DNS validation record(s)`);
       return records;
     }
 

@@ -1,6 +1,6 @@
 # @format
 # Deploy EKS to Development.
-# Trigger: workflow_dispatch | workflow_run [Deploy K8s to Development success].
+# Trigger: push to main touching EKS-relevant paths | workflow_dispatch | workflow_run.
 # Spec: docs/superpowers/specs/2026-05-05-eks-migration-design.md § 9.2
 #
 # Security: this workflow only consumes `inputs.*`, `vars.*`, `secrets.*`,
@@ -12,7 +12,20 @@
 name: Deploy EKS to Development
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/lib/stacks/kubernetes/**"
+      - "infra/lib/config/eks/**"
+      - "infra/lib/projects/kubernetes/**"
+      - "infra/bin/app.ts"
+      - ".github/workflows/deploy-eks-development.yml"
+      - ".github/workflows/_deploy-eks.yml"
+      - ".github/actions/**"
+
   workflow_dispatch:
+
   workflow_run:
     workflows: ["Deploy K8s to Development"]
     types: [completed]

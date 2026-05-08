@@ -1204,24 +1204,24 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-sdk/client-eventbridge@npm:^3.1001.0":
-  version: 3.1039.0
-  resolution: "@aws-sdk/client-eventbridge@npm:3.1039.0"
+"@aws-sdk/client-eventbridge@npm:^3.1045.0":
+  version: 3.1045.0
+  resolution: "@aws-sdk/client-eventbridge@npm:3.1045.0"
   dependencies:
     "@aws-crypto/sha256-browser": "npm:5.2.0"
     "@aws-crypto/sha256-js": "npm:5.2.0"
-    "@aws-sdk/core": "npm:^3.974.7"
-    "@aws-sdk/credential-provider-node": "npm:^3.972.38"
+    "@aws-sdk/core": "npm:^3.974.8"
+    "@aws-sdk/credential-provider-node": "npm:^3.972.39"
     "@aws-sdk/middleware-host-header": "npm:^3.972.10"
     "@aws-sdk/middleware-logger": "npm:^3.972.10"
     "@aws-sdk/middleware-recursion-detection": "npm:^3.972.11"
-    "@aws-sdk/middleware-user-agent": "npm:^3.972.37"
+    "@aws-sdk/middleware-user-agent": "npm:^3.972.38"
     "@aws-sdk/region-config-resolver": "npm:^3.972.13"
-    "@aws-sdk/signature-v4-multi-region": "npm:^3.996.24"
+    "@aws-sdk/signature-v4-multi-region": "npm:^3.996.25"
     "@aws-sdk/types": "npm:^3.973.8"
     "@aws-sdk/util-endpoints": "npm:^3.996.8"
     "@aws-sdk/util-user-agent-browser": "npm:^3.972.10"
-    "@aws-sdk/util-user-agent-node": "npm:^3.973.23"
+    "@aws-sdk/util-user-agent-node": "npm:^3.973.24"
     "@smithy/config-resolver": "npm:^4.4.17"
     "@smithy/core": "npm:^3.23.17"
     "@smithy/fetch-http-handler": "npm:^5.3.17"
@@ -1248,7 +1248,7 @@ __metadata:
     "@smithy/util-retry": "npm:^4.3.6"
     "@smithy/util-utf8": "npm:^4.2.2"
     tslib: "npm:^2.6.2"
-  checksum: 10c0/cabc2f1ce84f9d49790d9cf708bdfce86bce55967ceb3f2309ea667728f81bc174b861b155277c511035422aa5c20f1d158eab95ff9cf005f2d2891669798000
+  checksum: 10c0/a708e80b15929c91b0048c598a9de0e257b3acc97111175a790415862261c223a293e59bf6ac728e15a80c472bb9da9454e635e96346a6ba0d89b1288da77d2b
   languageName: node
   linkType: hard
 
@@ -8100,7 +8100,7 @@ __metadata:
     "@aws-sdk/client-ecs": "npm:^3.1001.0"
     "@aws-sdk/client-efs": "npm:^3.1001.0"
     "@aws-sdk/client-elastic-load-balancing-v2": "npm:^3.1001.0"
-    "@aws-sdk/client-eventbridge": "npm:^3.1001.0"
+    "@aws-sdk/client-eventbridge": "npm:^3.1045.0"
     "@aws-sdk/client-imagebuilder": "npm:^3.1001.0"
     "@aws-sdk/client-kms": "npm:^3.1007.0"
     "@aws-sdk/client-lambda": "npm:^3.1045.0"

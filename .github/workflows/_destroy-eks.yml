@@ -61,6 +61,57 @@ jobs:
           CDK_ENV: ${{ inputs.cdk-environment }}
         run: just ci-synth kubernetes "$CDK_ENV"
 
+  # EksAlbCerts has no in-cluster dependent — destroy in parallel with the
+  # cluster-side teardown chain. The ACM certs roll back via the same
+  # cross-account validation Lambda; orphaned _acme-challenge CNAMEs in
+  # mgmt-account R53 get cleaned up by the custom-resource Delete event.
+  destroy-alb-certs:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-alb-certs }}
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+
+  # EksPublicWaf is independent of every other stack — its WebACL/IPSets
+  # have no consumers once the ALB is gone (ALB Ingress removes the WAF
+  # association during normal pod teardown). Run alongside the rest.
+  destroy-public-waf:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nelson-lamounier/cdk-monitoring/ci:latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-node-yarn
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: just build
+      - uses: ./.github/actions/configure-aws
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_ENV: ${{ inputs.cdk-environment }}
+          STACK: ${{ needs.setup.outputs.eks-public-waf }}
+        run: cd infra && npx cdk destroy --force "$STACK" -c project=kubernetes -c environment="$CDK_ENV"
+
   destroy-karpenter:
     needs: [setup]
     runs-on: ubuntu-latest

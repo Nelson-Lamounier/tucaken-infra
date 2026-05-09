@@ -52,7 +52,7 @@ export interface EksPublicWafStackProps extends cdk.StackProps {
     /**
      * EKS cluster name. When provided, creates an IAM role + Pod Identity
      * association for the `waf-annotator` Service Account in the
-     * `tucaken-app` namespace. The PostSync Job uses this role to read the
+     * `admin-api` namespace. The PostSync Job uses this role to read the
      * WAF ACL ARN from SSM and annotate the Ingress — keeping the
      * wafv2-acl-arn annotation current without hardcoding the ARN in git.
      */
@@ -217,10 +217,14 @@ def handler(event, context):
                 ],
             }));
 
-            // Pod Identity association: tucaken-app/waf-annotator → role
+            // Pod Identity association: admin-api/waf-annotator → role.
+            // The Job runs in the admin-api namespace by convention — admin-api
+            // carries the WAF annotation because it holds the most security-sensitive
+            // paths. No IRSA annotation on the ServiceAccount; Pod Identity agent
+            // injects credentials via AWS_CONTAINER_CREDENTIALS_FULL_URI.
             new CfnPodIdentityAssociation(this, 'WafAnnotatorPodIdentity', {
                 clusterName: props.clusterName,
-                namespace: 'tucaken-app',
+                namespace: 'admin-api',
                 serviceAccount: 'waf-annotator',
                 roleArn: annotatorRole.roleArn,
             });
@@ -230,7 +234,7 @@ def handler(event, context):
             new ssm.StringParameter(this, 'WafAnnotatorRoleArnSsm', {
                 parameterName: `${props.ssmPrefix}/eks/waf-annotator-role-arn`,
                 stringValue: annotatorRole.roleArn,
-                description: 'IAM role ARN for the tucaken-app waf-annotator PostSync Job',
+                description: 'IAM role ARN for the admin-api waf-annotator PostSync Job',
             });
         }
     }

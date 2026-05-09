@@ -200,7 +200,7 @@ jobs:
   promote:
     name: Promote Rollout
     needs: [push-admin-api]
-    runs-on: k8s-runner
+    runs-on: k8s-runner-cdk
     timeout-minutes: 20
     environment: development
     permissions:

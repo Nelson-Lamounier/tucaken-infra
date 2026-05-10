@@ -2,3 +2,4 @@ self-hosted-runner:
   labels:
     - k8s
     - k8s-runner
+    - k8s-runner-cdk

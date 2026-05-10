@@ -127,6 +127,16 @@ export class EksKarpenterStack extends cdk.Stack {
                             { id: workerSecurityGroupId },
                             { id: props.cluster.clusterSecurityGroupId },
                         ],
+                        // IMDSv2 hop limit 2: pods run inside a Linux network
+                        // bridge (veth pair), which adds one hop vs. the host.
+                        // Default hop limit of 1 drops IMDS requests from pods,
+                        // preventing AWS SDK credential resolution via IMDS.
+                        metadataOptions: {
+                            httpEndpoint: 'enabled',
+                            httpProtocolIPv6: 'disabled',
+                            httpPutResponseHopLimit: 2,
+                            httpTokens: 'required',
+                        },
                         tags: {
                             'eks-cluster-pool': 'workloads-default',
                             // Human-readable name visible in AWS Console EC2 inventory.

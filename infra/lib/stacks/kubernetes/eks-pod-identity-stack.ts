@@ -286,6 +286,24 @@ export class EksPodIdentityStack extends cdk.Stack {
                     );
                 }
                 break;
+            case 'ingestion':
+                // Bedrock InvokeModel for chunk enrichment (BedrockChunkEnricher)
+                // and embeddings (TitanEmbeddingProvider). Scoped to all foundation
+                // models and inference profiles — ingestion is model-agnostic.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'IngestionBedrockInvoke',
+                        actions: [
+                            'bedrock:InvokeModel',
+                            'bedrock:InvokeModelWithResponseStream',
+                        ],
+                        resources: [
+                            'arn:aws:bedrock:*::foundation-model/*',
+                            `arn:aws:bedrock:*:${cdk.Stack.of(this).account}:inference-profile/*`,
+                        ],
+                    }),
+                );
+                break;
             case 'admin-api':
                 // S3 access for presigned upload URLs (resume-imports) and
                 // direct asset operations (articles). Bucket name is published

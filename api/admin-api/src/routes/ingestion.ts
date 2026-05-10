@@ -81,6 +81,15 @@ function buildJobSpec(
                             { name: 'USER_ID',        value: userId },
                             { name: 'REPO_FULL_NAME', value: repoFullName },
                             { name: 'FORCE_REINDEX',  value: String(forceReindex) },
+                            // BedrockChunkEnricher reads ENRICHMENT_MODEL_ID to select the
+                            // model for per-chunk skill/technology extraction. Direct
+                            // on-demand Claude invocation isn't supported in eu-west-1 —
+                            // must use a cross-region inference profile (eu.* prefix).
+                            // Overridable via admin-api's own ENRICHMENT_MODEL_ID env var.
+                            {
+                                name:  'ENRICHMENT_MODEL_ID',
+                                value: process.env['ENRICHMENT_MODEL_ID'] ?? 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+                            },
                         ],
                         envFrom: [
                             { secretRef: { name: 'platform-rds-credentials' } },

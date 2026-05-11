@@ -219,6 +219,7 @@ def handler(event, context):
     # leaving argocd-server/dex-server in CrashLoopBackOff on restore.
     ensure_argocd_secret()
 
+
     # Restore ArgoCD — dev-shutdown scales all argocd Deployments to 0 to
     # prevent automated sync from re-provisioning workloads during shutdown.
     argocd_deployments = [

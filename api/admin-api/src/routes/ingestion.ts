@@ -20,6 +20,7 @@ import type { JWTPayload } from 'jose';
 import type { AdminApiConfig } from '../lib/config.js';
 import { getJobImage, isImageConfigured } from '../lib/config.js';
 import { getBatchApi } from '../lib/k8s.js';
+import { traceParentEnv } from '../lib/k8s-job-builder.js';
 
 type AdminApiBindings = {
     Variables: { jwtPayload: JWTPayload };
@@ -90,6 +91,7 @@ function buildJobSpec(
                                 name:  'ENRICHMENT_MODEL_ID',
                                 value: process.env['ENRICHMENT_MODEL_ID'] ?? 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
                             },
+                            ...(() => { const tp = traceParentEnv(); return tp ? [tp] : []; })(),
                         ],
                         envFrom: [
                             { secretRef: { name: 'platform-rds-credentials' } },

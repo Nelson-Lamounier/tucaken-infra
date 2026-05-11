@@ -2,7 +2,6 @@
 process.env.AWS_ACCOUNT_ID = '123456789012';
 
 import { Template } from 'aws-cdk-lib/assertions';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as cdk from 'aws-cdk-lib/core';
 
 import { Environment } from '../../../../lib/config/environments';
@@ -13,14 +12,9 @@ describe('EksClusterStack', () => {
 
     beforeEach(() => {
         const app = new cdk.App();
-        const vpcStack = new cdk.Stack(app, 'VpcStack', {
-            env: { account: '123456789012', region: 'eu-west-1' },
-        });
-        const vpc = new ec2.Vpc(vpcStack, 'Vpc', { maxAzs: 3 });
         const stack = new EksClusterStack(app, 'EksCluster', {
             env: { account: '123456789012', region: 'eu-west-1' },
             targetEnvironment: Environment.DEVELOPMENT,
-            vpc,
             clusterName: 'k8s-eks-development',
             version: '1.34',
         });

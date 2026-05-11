@@ -3,26 +3,21 @@
  * PlatformRdsStack Unit Tests
  */
 import { Template, Match } from 'aws-cdk-lib/assertions';
-import * as cdk from 'aws-cdk-lib/core';
 
 import { Environment } from '../../../../lib/config';
 import { PlatformRdsStack } from '../../../../lib/stacks/kubernetes/platform-rds-stack';
 import {
     TEST_ENV_EU,
     createTestApp,
-    createMockVpc,
 } from '../../../fixtures';
 
 const TEST_ENV = Environment.DEVELOPMENT;
 
 function createStack(overrides?: Partial<ConstructorParameters<typeof PlatformRdsStack>[2]>) {
     const app = createTestApp();
-    const helperStack = new cdk.Stack(app, 'Helper', { env: TEST_ENV_EU });
-    const vpc = createMockVpc(helperStack);
 
     const stack = new PlatformRdsStack(app, 'TestPlatformRdsStack', {
         targetEnvironment: TEST_ENV,
-        vpc,
         namePrefix: 'k8s-development',
         databaseName: 'tucaken',
         env: TEST_ENV_EU,

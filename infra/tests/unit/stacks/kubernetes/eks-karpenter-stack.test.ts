@@ -19,7 +19,6 @@ describe('EksKarpenterStack', () => {
             targetEnvironment: Environment.DEVELOPMENT,
             cluster,
             workerNodeRole: nodeRole,
-            workerSecurityGroupIdSsmPath: '/k8s/development/eks/workers-sg-id',
             subnetTagKey: 'kubernetes.io/cluster/k8s-eks-development',
             karpenter: {
                 instanceCategory: ['t'],

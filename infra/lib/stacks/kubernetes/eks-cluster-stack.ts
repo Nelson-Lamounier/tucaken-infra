@@ -18,7 +18,6 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
 
 import { Construct } from 'constructs';
@@ -32,8 +31,6 @@ export interface EksClusterStackProps extends cdk.StackProps {
      * @default `shared-vpc-${targetEnvironment}`
      */
     readonly vpcName?: string;
-    /** SSM prefix for cross-stack parameter writes (e.g. `/k8s/development`). */
-    readonly ssmPrefix: string;
     readonly clusterName: string;
     readonly version: string;
 }
@@ -43,37 +40,12 @@ export class EksClusterStack extends cdk.Stack {
     public readonly secretsKmsKey: kms.Key;
     /** Looked-up SharedVpc — exposed so sibling stacks can read `vpcId`. */
     public readonly vpc: ec2.IVpc;
-    /** Karpenter worker-node SG: node-to-node + ELB ingress. Stored in SSM at `${ssmPrefix}/eks/workers-sg-id`. */
-    public readonly eksWorkersSg: ec2.SecurityGroup;
 
     constructor(scope: Construct, id: string, props: EksClusterStackProps) {
         super(scope, id, props);
 
         const vpcName = props.vpcName ?? `shared-vpc-${props.targetEnvironment}`;
         this.vpc = ec2.Vpc.fromLookup(this, 'SharedVpc', { vpcName });
-
-        // =====================================================================
-        // EKS Workers Security Group (Karpenter-launched nodes)
-        //
-        // Previously provisioned in KubernetesBaseStack. Moved here because
-        // it belongs to the EKS control plane domain — BaseStack is kubeadm
-        // legacy. EksKarpenterStack reads this via SSM (no cross-stack ref).
-        // =====================================================================
-        this.eksWorkersSg = new ec2.SecurityGroup(this, 'EksWorkersSg', {
-            vpc: this.vpc,
-            securityGroupName: `eks-workers-${props.targetEnvironment}`,
-            description: 'EKS Karpenter-launched worker nodes - node-to-node + ELB ingress',
-            allowAllOutbound: true,
-        });
-        this.eksWorkersSg.addIngressRule(
-            this.eksWorkersSg,
-            ec2.Port.allTraffic(),
-            'Node-to-node communication',
-        );
-        new ssm.StringParameter(this, 'EksWorkersSgIdParam', {
-            parameterName: `${props.ssmPrefix}/eks/workers-sg-id`,
-            stringValue: this.eksWorkersSg.securityGroupId,
-        });
 
         this.secretsKmsKey = new kms.Key(this, 'SecretsKms', {
             alias: `alias/${props.clusterName}-secrets`,

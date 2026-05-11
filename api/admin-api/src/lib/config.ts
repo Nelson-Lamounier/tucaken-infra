@@ -202,13 +202,6 @@ export interface AdminApiConfig {
   /** ServiceAccount the resume-import-processor Job pod runs as. */
   readonly resumeImportServiceAccount: string;
 
-  /**
-   * Bedrock Knowledge Base ID for the Pinecone retrieval backend.
-   * Optional — when absent, KB retrieval is skipped inside the K8s pod
-   * (pod logs a warning). Set via KNOWLEDGE_BASE_ID env var.
-   */
-  readonly knowledgeBaseId: string | undefined;
-
   // Note: image URIs are NOT in this config object. Use getJobImage(name)
   // from this same module — it reads from the file mount on each call (with
   // a 30s cache) so a Secret rotation by ESO is picked up without restart.
@@ -285,6 +278,5 @@ export function loadConfig(): AdminApiConfig {
     strategistPipelineServiceAccount: process.env['STRATEGIST_PIPELINE_SERVICE_ACCOUNT'] ?? 'job-strategist-sa',
     resumeImportNamespace:           process.env['RESUME_IMPORT_NAMESPACE'] ?? 'resume-import',
     resumeImportServiceAccount:      process.env['RESUME_IMPORT_SERVICE_ACCOUNT'] ?? 'resume-import-sa',
-    knowledgeBaseId:                 process.env['KNOWLEDGE_BASE_ID'] || undefined,
   };
 }

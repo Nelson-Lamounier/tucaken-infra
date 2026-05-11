@@ -29,6 +29,7 @@ import { userProvisionMiddleware } from './middleware/user-provision.js';
 import { createApplicationsRouter } from './routes/applications.js';
 import { createArticlesRouter } from './routes/articles.js';
 import { createAssetsRouter } from './routes/assets.js';
+import { createBedrockUsageRouter } from './routes/bedrock-usage.js';
 import { createFinopsRouter } from './routes/finops.js';
 import { createGitHubRouter, createGitHubWebhookRouter } from './routes/github.js';
 import { createHealthRouter } from './routes/health.js';
@@ -115,12 +116,14 @@ app.use('/api/admin/*', jwtMiddleware);
 app.use('/api/admin/*', userProvisionMiddleware(getPool(config)));
 
 // ── Staff-only gates ──────────────────────────────────────────────────────────
-app.use('/api/admin/finops/*',    requireAdminGroup());
-app.use('/api/admin/ingestion/*', requireAdminGroup());
+app.use('/api/admin/bedrock-usage/*', requireAdminGroup());
+app.use('/api/admin/finops/*',        requireAdminGroup());
+app.use('/api/admin/ingestion/*',     requireAdminGroup());
 
 // ── Protected routes ─────────────────────────────────────────────────────────
-app.route('/api/admin/me',      createMeRouter(config));
-app.route('/api/admin/github',  createGitHubRouter(config));
+app.route('/api/admin/bedrock-usage', createBedrockUsageRouter(config));
+app.route('/api/admin/me',           createMeRouter(config));
+app.route('/api/admin/github',       createGitHubRouter(config));
 app.route('/api/admin/articles', createArticlesRouter(config));
 app.route('/api/admin/applications', createApplicationsRouter(config));
 app.route('/api/admin/assets', createAssetsRouter(config));

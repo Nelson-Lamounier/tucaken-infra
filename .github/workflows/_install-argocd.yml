@@ -118,6 +118,23 @@ jobs:
             --values kubernetes-bootstrap/charts/argocd-eks/values.yaml \
             --wait --timeout 10m
 
+      # helm upgrade --install (not helm install) skips resources annotated with
+      # helm.sh/resource-policy: keep when the Helm release already exists.
+      # On a restore where the cluster was rebuilt but the Helm release state
+      # survived, argocd-secret is never recreated — causing argocd-server and
+      # argocd-dex-server to crash with "secret argocd-secret not found".
+      # This step is idempotent: no-op when Helm created the secret normally.
+      - name: Ensure argocd-secret exists (restore-safe)
+        run: |
+          set -euo pipefail
+          if ! kubectl get secret argocd-secret -n argocd &>/dev/null; then
+            echo "argocd-secret missing -- helm upgrade skipped keep-annotated resource; creating..."
+            kubectl -n argocd create secret generic argocd-secret \
+              --from-literal=server.secretkey="$(openssl rand -base64 32)"
+          else
+            echo "argocd-secret present -- no action needed"
+          fi
+
       - name: Wait for ArgoCD deployments
         run: |
           kubectl -n argocd wait \

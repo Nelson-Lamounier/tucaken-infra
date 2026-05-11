@@ -45,6 +45,7 @@ import {
     listInstallationRepos,
 } from '../lib/github-app.js';
 import { getBatchApi } from '../lib/k8s.js';
+import { traceParentEnv } from '../lib/k8s-job-builder.js';
 import { getPool } from '../lib/pg.js';
 import { AdminApiBindings, requireUserId } from '../lib/types.js';
 
@@ -374,6 +375,7 @@ async function dispatchIngestionJob(
                                 name:  'ENRICHMENT_MODEL_ID',
                                 value: process.env['ENRICHMENT_MODEL_ID'] ?? 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
                             },
+                            ...(() => { const tp = traceParentEnv(); return tp ? [tp] : []; })(),
                         ],
                         envFrom: [{ secretRef: { name: 'platform-rds-credentials' } }],
                         resources: {

@@ -26,7 +26,11 @@ import { Environment } from '../../config/environments';
 
 export interface EksClusterStackProps extends cdk.StackProps {
     readonly targetEnvironment: Environment;
-    readonly vpc: ec2.IVpc;
+    /**
+     * VPC name tag used for synth-time lookup via `Vpc.fromLookup()`.
+     * @default `shared-vpc-${targetEnvironment}`
+     */
+    readonly vpcName?: string;
     readonly clusterName: string;
     readonly version: string;
 }
@@ -34,9 +38,14 @@ export interface EksClusterStackProps extends cdk.StackProps {
 export class EksClusterStack extends cdk.Stack {
     public readonly cluster: eks.Cluster;
     public readonly secretsKmsKey: kms.Key;
+    /** Looked-up SharedVpc — exposed so sibling stacks can read `vpcId`. */
+    public readonly vpc: ec2.IVpc;
 
     constructor(scope: Construct, id: string, props: EksClusterStackProps) {
         super(scope, id, props);
+
+        const vpcName = props.vpcName ?? `shared-vpc-${props.targetEnvironment}`;
+        this.vpc = ec2.Vpc.fromLookup(this, 'SharedVpc', { vpcName });
 
         this.secretsKmsKey = new kms.Key(this, 'SecretsKms', {
             alias: `alias/${props.clusterName}-secrets`,
@@ -48,7 +57,7 @@ export class EksClusterStack extends cdk.Stack {
         this.cluster = new eks.Cluster(this, 'Cluster', {
             clusterName: props.clusterName,
             version: eks.KubernetesVersion.of(props.version),
-            vpc: props.vpc,
+            vpc: this.vpc,
             vpcSubnets: [{ subnetType: ec2.SubnetType.PUBLIC }],
             defaultCapacity: 0,
             // Required for EKS Access Entries (EksAccessStack) to work.

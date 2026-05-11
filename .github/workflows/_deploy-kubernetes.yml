@@ -21,7 +21,7 @@
 #   2.  Base             (VPC networking + SG + KMS + EBS + EIP)
 #   2b. ✅ Verify Base    (Integration test — VPC, SGs, KMS, EBS, EIP, Route53)
 #   2c. API              (API Gateway + Lambda) [parallel with 2, depends on 1]
-#   2d. PlatformRds      (PostgreSQL + SM secret + SSM params) [depends on 2b]
+# PlatformRds moved to _deploy-eks.yml — no longer depends on BaseStack.
 #
 # ─── Post-Deploy ────────────────────────────────────────────────────
 #   6.  Deployment Failure Alert    (halt + preserve + alert)
@@ -89,7 +89,6 @@ jobs:
       data-stack: ${{ steps.synth.outputs.data }}
       base-stack: ${{ steps.synth.outputs.base }}
       api-stack: ${{ steps.synth.outputs.api }}
-      platform-rds-stack: ${{ steps.synth.outputs.platformRds }}
 
 
     steps:
@@ -440,31 +439,6 @@ jobs:
         run: just ci-integration-test kubernetes/base-stack $CDK_ENV --verbose
 
   # ===========================================================================
-  # Deploy Platform RDS Stack (2e) — PostgreSQL 18 + Secrets Manager + SSM
-  #
-  # Runs in parallel with ControlPlane, Observability, and API stacks.
-  # Depends only on Base stack (SharedVpc subnets must exist).
-  # RDS first-creation can take up to 15 minutes — timeout set to 25 min.
-  # K8s pods connect via PgBouncer (ArgoCD wave 2/3 in kubernetes-platform).
-  # ===========================================================================
-  deploy-platform-rds:
-    name: Deploy Platform RDS
-    needs: [setup, deploy-base, verify-base-stack]
-    if: >-
-      always()
-      && needs.deploy-base.result == 'success'
-      && needs.verify-base-stack.result == 'success'
-    uses: ./.github/workflows/_deploy-stack.yml
-    with:
-      stack-name: ${{ needs.setup.outputs.platform-rds-stack }}
-      project: kubernetes
-      environment: ${{ inputs.environment }}
-      aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-      require-approval: ${{ inputs.require-approval }}
-      outputs-directory: "deployment-outputs"
-    secrets: inherit
-
-  # ===========================================================================
   # Deployment Failure Alert (staging/production only)
   #
   # For K8s/GitOps environments, automated CFn rollbacks on stateful infra
@@ -483,7 +457,6 @@ jobs:
         deploy-data,
         deploy-base,
         deploy-api,
-        deploy-platform-rds,
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -495,7 +468,6 @@ jobs:
         || needs.deploy-data.result == 'failure'
         || needs.deploy-base.result == 'failure'
         || needs.deploy-api.result == 'failure'
-        || needs.deploy-platform-rds.result == 'failure'
       )
       && inputs.cdk-environment != 'development'
 
@@ -529,13 +501,12 @@ jobs:
               "data": "${{ needs.deploy-data.result }}",
               "base": "${{ needs.deploy-base.result }}",
               "api": "${{ needs.deploy-api.result }}",
-              "platform-rds": "${{ needs.deploy-platform-rds.result }}"
             }
           RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           COMMIT_URL: "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
         run: |
           just ci-failure-report \
-            --stacks "${{ needs.setup.outputs.data-stack }},${{ needs.setup.outputs.base-stack }},${{ needs.setup.outputs.api-stack }},${{ needs.setup.outputs.platform-rds-stack }}" \
+            --stacks "${{ needs.setup.outputs.data-stack }},${{ needs.setup.outputs.base-stack }},${{ needs.setup.outputs.api-stack }}" \
             --region ${{ env.AWS_REGION }} \
             --ssm-prefix "/k8s/${{ inputs.cdk-environment }}"
 
@@ -550,7 +521,6 @@ jobs:
       - deploy-data
       - deploy-base
       - deploy-api
-      - deploy-platform-rds
       - deployment-failure-alert
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -624,7 +594,6 @@ jobs:
           DEPLOY_DATA_RESULT: ${{ needs.deploy-data.result }}
           DEPLOY_BASE_RESULT: ${{ needs.deploy-base.result }}
           DEPLOY_API_RESULT: ${{ needs.deploy-api.result || 'skipped' }}
-          DEPLOY_PLATFORM_RDS_RESULT: ${{ needs.deploy-platform-rds.result || 'skipped' }}
           ALERT_RESULT: ${{ needs.deployment-failure-alert.result || 'skipped' }}
           COMMIT_SHORT_SHA: ${{ needs.setup.outputs.commit-short-sha }}
         run: just ci-summary kubernetes ${{ inputs.cdk-environment }}

@@ -3,33 +3,13 @@
 # @reason: kubeadm cluster decommissioned; EKS is now the sole cluster.
 # @see: docs/superpowers/specs/2026-05-05-eks-migration-design.md
 # Kept for: cdk destroy reference (run manually to tear down kubeadm stacks).
+# Active stacks: Data, Base, Api. PlatformRds moved to deploy-eks-development.yml.
 # Do not trigger automatically.
-#
-# @description Deploy K8s Infrastructure to Development
-#
-# Unified infrastructure pipeline for the K8s cluster.
-# Deploys CDK stacks, syncs bootstrap scripts, builds Golden AMI,
-# and runs verification — all in one pipeline.
-#
-# 11-Stack Architecture: Data → Base → ControlPlane → GeneralPool → MonitoringPool
-#                        → AppIam → Api → Edge → Oidc → PlatformRds → Observability.
-# Control Plane stack includes AMI-refresh automation (EventBridge + Step Functions).
-# Application workloads (traefik, metrics-server) are managed by
-# ArgoCD via Pipeline B (gitops-k8s.yml).
-#
-# Prerequisites:
-#   - Shared VPC from deploy-shared workflow
-#
-# Trigger chain:
-#   push → main → CI completes → Deploy Shared completes
-#                                ↓  workflow_run [completed, conclusion=success, branch=main]
-#                              Deploy K8s (this workflow)
-#                                ↓  gate job — only proceeds if k8s paths changed
 
 name: Deploy K8s to Development
 
 on:
-  workflow_dispatch: # Manual only — disabled from automatic workflow_run trigger on 2026-05-07
+  workflow_dispatch:
     inputs:
       skip_verification:
         description: "Skip post-deployment verification"
@@ -45,92 +25,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ===========================================================================
-  # Gate — Shared deploy must have succeeded + relevant paths must have changed.
-  # Skips deploy on pushes that didn't touch k8s-infra files.
-  # workflow_dispatch bypasses the paths check and always deploys.
-  # ===========================================================================
-  gate:
-    name: Check Shared result + changed paths
-    runs-on: ubuntu-latest
-    outputs:
-      deploy: ${{ steps.decide.outputs.deploy }}
-      skip_verification: ${{ steps.decide.outputs.skip_verification }}
-    steps:
-      - name: Check upstream conclusion
-        id: upstream
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            CONCLUSION="${{ github.event.workflow_run.conclusion }}"
-            echo "conclusion=$CONCLUSION" >> "$GITHUB_OUTPUT"
-            if [[ "$CONCLUSION" != "success" ]]; then
-              echo "ok=false" >> "$GITHUB_OUTPUT"
-              echo "Deploy Shared concluded: $CONCLUSION — will skip k8s deploy."
-            else
-              echo "ok=true" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        if: steps.upstream.outputs.ok == 'true'
-        with:
-          # Check out the commit that triggered the chain, not the workflow file HEAD.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 2  # HEAD + HEAD~1 required for the diff below
-
-      - name: Detect changed paths
-        id: paths
-        if: steps.upstream.outputs.ok == 'true' && github.event_name == 'workflow_run'
-        run: |
-          changed=$(git diff --name-only HEAD~1 HEAD)
-          echo "Changed files:"
-          echo "$changed"
-          if echo "$changed" | grep -qE \
-            '^(infra/lib/stacks/kubernetes/|infra/lib/config/(kubernetes|nextjs)/|infra/lib/projects/kubernetes/|infra/lib/constructs/|infra/lib/utilities/|infra/scripts/cd/|infra/bin/app\.ts$|\.github/workflows/deploy-kubernetes\.yml$|\.github/workflows/_deploy-kubernetes\.yml$|\.github/workflows/_deploy-stack\.yml$|\.github/actions/)'; then
-            echo "relevant=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "relevant=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Decide whether to deploy
-        id: decide
-        run: |
-          if [[ "${{ steps.upstream.outputs.ok }}" != "true" ]]; then
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "skip_verification=false" >> "$GITHUB_OUTPUT"
-            echo "Upstream did not succeed — skipping."
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-            echo "skip_verification=${{ inputs.skip_verification || false }}" >> "$GITHUB_OUTPUT"
-            echo "Manual trigger — deploying."
-          elif [[ "${{ steps.paths.outputs.relevant }}" == "true" ]]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-            echo "skip_verification=false" >> "$GITHUB_OUTPUT"
-            echo "K8s-infra paths changed — deploying."
-          else
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "skip_verification=false" >> "$GITHUB_OUTPUT"
-            echo "No k8s-infra paths changed — skipping deploy."
-          fi
-
   deploy:
     name: Deploy to Development
-    needs: [gate]
-    if: needs.gate.outputs.deploy == 'true'
     uses: ./.github/workflows/_deploy-kubernetes.yml
     with:
       environment: development
       cdk-environment: development
       require-approval: never
-      skip-verification: ${{ needs.gate.outputs.skip_verification == 'true' }}
+      skip-verification: ${{ inputs.skip_verification || false }}
     secrets: inherit
 
   deploy-marker:
     name: Loki deploy marker
-    needs: [gate, deploy]
-    if: always() && needs.gate.outputs.deploy == 'true'
+    needs: [deploy]
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:

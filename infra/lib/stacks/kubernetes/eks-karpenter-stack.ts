@@ -15,7 +15,6 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
 
 import { Construct } from 'constructs';
@@ -27,12 +26,6 @@ export interface EksKarpenterStackProps extends cdk.StackProps {
     readonly targetEnvironment: Environment;
     readonly cluster: eks.ICluster;
     readonly workerNodeRole: iam.IRole;
-    /**
-     * SSM parameter path that holds the EKS workers security group ID.
-     * Resolved at deploy time via SSM dynamic reference — avoids CFN
-     * cross-stack exports (repo convention; see CLAUDE.md).
-     */
-    readonly workerSecurityGroupIdSsmPath: string;
     readonly subnetTagKey: string;
     readonly karpenter: EksKarpenterNodePoolConfig;
 }
@@ -42,14 +35,6 @@ export class EksKarpenterStack extends cdk.Stack {
 
     constructor(scope: Construct, id: string, props: EksKarpenterStackProps) {
         super(scope, id, props);
-
-        // Resolve the workers SG ID at deploy time from SSM. Avoids the
-        // CFN cross-stack export that would otherwise tie EksKarpenter's
-        // template to BaseStack's export name (CLAUDE.md convention).
-        const workerSecurityGroupId = ssm.StringParameter.valueForStringParameter(
-            this,
-            props.workerSecurityGroupIdSsmPath,
-        );
 
         this.interruptionQueue = new sqs.Queue(this, 'InterruptionQueue', {
             queueName: `${props.cluster.clusterName}-karpenter`,
@@ -114,18 +99,15 @@ export class EksKarpenterStack extends cdk.Stack {
                         amiSelectorTerms: [{ alias: 'al2023@latest' }],
                         role: cdk.Fn.select(1, cdk.Fn.split('/', props.workerNodeRole.roleArn)),
                         subnetSelectorTerms: [{ tags: { [props.subnetTagKey]: 'shared' } }],
-                        // BOTH SGs attach to every Karpenter-launched node:
-                        //   workerSecurityGroupId — custom `eks-workers-<env>`
-                        //     SG (BaseStack), node-to-node + future ELB rules.
-                        //   clusterSecurityGroup — EKS-auto-managed cluster
-                        //     SG carrying the control-plane ↔ kubelet rules
-                        //     EKS injects on cluster create. Without this,
-                        //     new nodes register-fail (`NodeNotFound`)
-                        //     because the API server can't reach them on
-                        //     :10250.
+                        // Tag-based SG discovery — selects the EKS-managed
+                        // cluster SG at node launch time. EKS auto-tags it
+                        // `kubernetes.io/cluster/<name>: owned` on cluster
+                        // create. The cluster SG already carries:
+                        //   - all-traffic self-referencing rule (node-to-node)
+                        //   - control-plane ↔ kubelet rules (:10250)
+                        // No pre-provisioned CDK SG required.
                         securityGroupSelectorTerms: [
-                            { id: workerSecurityGroupId },
-                            { id: props.cluster.clusterSecurityGroupId },
+                            { tags: { [`kubernetes.io/cluster/${props.cluster.clusterName}`]: 'owned' } },
                         ],
                         // IMDSv2 hop limit 2: pods run inside a Linux network
                         // bridge (veth pair), which adds one hop vs. the host.

@@ -34,7 +34,11 @@ import { SsmParameterStoreConstruct } from '../../constructs/ssm';
 
 export interface PlatformRdsStackProps extends cdk.StackProps {
     readonly targetEnvironment: Environment;
-    readonly vpc: ec2.IVpc;
+    /**
+     * VPC name tag used for synth-time lookup via `Vpc.fromLookup()`.
+     * @default `shared-vpc-${targetEnvironment}`
+     */
+    readonly vpcName?: string;
     readonly namePrefix: string;
     readonly databaseName: string;
 }
@@ -50,8 +54,10 @@ export class PlatformRdsStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: PlatformRdsStackProps) {
         super(scope, id, props);
 
-        const { targetEnvironment, vpc, namePrefix, databaseName } = props;
+        const { targetEnvironment, namePrefix, databaseName } = props;
         const isProduction = isProductionEnvironment(targetEnvironment);
+        const vpcName = props.vpcName ?? `shared-vpc-${targetEnvironment}`;
+        const vpc = ec2.Vpc.fromLookup(this, 'SharedVpc', { vpcName });
         const removalPolicy = environmentRemovalPolicy(targetEnvironment);
         const ssmBase = `/k8s/${targetEnvironment}/platform-rds`;
 

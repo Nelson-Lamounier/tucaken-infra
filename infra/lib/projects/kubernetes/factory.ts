@@ -260,14 +260,12 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             stackId(this.namespace, 'PlatformRds', environment),
             {
                 targetEnvironment: environment,
-                vpc: baseStack.vpc,
                 namePrefix,
                 databaseName: 'tucaken',
                 env,
                 description: `Platform PostgreSQL 16 + pgvector — Tucaken unified data store - ${environment}`,
             },
         );
-        platformRdsStack.addDependency(baseStack);
         stacks.push(platformRdsStack);
         stackMap.platformRds = platformRdsStack;
 
@@ -341,12 +339,10 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             stackId(this.namespace, 'EksCluster', environment),
             {
                 env, targetEnvironment: environment,
-                vpc: baseStack.vpc,
                 clusterName: eksConfig.clusterName,
                 version: eksConfig.version,
             },
         );
-        eksClusterStack.addDependency(baseStack);
         stacks.push(eksClusterStack); stackMap.eksCluster = eksClusterStack;
 
         const eksSystemNg = new EksSystemNodeGroupStack(
@@ -395,7 +391,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             {
                 env, targetEnvironment: environment,
                 cluster: eksClusterStack.cluster,
-                vpcId: baseStack.vpc.vpcId,
+                vpcId: eksClusterStack.vpc.vpcId,
                 region: env.region!,
                 karpenterInterruptionQueueName: `${eksConfig.clusterName}-karpenter`,
                 workerNodeRoleArn: eksSystemNg.nodeRole.roleArn,
@@ -414,7 +410,6 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 env, targetEnvironment: environment,
                 cluster: eksClusterStack.cluster,
                 workerNodeRole: eksSystemNg.nodeRole,
-                workerSecurityGroupIdSsmPath: `${ssmPrefix}/eks/workers-sg-id`,
                 subnetTagKey: `kubernetes.io/cluster/${eksConfig.clusterName}`,
                 karpenter: eksConfig.karpenter,
             },

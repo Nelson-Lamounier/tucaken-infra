@@ -285,6 +285,25 @@ export class EksPodIdentityStack extends cdk.Stack {
                         }),
                     );
                 }
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'GrafanaCloudWatchRead',
+                        actions: [
+                            'cloudwatch:GetMetricData',
+                            'cloudwatch:GetMetricStatistics',
+                            'cloudwatch:ListMetrics',
+                            'cloudwatch:DescribeAlarms',
+                            'cloudwatch:ListTagsForResource',
+                            'logs:StartQuery',
+                            'logs:StopQuery',
+                            'logs:GetQueryResults',
+                            'logs:DescribeLogGroups',
+                            'logs:GetLogEvents',
+                            'logs:FilterLogEvents',
+                        ],
+                        resources: ['*'],
+                    }),
+                );
                 break;
             case 'ingestion':
                 // Bedrock InvokeModel for chunk enrichment (BedrockChunkEnricher)

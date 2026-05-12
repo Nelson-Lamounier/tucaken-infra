@@ -36,6 +36,8 @@ export interface PodIdentityBinding {
         | 'grafana-alerting'
         | 'admin-api'
         | 'ingestion'
+        | 'job-strategist'
+        | 'article-pipeline'
         | 'image-updater'
         | 'headlamp-token-pusher';
 }
@@ -77,16 +79,18 @@ export interface EksConfig {
 }
 
 const COMMON_BINDINGS: readonly PodIdentityBinding[] = [
-    { namespace: 'karpenter', serviceAccount: 'karpenter', purpose: 'karpenter' },
-    { namespace: 'kube-system', serviceAccount: 'aws-load-balancer-controller', purpose: 'alb-controller' },
-    { namespace: 'kube-system', serviceAccount: 'external-dns', purpose: 'external-dns' },
-    { namespace: 'external-secrets', serviceAccount: 'external-secrets', purpose: 'external-secrets' },
-    { namespace: 'kube-system', serviceAccount: 'ebs-csi-controller-sa', purpose: 'ebs-csi' },
-    { namespace: 'monitoring', serviceAccount: 'grafana', purpose: 'grafana-alerting' },
-    { namespace: 'admin-api', serviceAccount: 'admin-api', purpose: 'admin-api' },
-    { namespace: 'ingestion', serviceAccount: 'ingestion-sa', purpose: 'ingestion' },
-    { namespace: 'argocd', serviceAccount: 'argocd-image-updater', purpose: 'image-updater' },
-    { namespace: 'headlamp', serviceAccount: 'token-pusher', purpose: 'headlamp-token-pusher' },
+    { namespace: 'karpenter',        serviceAccount: 'karpenter',                    purpose: 'karpenter' },
+    { namespace: 'kube-system',      serviceAccount: 'aws-load-balancer-controller', purpose: 'alb-controller' },
+    { namespace: 'kube-system',      serviceAccount: 'external-dns',                purpose: 'external-dns' },
+    { namespace: 'external-secrets', serviceAccount: 'external-secrets',            purpose: 'external-secrets' },
+    { namespace: 'kube-system',      serviceAccount: 'ebs-csi-controller-sa',       purpose: 'ebs-csi' },
+    { namespace: 'monitoring',       serviceAccount: 'grafana',                     purpose: 'grafana-alerting' },
+    { namespace: 'admin-api',        serviceAccount: 'admin-api',                   purpose: 'admin-api' },
+    { namespace: 'ingestion',        serviceAccount: 'ingestion-sa',                purpose: 'ingestion' },
+    { namespace: 'job-strategist',   serviceAccount: 'job-strategist-sa',           purpose: 'job-strategist' },
+    { namespace: 'article-pipeline', serviceAccount: 'article-pipeline-sa',         purpose: 'article-pipeline' },
+    { namespace: 'argocd',           serviceAccount: 'argocd-image-updater',        purpose: 'image-updater' },
+    { namespace: 'headlamp',         serviceAccount: 'token-pusher',                purpose: 'headlamp-token-pusher' },
 ] as const;
 
 const COMMON_VERSIONS = {

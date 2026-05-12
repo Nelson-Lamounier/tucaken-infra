@@ -323,6 +323,36 @@ export class EksPodIdentityStack extends cdk.Stack {
                     }),
                 );
                 break;
+            case 'job-strategist':
+            case 'article-pipeline':
+                // Bedrock InvokeModel for Claude research + strategist agents.
+                // bedrock:Rerank for semantic reranking of retrieved passages
+                // (RdsVectorStore.rerank — falls back to cosine top-K when absent,
+                // but reranking improves retrieval quality significantly).
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'PipelineBedrockInvoke',
+                        actions: [
+                            'bedrock:InvokeModel',
+                            'bedrock:InvokeModelWithResponseStream',
+                        ],
+                        resources: [
+                            'arn:aws:bedrock:*::foundation-model/*',
+                            `arn:aws:bedrock:*:${cdk.Stack.of(this).account}:inference-profile/*`,
+                        ],
+                    }),
+                );
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'PipelineBedrockRerank',
+                        actions: ['bedrock:Rerank'],
+                        resources: [
+                            'arn:aws:bedrock:*::foundation-model/*',
+                            `arn:aws:bedrock:*:${cdk.Stack.of(this).account}:inference-profile/*`,
+                        ],
+                    }),
+                );
+                break;
             case 'admin-api':
                 // S3 access for presigned upload URLs (resume-imports) and
                 // direct asset operations (articles). Bucket name is published

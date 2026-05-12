@@ -41,6 +41,14 @@ RUN KUBECTL_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt) \
     && mv kubectl /usr/local/bin/kubectl \
     && kubectl version --client
 
+# ── kubectl-argo-rollouts plugin ─────────────────────────────────────────────
+RUN ARGO_VERSION=$(curl -sL https://api.github.com/repos/argoproj/argo-rollouts/releases/latest \
+      | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+    && curl -sLO "https://github.com/argoproj/argo-rollouts/releases/download/${ARGO_VERSION}/kubectl-argo-rollouts-linux-amd64" \
+    && chmod +x kubectl-argo-rollouts-linux-amd64 \
+    && mv kubectl-argo-rollouts-linux-amd64 /usr/local/bin/kubectl-argo-rollouts \
+    && kubectl argo rollouts version
+
 USER runner
 
 ENTRYPOINT ["/home/runner/run.sh"]

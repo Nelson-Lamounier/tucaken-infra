@@ -376,6 +376,21 @@ export class EksPodIdentityStack extends cdk.Stack {
                     }),
                 );
                 break;
+            case 'headlamp-token-pusher':
+                // PostSync Job (charts/headlamp-config) reads the non-expiring
+                // headlamp-viewer-token K8s Secret and pushes its value to SSM
+                // so ops can retrieve the dashboard token without kubectl access.
+                // Scoped to the single parameter — no wildcard.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'HeadlampPushViewerToken',
+                        actions: ['ssm:PutParameter'],
+                        resources: [
+                            `arn:aws:ssm:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:parameter/k8s/${props.targetEnvironment}/headlamp-viewer-token`,
+                        ],
+                    }),
+                );
+                break;
         }
     }
 }

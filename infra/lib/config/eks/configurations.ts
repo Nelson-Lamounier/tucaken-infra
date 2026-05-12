@@ -36,7 +36,8 @@ export interface PodIdentityBinding {
         | 'grafana-alerting'
         | 'admin-api'
         | 'ingestion'
-        | 'image-updater';
+        | 'image-updater'
+        | 'headlamp-token-pusher';
 }
 
 export interface EksMngConfig {
@@ -85,6 +86,7 @@ const COMMON_BINDINGS: readonly PodIdentityBinding[] = [
     { namespace: 'admin-api', serviceAccount: 'admin-api', purpose: 'admin-api' },
     { namespace: 'ingestion', serviceAccount: 'ingestion-sa', purpose: 'ingestion' },
     { namespace: 'argocd', serviceAccount: 'argocd-image-updater', purpose: 'image-updater' },
+    { namespace: 'headlamp', serviceAccount: 'token-pusher', purpose: 'headlamp-token-pusher' },
 ] as const;
 
 const COMMON_VERSIONS = {

@@ -426,10 +426,6 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
         // Host-scoped allowlist + managed rules + rate limit. Attached to
         // the shared ALB via `alb.ingress.kubernetes.io/wafv2-acl-arn` on
         // a workload Ingress. Plan 5b § 0.4.
-        //
-        // Placed before EksSchedulerStack so ipSyncFunctionName is available
-        // to pass to ScaleUpFn — ScaleUpFn invokes it after scaling the MNG
-        // so the WAF IP allowlist is refreshed from SSM on every cluster start.
         const eksPublicWaf = new EksPublicWafStack(
             scope,
             stackId(this.namespace, 'EksPublicWaf', environment),
@@ -465,7 +461,11 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                     env,
                     cluster: eksClusterStack.cluster,
                     nodeGroupName: eksSystemNg.nodeGroup.nodegroupName,
-                    wafIpSyncFunctionName: eksPublicWaf.ipSyncFunctionName,
+                    // Constructed from EksPublicWafStack naming convention
+                    // (namePrefix defaults to 'eks-public') to avoid creating
+                    // a CloudFormation cross-stack Export/Import, which would
+                    // require redeploying EksPublicWafStack to add the export.
+                    wafIpSyncFunctionName: `eks-public-ip-sync-${environment}`,
                 },
             );
             eksScheduler.addDependency(eksSystemNg);

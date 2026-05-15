@@ -156,11 +156,10 @@ export const EKS_CONFIGS: Record<DeployableEnvironment, Omit<EksConfig, 'adminPr
     [Environment.DEVELOPMENT]: {
         clusterName: 'k8s-eks-development',
         version: EKS_VERSION,
-        // TODO: bump to t3.large once SSM migration deploys land (PR follow-up).
-        // Replacing the MNG instance type triggers a new physical resource;
-        // current cross-stack export → EksScheduler import blocks that, so
-        // the SSM-ref migration must deploy first.
-        mng: { instanceTypes: ['t3.medium'], desiredSize: 2, minSize: 2, maxSize: 3, diskSizeGib: 30 },
+        // t3.large (29 pod cap) replaces t3.medium (17 pod cap). MNG hosts
+        // Karpenter controller + CoreDNS only; other system pods (ESO,
+        // cert-manager, etc.) land on the elastic `system` Karpenter NodePool.
+        mng: { instanceTypes: ['t3.large'], desiredSize: 2, minSize: 2, maxSize: 3, diskSizeGib: 30 },
         podIdentityBindings: COMMON_BINDINGS,
         karpenter: COMMON_KARPENTER,
         systemPool: COMMON_KARPENTER_SYSTEM,

@@ -446,7 +446,18 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                     'tucaken.com',
                     'www.tucaken.com',
                 ],
-                rateLimitedHosts: ['api.nelsonlamounier.com'],
+                // Edge per-IP rate limit (WAF RateBasedStatement, 5-min
+                // window). Covers the public tucaken-app + BFF surface in
+                // addition to the API host — defence-in-depth above the
+                // app-level per-IP limiter, which is per-pod and therefore
+                // weak under the blue/green + HPA replica fan-out.
+                rateLimitedHosts: [
+                    'api.nelsonlamounier.com',
+                    'tucaken.io',
+                    'www.tucaken.io',
+                    'tucaken.com',
+                    'www.tucaken.com',
+                ],
                 rateLimitPerIp: 2000,
                 ssmPrefix,
                 clusterName: eksConfig.clusterName,

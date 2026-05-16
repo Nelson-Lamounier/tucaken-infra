@@ -4,8 +4,9 @@
  *
  * Provisions two Lambda functions (scale-up, scale-down) invoked by
  * EventBridge Scheduler on Europe/Dublin cron schedules:
- *   - Scale-up:   04:00 daily  → MNG minSize=2, desiredSize=2; Karpenter→2;
- *                                 ArgoCD×7→1; WAF IP sync (async)
+ *   - Scale-up:   04:00 daily  → MNG minSize=1, desiredSize=1 (landing
+ *                                 zone only); Karpenter→2; ArgoCD×7→1;
+ *                                 WAF IP sync (async)
  *   - Scale-down: 23:00 daily  → Karpenter→0; ArgoCD×7→0; terminate Karpenter
  *                                 EC2s (tag: eks-cluster-pool=workloads-default);
  *                                 MNG minSize=0, desiredSize=0
@@ -223,7 +224,7 @@ def handler(event, context):
     eks_client.update_nodegroup_config(
         clusterName=cluster_name,
         nodegroupName=_system_nodegroup(eks_client, cluster_name),
-        scalingConfig={'minSize': 2, 'desiredSize': 2},
+        scalingConfig={'minSize': 1, 'desiredSize': 1},
     )
     log.info('Scaled MNG to 2')
 

@@ -134,12 +134,24 @@ const COMMON_KARPENTER: EksKarpenterNodePoolConfig = {
     cpuMax: 8,
 } as const;
 
-const COMMON_KARPENTER_SYSTEM: EksKarpenterSystemPoolConfig = {
+// Dev workload pool: spot-only (no on-demand fallback) — cost-optimised,
+// Karpenter still provisions purely on pod demand. staging/prod keep the
+// on-demand fallback via COMMON_KARPENTER.
+const DEV_KARPENTER: EksKarpenterNodePoolConfig = {
+    ...COMMON_KARPENTER,
+    capacityType: ['spot'],
+} as const;
+
+// Dev system pool: spot-only, capped at ~1 node (t3 sizes are all 2 vCPU,
+// so cpuLimit 2 ≈ a single node). Starts small and Karpenter consolidates
+// up to large only when system pod pressure requires it. Paired with a
+// 1-node on-demand MNG landing zone → total system tier ≤ 2 nodes, ≥1 spot.
+const DEV_KARPENTER_SYSTEM: EksKarpenterSystemPoolConfig = {
     instanceFamily: ['t3'],
     instanceSizes: ['small', 'medium', 'large'],
-    capacityType: ['spot', 'on-demand'],
+    capacityType: ['spot'],
     architectures: ['amd64'],
-    cpuLimit: 8,
+    cpuLimit: 2,
 } as const;
 
 // SSM paths holding admin-principal ARNs per environment. Populate manually:
@@ -156,13 +168,15 @@ export const EKS_CONFIGS: Record<DeployableEnvironment, Omit<EksConfig, 'adminPr
     [Environment.DEVELOPMENT]: {
         clusterName: 'k8s-eks-development',
         version: EKS_VERSION,
-        // t3.large (29 pod cap) replaces t3.medium (17 pod cap). MNG hosts
-        // Karpenter controller + CoreDNS only; other system pods (ESO,
-        // cert-manager, etc.) land on the elastic `system` Karpenter NodePool.
-        mng: { instanceTypes: ['t3.large'], desiredSize: 2, minSize: 2, maxSize: 3, diskSizeGib: 30 },
+        // Landing zone ONLY: 1× t3.medium on-demand hosts the Karpenter
+        // controller + CoreDNS. All other system pods (argocd, ESO,
+        // cert-manager, …) land on the elastic spot `system` Karpenter
+        // NodePool. maxSize 2 is rolling-update surge headroom, not steady
+        // state. Total system tier (MNG + system pool) ≤ 2 nodes.
+        mng: { instanceTypes: ['t3.medium'], desiredSize: 1, minSize: 1, maxSize: 2, diskSizeGib: 30 },
         podIdentityBindings: COMMON_BINDINGS,
-        karpenter: COMMON_KARPENTER,
-        systemPool: COMMON_KARPENTER_SYSTEM,
+        karpenter: DEV_KARPENTER,
+        systemPool: DEV_KARPENTER_SYSTEM,
         versions: COMMON_VERSIONS,
         grafanaAlertingTopicArn: 'arn:aws:sns:eu-west-1:771826808455:k8s-bootstrap-alarm',
     },

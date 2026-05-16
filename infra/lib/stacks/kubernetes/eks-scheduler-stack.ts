@@ -7,10 +7,12 @@
  *   - Scale-up:   04:00 daily  → MNG minSize=1, desiredSize=1 (landing
  *                                 zone only); Karpenter→1; ArgoCD×7→1;
  *                                 WAF IP sync (async)
- *   - Scale-down: 23:00 daily  → ESO×3→0; Karpenter→0; ArgoCD×7→0;
- *                                 terminate ALL Karpenter EC2s (tag-key
+ *   - Scale-down: 23:00 daily  → Karpenter→0; ArgoCD×7→0; terminate
+ *                                 ALL Karpenter EC2s (tag-key
  *                                 eks-cluster-pool, every pool);
  *                                 MNG minSize=0, desiredSize=0
+ *                                 (ESO not patched — out of RBAC scope;
+ *                                 dies with its node, reconciled by ArgoCD)
  *
  * Scale-down pre-zeros Karpenter and ArgoCD via the K8s API before draining
  * the MNG so no orphaned nodes or reconciliation loops survive shutdown.
@@ -89,8 +91,13 @@ export class EksSchedulerStack extends cdk.Stack {
                 actions: ['ec2:TerminateInstances'],
                 resources: ['*'],
                 conditions: {
-                    StringEquals: {
-                        'ec2:ResourceTag/eks-cluster-pool': 'workloads-default',
+                    // Any Karpenter-managed node, regardless of pool. Every
+                    // EC2NodeClass sets eks-cluster-pool (workloads-default,
+                    // system, …); StringLike '*' requires the tag present
+                    // but matches any value — still scoped to Karpenter
+                    // instances only, never MNG or unrelated EC2.
+                    StringLike: {
+                        'ec2:ResourceTag/eks-cluster-pool': '*',
                     },
                 },
             }),
@@ -113,7 +120,7 @@ export class EksSchedulerStack extends cdk.Stack {
             {
                 id: 'AwsSolutions-IAM5',
                 reason: 'ec2:DescribeInstances has no resource-level restriction in IAM. ' +
-                        'ec2:TerminateInstances is tag-conditioned to eks-cluster-pool=workloads-default. ' +
+                        'ec2:TerminateInstances is tag-conditioned to any eks-cluster-pool value (Karpenter nodes only). ' +
                         'eks nodegroup actions scoped to nodegroup/<cluster>/*/* (uuid not known at synth time). ' +
                         'eks:ListNodegroups and eks:DescribeCluster are scoped to the cluster ARN.',
                 appliesTo: [
@@ -327,10 +334,12 @@ def handler(event, context):
     ca_data = cluster_info['certificateAuthority']['data']
     token = _bearer_token(cluster_name, region)
 
-    # ESO first: stops Secrets Manager GetSecretValue polling immediately.
-    for d in ('external-secrets', 'external-secrets-webhook', 'external-secrets-cert-controller'):
-        _patch_replicas(endpoint, ca_data, token, 'external-secrets', d, 0)
-
+    # ESO is deliberately NOT patched here: the Lambda's EKS AccessEntry is
+    # scoped to karpenter + argocd only (least privilege; enforced by test).
+    # ESO pods terminate with their nodes seconds later anyway, and ArgoCD
+    # reconciles ESO back on the next start — so explicit scale-down would
+    # only save a few seconds of Secrets Manager polling at the cost of
+    # widening the Lambda's cluster RBAC. Not worth it.
     _patch_replicas(endpoint, ca_data, token, 'karpenter', 'karpenter', 0)
 
     for deploy in ARGOCD_DEPLOYMENTS:

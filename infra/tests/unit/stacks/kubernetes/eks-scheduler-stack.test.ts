@@ -81,15 +81,15 @@ describe('EksSchedulerStack', () => {
         expect(hasAction(updateStmt!, 'eks:ListNodegroups')).toBe(false);
     });
 
-    it('should scope ec2:TerminateInstances to workload tag on Lambda execution role', () => {
+    it('should scope ec2:TerminateInstances to any Karpenter pool tag on Lambda execution role', () => {
         template.hasResourceProperties('AWS::IAM::Policy', {
             PolicyDocument: {
                 Statement: Match.arrayWith([
                     Match.objectLike({
                         Action: 'ec2:TerminateInstances',
                         Condition: {
-                            StringEquals: {
-                                'ec2:ResourceTag/eks-cluster-pool': 'workloads-default',
+                            StringLike: {
+                                'ec2:ResourceTag/eks-cluster-pool': '*',
                             },
                         },
                     }),

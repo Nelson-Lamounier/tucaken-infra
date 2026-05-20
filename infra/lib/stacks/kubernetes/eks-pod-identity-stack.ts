@@ -377,6 +377,34 @@ export class EksPodIdentityStack extends cdk.Stack {
                         resources: ['arn:aws:s3:::*'],
                     }),
                 );
+                // Cognito admin operations for the account-termination flow:
+                //   AdminDisableUser — called from POST /api/admin/me/delete
+                //                      to block login during the soft-delete
+                //                      grace window.
+                //   AdminEnableUser  — called from POST /api/admin/users/:id/restore
+                //                      (support tool) to undo the disable.
+                //   AdminDeleteUser  — called by the daily account-sweep
+                //                      CronJob after the 30-day grace expires.
+                //                      Frees the email for re-registration.
+                // Scoped to all user pools in this account/region — the
+                // specific pool ARN is not available at CDK synthesis time
+                // (pool is created in a sibling stack with cross-stack ARN
+                // imports adding deploy ordering complexity). Wildcard is
+                // acceptable because the only resource type covered is
+                // userpool and the account boundary already isolates dev/prod.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'AdminApiCognitoAccountTermination',
+                        actions: [
+                            'cognito-idp:AdminDisableUser',
+                            'cognito-idp:AdminEnableUser',
+                            'cognito-idp:AdminDeleteUser',
+                        ],
+                        resources: [
+                            `arn:aws:cognito-idp:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:userpool/*`,
+                        ],
+                    }),
+                );
                 break;
             case 'image-updater':
                 // ArgoCD Image Updater polls ECR for new image tags using

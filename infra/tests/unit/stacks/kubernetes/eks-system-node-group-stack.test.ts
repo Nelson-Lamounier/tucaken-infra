@@ -65,4 +65,13 @@ describe('EksSystemNodeGroupStack', () => {
             ScalingConfig: { DesiredSize: 3, MinSize: 3, MaxSize: 4 },
         });
     });
+
+    it('should enable NetworkPolicy enforcement on the vpc-cni addon', () => {
+        template.hasResourceProperties('AWS::EKS::Addon', {
+            AddonName: 'vpc-cni',
+            ConfigurationValues: Match.serializedJson(
+                Match.objectLike({ enableNetworkPolicy: 'true' }),
+            ),
+        });
+    });
 });

@@ -53,10 +53,19 @@ export class EksSystemNodeGroupStack extends cdk.Stack {
         // to reach Ready. Both CfnAddons have no CFN dependency on the MNG so
         // CloudFormation creates them in parallel; aws-node is running before
         // the first node finishes bootstrapping.
+        // enableNetworkPolicy turns on the VPC CNI's in-cluster NetworkPolicy
+        // enforcement (the aws-eks-nodeagent runs with --enable-network-policy).
+        // Without it every Kubernetes NetworkPolicy in the cluster is inert.
+        // Pre-req before flipping this: audit existing policies so enforcement
+        // does not sever live traffic — notably any ALB target-type: ip
+        // workload whose policy lacks an ipBlock for the load-balancer subnets.
         new eks.CfnAddon(this, 'VpcCni', {
             clusterName: props.cluster.clusterName,
             addonName: 'vpc-cni',
             resolveConflicts: 'OVERWRITE',
+            configurationValues: JSON.stringify({
+                enableNetworkPolicy: 'true',
+            }),
         });
 
         new eks.CfnAddon(this, 'KubeProxy', {

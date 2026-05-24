@@ -5,7 +5,6 @@
     "esbuild": "esbuild"
   },
   "workspaces": [
-    "api/admin-api",
     "api/public-api",
     "infra",
     "bedrock-applications/shared",

@@ -91,6 +91,10 @@ export interface SharedVpcStackProps extends cdk.StackProps {
     readonly platformJobWatcherEcrRepositoryName?: string;
     /** Enable platform-job-watcher ECR repository creation @default true */
     readonly enablePlatformJobWatcherEcrRepository?: boolean;
+    /** synthetic-monitor ECR repository name @default 'synthetic-monitor' */
+    readonly syntheticMonitorEcrRepositoryName?: string;
+    /** Enable synthetic-monitor ECR repository creation @default true */
+    readonly createSyntheticMonitorEcrRepository?: boolean;
 }
 
 
@@ -137,6 +141,8 @@ export class SharedVpcStack extends cdk.Stack {
     public readonly resumeImportProcessorEcrRepository?: ecr.Repository;
     /** ECR Repository for the platform-job-watcher Deployment */
     public readonly platformJobWatcherEcrRepository?: ecr.Repository;
+    /** ECR Repository for the synthetic-monitor CronJob */
+    public readonly syntheticMonitorEcrRepository?: ecr.Repository;
 
     constructor(scope: Construct, id: string, props: SharedVpcStackProps) {
         super(scope, id, props);
@@ -763,6 +769,67 @@ export class SharedVpcStack extends cdk.Stack {
             new cdk.CfnOutput(this, 'PlatformJobWatcherEcrRepositoryUri', {
                 value: this.platformJobWatcherEcrRepository.repositoryUri,
                 description: 'platform-job-watcher K8s Deployment ECR Repository URI for docker push/pull',
+            });
+        }
+
+        // =====================================================================
+        // ECR Repository (synthetic-monitor) — API-level synthetic probe CronJob
+        // Image is consumed by the synthetic-monitor CronJob in the monitoring
+        // chart (rolled by ArgoCD Image Updater). SSM params stored under
+        // /shared/ecr-synthetic-monitor/{env}/ for CI discovery.
+        // =====================================================================
+        if (props.createSyntheticMonitorEcrRepository !== false) {
+            const repoName = props.syntheticMonitorEcrRepositoryName ?? 'synthetic-monitor';
+            const isProduction = props.targetEnvironment === Environment.PRODUCTION;
+
+            this.syntheticMonitorEcrRepository = new ecr.Repository(this, 'SyntheticMonitorEcrRepository', {
+                repositoryName: repoName,
+                imageScanOnPush: true,
+                imageTagMutability: ecr.TagMutability.MUTABLE,
+                encryption: ecr.RepositoryEncryption.AES_256,
+                removalPolicy: isProduction ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+                lifecycleRules: [
+                    {
+                        rulePriority: 1,
+                        description: 'Remove untagged images after 30 days',
+                        tagStatus: ecr.TagStatus.UNTAGGED,
+                        maxImageAge: cdk.Duration.days(30),
+                    },
+                    {
+                        rulePriority: 2,
+                        description: 'Keep only 50 most recent tagged images',
+                        tagStatus: ecr.TagStatus.ANY,
+                        maxImageCount: 50,
+                    },
+                ],
+            });
+
+            const ssmPrefix = `/shared/ecr-synthetic-monitor/${props.targetEnvironment}`;
+
+            new ssm.StringParameter(this, 'SsmSyntheticMonitorEcrRepositoryUri', {
+                parameterName: `${ssmPrefix}/repository-uri`,
+                stringValue: this.syntheticMonitorEcrRepository.repositoryUri,
+                description: `synthetic-monitor ECR repository URI for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new ssm.StringParameter(this, 'SsmSyntheticMonitorEcrRepositoryArn', {
+                parameterName: `${ssmPrefix}/repository-arn`,
+                stringValue: this.syntheticMonitorEcrRepository.repositoryArn,
+                description: `synthetic-monitor ECR repository ARN for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new ssm.StringParameter(this, 'SsmSyntheticMonitorEcrRepositoryName', {
+                parameterName: `${ssmPrefix}/repository-name`,
+                stringValue: this.syntheticMonitorEcrRepository.repositoryName,
+                description: `synthetic-monitor ECR repository name for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new cdk.CfnOutput(this, 'SyntheticMonitorEcrRepositoryUri', {
+                value: this.syntheticMonitorEcrRepository.repositoryUri,
+                description: 'synthetic-monitor CronJob ECR Repository URI for docker push/pull',
             });
         }
 

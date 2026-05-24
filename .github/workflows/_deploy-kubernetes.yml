@@ -15,7 +15,7 @@
 # are deprecated — see infra/lib/stacks/kubernetes/deprecated/.
 # EKS stacks are deployed by _deploy-eks.yml.
 #
-#   0.  ✅ Verify BFF ECR  (pre-flight: confirm admin-api ECR repo exists)
+#   0.  ✅ Verify BFF ECR  (pre-flight: confirm public-api ECR repo exists)
 #   1.  Data             (DynamoDB + S3 + SSM Parameters)
 #   1b. ✅ Verify Data    (Integration test — DynamoDB, S3, SSM, CFn outputs)
 #   2.  Base             (VPC networking + SG + KMS + EBS + EIP)
@@ -214,16 +214,18 @@ jobs:
               print(f"\nAll {len(templates)} templates passed validation")
 
   # ===========================================================================
-  # Verify BFF ECR Repositories — Pre-flight Gate (0)
+  # Verify BFF ECR Repository — Pre-flight Gate (0)
   #
-  # Confirms that both BFF ECR repositories (public-api and admin-api) exist
-  # in the Shared-Infra stack BEFORE any downstream deploy jobs run. Reads the
-  # SSM parameters published by SharedVpcStack:
+  # Confirms the public-api BFF ECR repository exists in the Shared-Infra
+  # stack BEFORE any downstream deploy jobs run. Reads the SSM parameter
+  # published by SharedVpcStack:
   #   /shared/ecr-public-api/{env}/repository-uri
-  #   /shared/ecr-admin-api/{env}/repository-uri
   #
-  # If either parameter is missing the Shared-Infra stack has not been deployed
+  # If the parameter is missing the Shared-Infra stack has not been deployed
   # yet. Run deploy-shared.yml first, then re-trigger this pipeline.
+  #
+  # admin-api ECR is no longer verified here — the admin-api app moved to the
+  # tucaken-app repo and is built/pushed from that repo's pipeline.
   # ===========================================================================
   verify-bff-ecr:
     name: "Verify BFF ECR"
@@ -245,19 +247,18 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Confirm BFF ECR repositories exist in SSM
+      - name: Confirm BFF ECR repository exists in SSM
         env:
           CDK_ENV: ${{ inputs.cdk-environment }}
           AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-        # Reads both BFF ECR SSM parameters to provide information about the repositories.
-        # These are written by SharedVpcStack when Shared-Infra is deployed.
+        # Reads the public-api BFF ECR SSM parameter to provide information about
+        # the repository. Written by SharedVpcStack when Shared-Infra is deployed.
         # This will not block the pipeline during a day 0 launch.
         shell: bash
         run: |
           set -uo pipefail
 
           PUBLIC_API_SSM="/shared/ecr-public-api/${CDK_ENV}/repository-uri"
-          ADMIN_API_SSM="/shared/ecr-admin-api/${CDK_ENV}/repository-uri"
 
           echo "Checking SSM parameter: ${PUBLIC_API_SSM}"
           PUBLIC_API_URI=$(aws ssm get-parameter \
@@ -271,20 +272,7 @@ jobs:
             PUBLIC_API_URI="not-found"
           }
 
-          echo "Checking SSM parameter: ${ADMIN_API_SSM}"
-          ADMIN_API_URI=$(aws ssm get-parameter \
-            --name "${ADMIN_API_SSM}" \
-            --region "${AWS_REGION}" \
-            --query 'Parameter.Value' \
-            --output text 2>&1) || {
-            echo "::warning::admin-api ECR repository not found in SSM."
-            echo "::warning::SSM path: ${ADMIN_API_SSM}"
-            echo "::warning::Day 0 deployment - assuming cluster launch."
-            ADMIN_API_URI="not-found"
-          }
-
           echo "public-api ECR URI : ${PUBLIC_API_URI}"
-          echo "admin-api  ECR URI : ${ADMIN_API_URI}"
           echo "BFF ECR pre-flight check completed."
 
   # ===========================================================================

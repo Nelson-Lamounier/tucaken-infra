@@ -200,6 +200,41 @@ describe('SharedVpcStack', () => {
         });
     });
 
+    describe('ontology-importer ECR Repository', () => {
+        it('should create ontology-importer ECR repository by default', () => {
+            const { stack, template } = createSharedVpcStack({
+                targetEnvironment: Environment.DEVELOPMENT,
+            });
+            expect(stack.ontologyImporterEcrRepository).toBeDefined();
+            template.hasResourceProperties('AWS::ECR::Repository', {
+                RepositoryName: 'ontology-importer',
+                ImageScanningConfiguration: { ScanOnPush: true },
+            });
+        });
+
+        it('should NOT create ontology-importer ECR repository when disabled', () => {
+            const { stack } = createSharedVpcStack({
+                createOntologyImporterEcrRepository: false,
+            });
+            expect(stack.ontologyImporterEcrRepository).toBeUndefined();
+        });
+
+        it('should publish SSM parameters for ontology-importer ECR discovery', () => {
+            const { template } = createSharedVpcStack({
+                targetEnvironment: Environment.DEVELOPMENT,
+            });
+            template.hasResourceProperties('AWS::SSM::Parameter', {
+                Name: '/shared/ecr-ontology-importer/development/repository-uri',
+            });
+            template.hasResourceProperties('AWS::SSM::Parameter', {
+                Name: '/shared/ecr-ontology-importer/development/repository-arn',
+            });
+            template.hasResourceProperties('AWS::SSM::Parameter', {
+                Name: '/shared/ecr-ontology-importer/development/repository-name',
+            });
+        });
+    });
+
     describe('wiki-mcp ECR Repository', () => {
         it('should NOT create wiki-mcp ECR repository by default (opt-in)', () => {
             const { stack } = createSharedVpcStack();

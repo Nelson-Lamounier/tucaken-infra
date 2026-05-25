@@ -79,6 +79,10 @@ export interface SharedVpcStackProps extends cdk.StackProps {
     readonly techExtractorEcrRepositoryName?: string;
     /** Enable tech-extractor ECR repository creation @default true */
     readonly createTechExtractorEcrRepository?: boolean;
+    /** ontology-importer CronJob ECR repository name @default 'ontology-importer' */
+    readonly ontologyImporterEcrRepositoryName?: string;
+    /** Enable ontology-importer ECR repository creation @default true */
+    readonly createOntologyImporterEcrRepository?: boolean;
     /** article-pipeline K8s Job ECR repository name @default 'article-pipeline' */
     readonly articlePipelineEcrRepositoryName?: string;
     /** Enable article-pipeline ECR repository creation @default true */
@@ -139,6 +143,8 @@ export class SharedVpcStack extends cdk.Stack {
     public readonly ingestionEcrRepository?: ecr.Repository;
     /** ECR Repository for the tech-extractor K8s Job (Layer 1) */
     public readonly techExtractorEcrRepository?: ecr.Repository;
+    /** ECR Repository for the ontology-importer CronJob (Tier 2 ontology auto-import) */
+    public readonly ontologyImporterEcrRepository?: ecr.Repository;
     /** ECR Repository for the article-pipeline K8s Job (Phase 4) */
     public readonly articlePipelineEcrRepository?: ecr.Repository;
     /** ECR Repository for the job-strategist K8s Job (Phase 4) */
@@ -592,6 +598,66 @@ export class SharedVpcStack extends cdk.Stack {
             new cdk.CfnOutput(this, 'TechExtractorEcrRepositoryUri', {
                 value: this.techExtractorEcrRepository.repositoryUri,
                 description: 'tech-extractor K8s Job ECR Repository URI for docker push/pull',
+            });
+        }
+
+        // =====================================================================
+        // ECR Repository (ontology-importer) — Tier 2 ontology auto-import CronJob
+        // Scheduled pod that auto-imports ontology data, alongside tech-extractor.
+        // SSM params stored under /shared/ecr-ontology-importer/{env}/ for CI discovery.
+        // =====================================================================
+        if (props.createOntologyImporterEcrRepository !== false) {
+            const ontologyImporterRepoName = props.ontologyImporterEcrRepositoryName ?? 'ontology-importer';
+            const isProduction = props.targetEnvironment === Environment.PRODUCTION;
+
+            this.ontologyImporterEcrRepository = new ecr.Repository(this, 'OntologyImporterEcrRepository', {
+                repositoryName: ontologyImporterRepoName,
+                imageScanOnPush: true,
+                imageTagMutability: ecr.TagMutability.MUTABLE,
+                encryption: ecr.RepositoryEncryption.AES_256,
+                removalPolicy: isProduction ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+                lifecycleRules: [
+                    {
+                        rulePriority: 1,
+                        description: 'Remove untagged images after 30 days',
+                        tagStatus: ecr.TagStatus.UNTAGGED,
+                        maxImageAge: cdk.Duration.days(30),
+                    },
+                    {
+                        rulePriority: 2,
+                        description: 'Keep only 50 most recent tagged images',
+                        tagStatus: ecr.TagStatus.ANY,
+                        maxImageCount: 50,
+                    },
+                ],
+            });
+
+            const ontologyImporterEcrSsmPrefix = `/shared/ecr-ontology-importer/${props.targetEnvironment}`;
+
+            new ssm.StringParameter(this, 'SsmOntologyImporterEcrRepositoryUri', {
+                parameterName: `${ontologyImporterEcrSsmPrefix}/repository-uri`,
+                stringValue: this.ontologyImporterEcrRepository.repositoryUri,
+                description: `ontology-importer ECR repository URI for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new ssm.StringParameter(this, 'SsmOntologyImporterEcrRepositoryArn', {
+                parameterName: `${ontologyImporterEcrSsmPrefix}/repository-arn`,
+                stringValue: this.ontologyImporterEcrRepository.repositoryArn,
+                description: `ontology-importer ECR repository ARN for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new ssm.StringParameter(this, 'SsmOntologyImporterEcrRepositoryName', {
+                parameterName: `${ontologyImporterEcrSsmPrefix}/repository-name`,
+                stringValue: this.ontologyImporterEcrRepository.repositoryName,
+                description: `ontology-importer ECR repository name for ${props.targetEnvironment}`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+
+            new cdk.CfnOutput(this, 'OntologyImporterEcrRepositoryUri', {
+                value: this.ontologyImporterEcrRepository.repositoryUri,
+                description: 'ontology-importer CronJob ECR Repository URI for docker push/pull',
             });
         }
 

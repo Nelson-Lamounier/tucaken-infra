@@ -144,16 +144,26 @@ const DEV_KARPENTER: EksKarpenterNodePoolConfig = {
     capacityType: ['spot'],
 } as const;
 
-// Dev system pool: spot-only, capped at ~1 node (t3 sizes are all 2 vCPU,
-// so cpuLimit 2 ≈ a single node). Starts small and Karpenter consolidates
-// up to large only when system pod pressure requires it. Paired with a
-// 1-node on-demand MNG landing zone → total system tier ≤ 2 nodes, ≥1 spot.
+// Dev system pool: spot, sized for POD DENSITY (not CPU). Karpenter ranks
+// candidate nodes by pending pods' CPU/memory requests and is blind to the
+// per-node ENI pod cap. So allowing small/medium causes Karpenter to pack
+// tiny system pods (cert-manager, ESO, ALB controller, …) into a t3.medium
+// (17-pod ENI cap) and silently saturate at that ceiling with CPU headroom
+// left over — exactly what happened 2026-05-26 when the ESO main controller
+// could not schedule (no system node had a free pod slot, and Karpenter could
+// not provision another node within cpuLimit:2).
+//
+// Floor sizes at t3.large (35 pods) and allow t3.xlarge (58 pods); raise
+// cpuLimit to 8 so the pool can scale to ~2× xlarge or ~4× large. t3.small/
+// medium/large all have 2 vCPU — Karpenter picks the smallest fitting by
+// memory, so dropping small/medium forces ≥35 pods/node. Paired with the
+// dev MNG (t3.large × 1–3) for an on-demand bootstrap landing zone.
 const DEV_KARPENTER_SYSTEM: EksKarpenterSystemPoolConfig = {
     instanceFamily: ['t3'],
-    instanceSizes: ['small', 'medium', 'large'],
+    instanceSizes: ['large', 'xlarge'],
     capacityType: ['spot'],
     architectures: ['amd64'],
-    cpuLimit: 2,
+    cpuLimit: 8,
 } as const;
 
 // SSM paths holding admin-principal ARNs per environment. Populate manually:
@@ -170,12 +180,15 @@ export const EKS_CONFIGS: Record<DeployableEnvironment, Omit<EksConfig, 'adminPr
     [Environment.DEVELOPMENT]: {
         clusterName: 'k8s-eks-development',
         version: EKS_VERSION,
-        // Landing zone ONLY: 1× t3.medium on-demand hosts the Karpenter
-        // controller + CoreDNS. All other system pods (argocd, ESO,
-        // cert-manager, …) land on the elastic spot `system` Karpenter
-        // NodePool. maxSize 2 is rolling-update surge headroom, not steady
-        // state. Total system tier (MNG + system pool) ≤ 2 nodes.
-        mng: { instanceTypes: ['t3.medium'], desiredSize: 1, minSize: 1, maxSize: 2, diskSizeGib: 30 },
+        // Landing zone: on-demand t3.large hosts the Karpenter controller,
+        // CoreDNS, and other cluster-critical pods that should not run on
+        // spot. t3.large gives 35 pods/node ENI capacity (vs t3.medium's
+        // 17 — the per-node pod cap that previously starved the system tier
+        // when small/medium nodes filled at the ENI ceiling). All other
+        // system pods (argocd, ESO, cert-manager, …) land on the elastic
+        // spot `system` Karpenter NodePool. maxSize 3 is rolling-update
+        // surge headroom (one extra node during MNG instance-type rotation).
+        mng: { instanceTypes: ['t3.large'], desiredSize: 1, minSize: 1, maxSize: 3, diskSizeGib: 30 },
         podIdentityBindings: COMMON_BINDINGS,
         karpenter: DEV_KARPENTER,
         systemPool: DEV_KARPENTER_SYSTEM,

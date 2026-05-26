@@ -69,6 +69,23 @@ describe('EksPodIdentityStack', () => {
             });
         });
 
+        it('should grant the batch service role bedrock:InvokeModel (required for batch execution)', () => {
+            const t = Template.fromStack(newStack(bindings));
+            t.hasResourceProperties('AWS::IAM::Policy', {
+                PolicyDocument: {
+                    Statement: Match.arrayWith([
+                        Match.objectLike({
+                            Sid: 'BatchBedrockInvoke',
+                            Action: 'bedrock:InvokeModel',
+                            Resource: Match.arrayWith([
+                                'arn:aws:bedrock:*::foundation-model/*',
+                            ]),
+                        }),
+                    ]),
+                },
+            });
+        });
+
         it('should grant the pod role bedrock:CreateModelInvocationJob', () => {
             const t = Template.fromStack(newStack(bindings));
             t.hasResourceProperties('AWS::IAM::Policy', {

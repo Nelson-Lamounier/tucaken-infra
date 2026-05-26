@@ -374,6 +374,21 @@ export class EksPodIdentityStack extends cdk.Stack {
                         resources: [batchBucketArn, `${batchBucketArn}/*`],
                     }),
                 );
+                // Bedrock assumes this role to invoke the foundation model / cross-region
+                // inference profile during the batch job. Without this, CreateModelInvocationJob
+                // accepts the submission but the job fails ~5 min later with:
+                //   "Customer doesn't have permissions to invokeModel"
+                // The ARNs mirror the pod role's invoke scope (foundation-model + inference-profile).
+                batchServiceRole.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'BatchBedrockInvoke',
+                        actions: ['bedrock:InvokeModel'],
+                        resources: [
+                            'arn:aws:bedrock:*::foundation-model/*',
+                            `arn:aws:bedrock:*:${cdk.Stack.of(this).account}:inference-profile/*`,
+                        ],
+                    }),
+                );
                 new ssm.StringParameter(this, 'SsmOntologyImporterBatchRoleArn', {
                     parameterName: `/shared/ontology-importer/${env}/batch-role-arn`,
                     stringValue: batchServiceRole.roleArn,

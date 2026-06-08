@@ -39,7 +39,6 @@ import { NagSuppressions } from 'cdk-nag';
 
 
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as route53 from 'aws-cdk-lib/aws-route53';
@@ -57,7 +56,6 @@ import {
 } from '../../config/kubernetes';
 import { k8sSsmPaths } from '../../config/ssm-paths';
 import { SecurityGroupConstruct, SsmParameterStoreConstruct } from '../../constructs';
-import { NetworkLoadBalancerConstruct } from '../../constructs/networking';
 import { S3BucketConstruct } from '../../constructs/storage';
 
 // =============================================================================
@@ -152,15 +150,6 @@ export class KubernetesBaseStack extends cdk.Stack {
 
     /** Elastic IP for stable external access */
     public readonly elasticIp: ec2.CfnEIP;
-
-    /** Network Load Balancer — distributes external traffic to Traefik */
-    public readonly nlbConstruct: NetworkLoadBalancerConstruct;
-
-    /** NLB target group for HTTP (port 80) traffic */
-    public readonly nlbHttpTargetGroup: elbv2.NetworkTargetGroup;
-
-    /** NLB target group for HTTPS (port 443) traffic */
-    public readonly nlbHttpsTargetGroup: elbv2.NetworkTargetGroup;
 
     constructor(scope: Construct, id: string, props: KubernetesBaseStackProps) {
         super(scope, id, props);
@@ -335,88 +324,6 @@ export class KubernetesBaseStack extends cdk.Stack {
         });
 
         // =====================================================================
-        // Network Load Balancer (NLB)
-        //
-        // Replaces the previous EIP-to-instance + Lambda failover model.
-        // The NLB is internet-facing with the cluster EIP attached via
-        // SubnetMapping. Traffic flow:
-        //   CloudFront → NLB:80 → Target Group → Traefik (app-worker/mon-worker)
-        //   Admin      → NLB:443 → Target Group → Traefik (app-worker/mon-worker)
-        //
-        // Benefits over direct EIP:
-        //   - Automatic health-check-based failover (no Lambda needed)
-        //   - Multiple active targets possible
-        //   - Same EIP → no DNS or CloudFront changes
-        //
-        // AZ: Matches EBS volume binding ({region}a) for single-AZ cost
-        // optimisation. NLB is in the same public subnet as the instances.
-        // =====================================================================
-        this.nlbConstruct = new NetworkLoadBalancerConstruct(this, 'Nlb', {
-            vpc: this.vpc,
-            loadBalancerName: `${namePrefix}-nlb`,
-            availabilityZone: `${this.region}a`,
-            eipAllocationId: this.elasticIp.attrAllocationId,
-        });
-
-        // Target groups — downstream ASGs register themselves
-        this.nlbHttpTargetGroup = this.nlbConstruct.createTargetGroup('HttpTg', {
-            targetGroupName: `${namePrefix}-http`,
-            port: TRAEFIK_HTTP_PORT,
-        });
-
-        this.nlbHttpsTargetGroup = this.nlbConstruct.createTargetGroup('HttpsTg', {
-            targetGroupName: `${namePrefix}-https`,
-            port: TRAEFIK_HTTPS_PORT,
-            healthCheckPort: TRAEFIK_HTTP_PORT, // Health check on port 80 (Traefik always listening)
-        });
-
-        // Listeners
-        this.nlbConstruct.addTcpListener('HttpListener', TRAEFIK_HTTP_PORT, this.nlbHttpTargetGroup);
-        this.nlbConstruct.addTcpListener('HttpsListener', TRAEFIK_HTTPS_PORT, this.nlbHttpsTargetGroup);
-
-        // NLB Security Group — Defence-in-depth:
-        //   Port 80:  Restricted to CloudFront origin-facing IPs (managed prefix list).
-        //             Prevents direct HTTP access from scanners/bots bypassing CF/WAF.
-        //   Port 443: Open to internet (Layer 4 TCP passthrough — Traefik terminates TLS).
-        //             Fine-grained filtering enforced by the Ingress SG (admin IP allowlist).
-        //             Cannot use the CF prefix list for port 443: the list has ~55 MaxEntries,
-        //             consuming 55 + 55 = 110 effective SG rule slots (limit is 60).
-        this.nlbConstruct.configureCloudFrontSecurityGroup(
-            cfPrefixListId,
-            TRAEFIK_HTTP_PORT,
-            TRAEFIK_HTTPS_PORT,
-        );
-
-        // =====================================================================
-        // NLB Access Logs
-        //
-        // Per-connection metadata (source IP, target, TLS, bytes) for
-        // troubleshooting. 3-day S3 lifecycle keeps costs below £0.01/month
-        // for a solo developer.
-        // =====================================================================
-        const nlbLogBucket = new S3BucketConstruct(this, 'NlbAccessLogsBucket', {
-            environment: targetEnvironment,
-            config: {
-                bucketName: `${namePrefix}-nlb-access-logs-${this.account}-${this.region}`,
-                purpose: 'nlb-access-logs',
-                encryption: s3.BucketEncryption.S3_MANAGED,
-                removalPolicy: configs.removalPolicy,
-                autoDeleteObjects: !configs.isProduction,
-                lifecycleRules: [{
-                    id: 'DeleteAfter3Days',
-                    expiration: cdk.Duration.days(3),
-                }],
-            },
-        });
-
-        NagSuppressions.addResourceSuppressions(nlbLogBucket.bucket, [{
-            id: 'AwsSolutions-S1',
-            reason: 'NLB access log bucket is a terminal logging destination — cannot log to itself',
-        }]);
-
-        this.nlbConstruct.enableAccessLogs(nlbLogBucket.bucket, 'nlb-access-logs');
-
-        // =====================================================================
         // Route 53 Private Hosted Zone (stable API server DNS)
         //
         // Provides a DNS-based control plane endpoint so that workers
@@ -519,9 +426,6 @@ export class KubernetesBaseStack extends cdk.Stack {
                 [ssmPaths.hostedZoneId]: this.hostedZone.hostedZoneId,
                 [ssmPaths.apiDnsName]: K8S_API_DNS_NAME,
                 [ssmPaths.kmsKeyArn]: this.logGroupKmsKey.keyArn,
-                [ssmPaths.nlbFullName]: this.nlbConstruct.loadBalancerFullName,
-                [ssmPaths.nlbHttpTargetGroupArn]: this.nlbHttpTargetGroup.targetGroupArn,
-                [ssmPaths.nlbHttpsTargetGroupArn]: this.nlbHttpsTargetGroup.targetGroupArn,
             },
         });
 

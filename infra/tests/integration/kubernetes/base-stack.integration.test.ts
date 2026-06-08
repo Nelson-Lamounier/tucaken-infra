@@ -35,14 +35,6 @@ import {
 import type { IpPermission } from '@aws-sdk/client-ec2';
 import type { FlowLog } from '@aws-sdk/client-ec2';
 import {
-    ElasticLoadBalancingV2Client,
-    DescribeLoadBalancersCommand,
-    DescribeTargetGroupsCommand,
-    DescribeListenersCommand,
-    DescribeLoadBalancerAttributesCommand,
-} from '@aws-sdk/client-elastic-load-balancing-v2';
-import type { LoadBalancer, Listener, TargetGroup, LoadBalancerAttribute } from '@aws-sdk/client-elastic-load-balancing-v2';
-import {
     KMSClient,
     DescribeKeyCommand,
     GetKeyRotationStatusCommand,
@@ -58,7 +50,6 @@ import {
     S3Client,
     HeadBucketCommand,
     GetBucketEncryptionCommand,
-    GetBucketLifecycleConfigurationCommand,
 } from '@aws-sdk/client-s3';
 import {
     SSMClient,
@@ -70,7 +61,6 @@ import { Environment } from '../../../lib/config';
 // import { getK8sConfigs } from '../../../lib/config/kubernetes';
 import { k8sSsmPaths, k8sSsmPrefix } from '../../../lib/config/ssm-paths';
 import type { K8sSsmPaths } from '../../../lib/config/ssm-paths';
-import { flatName } from '../../../lib/utilities/naming';
 
 // =============================================================================
 // Rule 4: Environment Variable Parsing — No Silent `as` Casts
@@ -97,7 +87,6 @@ const REGION = process.env.AWS_REGION ?? 'eu-west-1';
 // const CONFIGS = getK8sConfigs(CDK_ENV);
 const SSM_PATHS = k8sSsmPaths(CDK_ENV);
 const PREFIX = k8sSsmPrefix(CDK_ENV);
-const NAME_PREFIX = flatName('k8s', '', CDK_ENV);
 
 // =============================================================================
 // Rule 3: Magic Values — Named Constants Only
@@ -110,15 +99,10 @@ const ANY_IPV4 = '0.0.0.0/0';
 
 // Retention / lifecycle
 const FLOW_LOG_RETENTION_DAYS = 3;
-const NLB_LOG_LIFECYCLE_DAYS = 3;
-const NLB_LOG_PREFIX = 'nlb-access-logs';
 const API_RECORD_TTL = 30;
 const K8S_INTERNAL_ZONE = 'k8s.internal.';
 const K8S_API_FQDN = 'k8s-api.k8s.internal';
 const K8S_API_FQDN_DOT = `${K8S_API_FQDN}.`;
-
-// Listener count
-const EXPECTED_LISTENER_COUNT = 2;
 
 // AWS SDK clients (shared across tests)
 const ssm = new SSMClient({ region: REGION });
@@ -126,7 +110,6 @@ const ec2 = new EC2Client({ region: REGION });
 const kms = new KMSClient({ region: REGION });
 const s3 = new S3Client({ region: REGION });
 const route53 = new Route53Client({ region: REGION });
-const elbv2 = new ElasticLoadBalancingV2Client({ region: REGION });
 const cwl = new CloudWatchLogsClient({ region: REGION });
 
 // =============================================================================
@@ -276,23 +259,6 @@ function expectPrefixListSource(rule: IpPermission): void {
 }
 
 /**
- * Find an egress rule matching a specific port and protocol.
- *
- * Extracted to module level so the predicate logic (&&) does not
- * appear inside it() blocks (jest/no-conditional-in-test).
- */
-function findEgressRule(
-    egress: IpPermission[],
-    fromPort: number,
-    toPort: number,
-    protocol: string,
-): IpPermission | undefined {
-    return egress.find(
-        (r) => r.FromPort === fromPort && r.ToPort === toPort && r.IpProtocol === protocol,
-    );
-}
-
-/**
  * Find an unrestricted egress rule (all protocols, 0.0.0.0/0).
  *
  * Extracted to module level so the predicate logic (&&) does not
@@ -303,16 +269,6 @@ function findAllTrafficEgress(egress: IpPermission[]): IpPermission | undefined 
         (r) => r.IpProtocol === '-1'
             && r.IpRanges?.some((ip) => ip.CidrIp === ANY_IPV4),
     );
-}
-
-/**
- * Find an NLB listener by port.
- *
- * Extracted to module level so the predicate logic does not
- * appear inside it() blocks (jest/no-conditional-in-test).
- */
-function findListener(listeners: Listener[], port: number): Listener | undefined {
-    return listeners.find((l) => l.Port === port);
 }
 
 // =============================================================================
@@ -412,33 +368,6 @@ function requireUdpIngressRule(
 }
 
 /**
- * Find an egress rule or throw with full diagnostic context.
- *
- * @param rules - The IpPermissionsEgress array
- * @param fromPort - The start port to match
- * @param toPort - The end port to match
- * @param protocol - The IP protocol to match (e.g. 'tcp')
- * @returns The matched IpPermission rule
- * @throws Error with formatted list of actual egress rules if not found
- */
-function requireEgressRule(
-    rules: IpPermission[],
-    fromPort: number,
-    toPort: number,
-    protocol: string,
-): IpPermission {
-    const rule = findEgressRule(rules, fromPort, toPort, protocol);
-    if (!rule) {
-        throw new Error(
-            `Expected ${protocol.toUpperCase()} egress rule for port ${fromPort}-${toPort}, but none found.\n` +
-            `Actual egress rules (${rules.length}):\n` +
-            formatIpPermissions(rules),
-        );
-    }
-    return rule;
-}
-
-/**
  * Find an all-traffic egress rule or throw with full diagnostic context.
  *
  * @param rules - The IpPermissionsEgress array
@@ -457,28 +386,6 @@ function requireAllTrafficEgress(rules: IpPermission[]): IpPermission {
     return rule;
 }
 
-/**
- * Find an NLB listener by port or throw with full diagnostic context.
- *
- * @param listeners - The Listeners array from DescribeListeners
- * @param port - The port to match
- * @returns The matched Listener
- * @throws Error with formatted list of actual listeners if not found
- */
-function requireListener(listeners: Listener[], port: number): Listener {
-    const listener = findListener(listeners, port);
-    if (!listener) {
-        const actual = listeners
-            .map((l) => `  \u2022 Port ${l.Port} (${l.Protocol})`)
-            .join('\n');
-        throw new Error(
-            `Expected NLB listener on port ${port}, but none found.\n` +
-            `Actual listeners (${listeners.length}):\n${actual || '  (none)'}`,
-        );
-    }
-    return listener;
-}
-
 // =============================================================================
 // Module-Level Cached State (Rule 1 + Rule 10)
 //
@@ -486,24 +393,6 @@ function requireListener(listeners: Listener[], port: number): Listener {
 // =============================================================================
 
 let ssmParams: Map<string, string>;
-
-// NLB — fetched once, shared across NLB Config, NLB SG, NLB Access Logs
-let nlb: LoadBalancer;
-let nlbArn: string;
-let nlbAttributes: LoadBalancerAttribute[];
-let nlbListeners: Listener[];
-let nlbLogBucketName: string;
-
-// NLB public IP addresses (extracted from AZ info)
-let nlbPublicAddresses: (string | undefined)[];
-
-// NLB Target Groups
-let httpTargetGroup: TargetGroup;
-let httpsTargetGroup: TargetGroup;
-
-// NLB SG
-let nlbSgIngress: IpPermission[];
-let nlbSgEgress: IpPermission[];
 
 // VPC Flow Logs
 let flowLogs: FlowLog[];
@@ -517,63 +406,6 @@ let flowLogGroup: LogGroup | undefined;
 beforeAll(async () => {
     // --- SSM Parameters (gate for everything else) ---
     ssmParams = await loadSsmParameters();
-
-    // --- NLB ---
-    const { LoadBalancers } = await elbv2.send(
-        new DescribeLoadBalancersCommand({
-            Names: [`${NAME_PREFIX}-nlb`],
-        }),
-    );
-    expect(LoadBalancers).toHaveLength(1);
-    nlb = LoadBalancers![0];
-    nlbArn = nlb.LoadBalancerArn!;
-
-    // NLB Attributes (access logs config)
-    const { Attributes } = await elbv2.send(
-        new DescribeLoadBalancerAttributesCommand({ LoadBalancerArn: nlbArn }),
-    );
-    nlbAttributes = Attributes ?? [];
-
-    // NLB log bucket name from attributes
-    nlbLogBucketName = nlbAttributes.find(
-        (a) => a.Key === 'access_logs.s3.bucket',
-    )?.Value ?? '';
-    expect(nlbLogBucketName).toBeTruthy();
-
-    // NLB public IP addresses (from AZ info)
-    const azInfo = nlb.AvailabilityZones ?? [];
-    nlbPublicAddresses = azInfo.flatMap((az) =>
-        (az.LoadBalancerAddresses ?? []).map((a) => a.IpAddress),
-    );
-
-    // NLB Listeners
-    const { Listeners } = await elbv2.send(
-        new DescribeListenersCommand({ LoadBalancerArn: nlbArn }),
-    );
-    nlbListeners = Listeners ?? [];
-
-    // NLB Target Groups
-    const httpArn = requireParam(ssmParams, SSM_PATHS.nlbHttpTargetGroupArn);
-    const httpsArn = requireParam(ssmParams, SSM_PATHS.nlbHttpsTargetGroupArn);
-
-    const [httpTgResp, httpsTgResp] = await Promise.all([
-        elbv2.send(new DescribeTargetGroupsCommand({ TargetGroupArns: [httpArn] })),
-        elbv2.send(new DescribeTargetGroupsCommand({ TargetGroupArns: [httpsArn] })),
-    ]);
-    expect(httpTgResp.TargetGroups).toHaveLength(1);
-    expect(httpsTgResp.TargetGroups).toHaveLength(1);
-    httpTargetGroup = httpTgResp.TargetGroups![0];
-    httpsTargetGroup = httpsTgResp.TargetGroups![0];
-
-    // NLB SG — discovered from NLB, not SSM
-    const nlbSgIds = nlb.SecurityGroups ?? [];
-    expect(nlbSgIds.length).toBeGreaterThan(0);
-    const { SecurityGroups: nlbSgs } = await ec2.send(
-        new DescribeSecurityGroupsCommand({ GroupIds: [nlbSgIds[0]] }),
-    );
-    expect(nlbSgs).toHaveLength(1);
-    nlbSgIngress = nlbSgs![0].IpPermissions ?? [];
-    nlbSgEgress = nlbSgs![0].IpPermissionsEgress ?? [];
 
     // --- VPC Flow Logs ---
     const vpcId = requireParam(ssmParams, SSM_PATHS.vpcId);
@@ -607,7 +439,7 @@ beforeAll(async () => {
 
 describe('KubernetesBaseStack — Post-Deploy Verification', () => {
     // =========================================================================
-    // SSM Parameters (14)
+    // SSM Parameters (11)
     // =========================================================================
     describe('SSM Parameters', () => {
         // Rule 5: Use `satisfies` instead of `as const`
@@ -623,11 +455,9 @@ describe('KubernetesBaseStack — Post-Deploy Verification', () => {
             'hostedZoneId',
             'apiDnsName',
             'kmsKeyArn',
-            'nlbHttpTargetGroupArn',
-            'nlbHttpsTargetGroupArn',
         ] satisfies Array<keyof K8sSsmPaths>;
 
-        it('should have all 13 SSM parameters published', () => {
+        it('should have all 11 SSM parameters published', () => {
             expect(ssmParams.size).toBeGreaterThanOrEqual(expectedPaths.length);
         });
 
@@ -645,14 +475,6 @@ describe('KubernetesBaseStack — Post-Deploy Verification', () => {
             expect(requireParam(ssmParams, SSM_PATHS.apiDnsName)).toBe(
                 K8S_API_FQDN,
             );
-        });
-
-        it('should have NLB target group ARNs in valid ARN format', () => {
-            const httpArn = requireParam(ssmParams, SSM_PATHS.nlbHttpTargetGroupArn);
-            const httpsArn = requireParam(ssmParams, SSM_PATHS.nlbHttpsTargetGroupArn);
-
-            expect(httpArn).toMatch(/^arn:aws:elasticloadbalancing:/);
-            expect(httpsArn).toMatch(/^arn:aws:elasticloadbalancing:/);
         });
     });
 
@@ -927,115 +749,6 @@ describe('KubernetesBaseStack — Post-Deploy Verification', () => {
     });
 
     // =========================================================================
-    // Security Group — NLB (discovered via NLB API, not SSM)
-    //
-    // Inbound: 0.0.0.0/0 on ports 80 and 443
-    // Outbound: VPC CIDR on ports 80 and 443
-    // Depends on: nlbSgIngress, nlbSgEgress populated in top-level beforeAll
-    // =========================================================================
-    describe('NLB SG — Rule Validation', () => {
-        it('should have inbound TCP 80 from CloudFront prefix list', () => {
-            const httpRule = requireTcpIngressRule(nlbSgIngress, 80);
-            expectPrefixListSource(httpRule);
-        });
-
-        it('should have inbound TCP 443 from 0.0.0.0/0', () => {
-            const httpsRule = requireTcpIngressRule(nlbSgIngress, 443);
-            expectCidrSource(httpsRule, ANY_IPV4);
-        });
-
-        it('should have outbound TCP 80 to VPC CIDR', () => {
-            const http = requireEgressRule(nlbSgEgress, 80, 80, 'tcp');
-            expectCidrSource(http, VPC_CIDR_PREFIX);
-        });
-
-        it('should have outbound TCP 443 to VPC CIDR', () => {
-            const https = requireEgressRule(nlbSgEgress, 443, 443, 'tcp');
-            expectCidrSource(https, VPC_CIDR_PREFIX);
-        });
-
-        it('should NOT have unrestricted outbound (0.0.0.0/0 all protocols)', () => {
-            expect(findAllTrafficEgress(nlbSgEgress)).toBeUndefined();
-        });
-    });
-
-    // =========================================================================
-    // Network Load Balancer — Configuration
-    // Depends on: nlb, nlbAttributes populated in top-level beforeAll
-    // =========================================================================
-    describe('NLB — Configuration', () => {
-        it('should be internet-facing', () => {
-            expect(nlb.Scheme).toBe('internet-facing');
-        });
-
-        it('should be of type network', () => {
-            expect(nlb.Type).toBe('network');
-        });
-
-        it('should have EIP attached (public IP matches SSM)', () => {
-            const expectedIp = requireParam(ssmParams, SSM_PATHS.elasticIp);
-            expect(nlbPublicAddresses).toContain(expectedIp);
-        });
-
-        it('should have access logging enabled', () => {
-            const accessLogs = nlbAttributes.find(
-                (a) => a.Key === 'access_logs.s3.enabled',
-            );
-            expect(accessLogs?.Value).toBe('true');
-        });
-
-        it('should have access logs S3 prefix set', () => {
-            const prefix = nlbAttributes.find(
-                (a) => a.Key === 'access_logs.s3.prefix',
-            );
-            expect(prefix?.Value).toBe(NLB_LOG_PREFIX);
-        });
-    });
-
-    // =========================================================================
-    // NLB Target Groups (HTTP + HTTPS)
-    // Depends on: httpTargetGroup, httpsTargetGroup populated in top-level beforeAll
-    // =========================================================================
-    describe('NLB — Target Groups', () => {
-        it('should have an HTTP target group on port 80', () => {
-            expect(httpTargetGroup.Port).toBe(80);
-            expect(httpTargetGroup.Protocol).toBe('TCP');
-        });
-
-        it('should have an HTTPS target group on port 443', () => {
-            expect(httpsTargetGroup.Port).toBe(443);
-            expect(httpsTargetGroup.Protocol).toBe('TCP');
-        });
-
-        it('should health-check HTTPS target group on port 80', () => {
-            // Health check port is 80 (Traefik always listening), not 443
-            expect(httpsTargetGroup.HealthCheckPort).toBe('80');
-        });
-    });
-
-    // =========================================================================
-    // NLB Listeners
-    // Depends on: nlbListeners populated in top-level beforeAll
-    // =========================================================================
-    describe('NLB — Listeners', () => {
-        it('should have the expected number of listeners (HTTP + HTTPS)', () => {
-            expect(nlbListeners).toHaveLength(EXPECTED_LISTENER_COUNT);
-        });
-
-        it('should have a TCP listener on port 80', () => {
-            const httpListener = requireListener(nlbListeners, 80);
-            expect(httpListener.Protocol).toBe('TCP');
-        });
-
-        it('should have a TCP listener on port 443', () => {
-            const httpsListener = requireListener(nlbListeners, 443);
-            expect(httpsListener.Protocol).toBe('TCP');
-        });
-    });
-
-
-
-    // =========================================================================
     // Elastic IP
     // =========================================================================
     describe('Elastic IP', () => {
@@ -1122,52 +835,6 @@ describe('KubernetesBaseStack — Post-Deploy Verification', () => {
 
             expect(ServerSideEncryptionConfiguration?.Rules).toBeDefined();
             expect(ServerSideEncryptionConfiguration!.Rules!.length).toBeGreaterThan(0);
-        });
-    });
-
-    // =========================================================================
-    // S3 Buckets — NLB Access Logs
-    // Depends on: nlbLogBucketName populated in top-level beforeAll
-    // =========================================================================
-    describe('S3 NLB Access Logs Bucket', () => {
-        it('should exist and be accessible', async () => {
-            await expect(
-                s3.send(new HeadBucketCommand({ Bucket: nlbLogBucketName })),
-            ).resolves.toBeDefined();
-        });
-
-        it('should have the correct bucket name prefix', () => {
-            expect(nlbLogBucketName).toContain(`${NAME_PREFIX}-nlb-access-logs`);
-        });
-
-        it('should have SSE-S3 encryption enabled', async () => {
-            const { ServerSideEncryptionConfiguration } = await s3.send(
-                new GetBucketEncryptionCommand({ Bucket: nlbLogBucketName }),
-            );
-
-            expect(ServerSideEncryptionConfiguration?.Rules).toBeDefined();
-            expect(ServerSideEncryptionConfiguration!.Rules!.length).toBeGreaterThan(0);
-
-            const sseRule = ServerSideEncryptionConfiguration!.Rules![0];
-            expect(
-                sseRule.ApplyServerSideEncryptionByDefault?.SSEAlgorithm,
-            ).toBe('AES256');
-        });
-
-        it('should have a 3-day lifecycle expiration policy', async () => {
-            const { Rules } = await s3.send(
-                new GetBucketLifecycleConfigurationCommand({ Bucket: nlbLogBucketName }),
-            );
-
-            expect(Rules).toBeDefined();
-            expect(Rules!.length).toBeGreaterThanOrEqual(1);
-
-            const expirationRule = Rules!.find(
-                (r) => r.Expiration?.Days !== undefined,
-            );
-            expect(expirationRule).toBeDefined();
-            expect(expirationRule!.Expiration!.Days).toBe(NLB_LOG_LIFECYCLE_DAYS);
-            expect(expirationRule!.Status).toBe('Enabled');
         });
     });
 

@@ -272,14 +272,6 @@ export interface K8sSsmPaths {
     /** KMS key ARN for CloudWatch log group encryption */
     readonly kmsKeyArn: string;
 
-    // --- NLB (Network Load Balancer) ---
-    /** NLB full name (for CloudWatch metrics) */
-    readonly nlbFullName: string;
-    /** NLB HTTP (port 80) target group ARN */
-    readonly nlbHttpTargetGroupArn: string;
-    /** NLB HTTPS (port 443) target group ARN */
-    readonly nlbHttpsTargetGroupArn: string;
-
     // --- Compute (published by ControlPlane stack at runtime) ---
     /** Kubernetes node EC2 instance ID */
     readonly instanceId: string;
@@ -374,11 +366,6 @@ export function k8sSsmPaths(environment: Environment): K8sSsmPaths {
 
         // Encryption
         kmsKeyArn: `${prefix}/kms-key-arn`,
-
-        // NLB
-        nlbFullName: `${prefix}/nlb-full-name`,
-        nlbHttpTargetGroupArn: `${prefix}/nlb-http-target-group-arn`,
-        nlbHttpsTargetGroupArn: `${prefix}/nlb-https-target-group-arn`,
 
         // Compute (published by ControlPlane stack)
         instanceId: `${prefix}/instance-id`,

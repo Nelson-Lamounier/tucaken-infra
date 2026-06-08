@@ -41,12 +41,6 @@ const TEST_VPC_CIDR = '10.0.0.0/16';
 /** Pod network CIDR from K8s config */
 const TEST_POD_CIDR = '192.168.0.0/16';
 
-/** Any IPv4 address (NLB inbound) */
-const ANY_IPV4 = '0.0.0.0/0';
-
-/** NLB access log lifecycle expiration in days */
-const NLB_LOG_LIFECYCLE_DAYS = 3;
-
 // =============================================================================
 // Test Fixtures
 // =============================================================================
@@ -100,8 +94,8 @@ describe('KubernetesBaseStack', () => {
     // Security Groups — Existence & Configuration
     // =========================================================================
     describe('Security Groups — Existence', () => {
-        it('should create exactly 5 security groups (4 custom + 1 NLB)', () => {
-            template.resourceCountIs('AWS::EC2::SecurityGroup', 5);
+        it('should create exactly 4 security groups', () => {
+            template.resourceCountIs('AWS::EC2::SecurityGroup', 4);
         });
 
         it('should create cluster base SG with all outbound allowed', () => {
@@ -371,146 +365,6 @@ describe('KubernetesBaseStack', () => {
     });
 
     // =========================================================================
-    // NLB — Configuration
-    // =========================================================================
-    describe('NLB — Configuration', () => {
-        it('should create an internet-facing Network Load Balancer', () => {
-            template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
-                Scheme: 'internet-facing',
-                Type: 'network',
-                LoadBalancerAttributes: Match.arrayWith([
-                    Match.objectLike({
-                        Key: 'load_balancing.cross_zone.enabled',
-                        Value: 'false',
-                    }),
-                ]),
-            });
-        });
-
-        it('should have the correct load balancer name', () => {
-            template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
-                Name: 'k8s-dev-nlb',
-            });
-        });
-    });
-
-    // =========================================================================
-    // NLB — Target Groups
-    // =========================================================================
-    describe('NLB — Target Groups', () => {
-        it('should create 2 target groups (HTTP + HTTPS)', () => {
-            template.resourceCountIs('AWS::ElasticLoadBalancingV2::TargetGroup', 2);
-        });
-
-        it('should have an HTTP target group on port 80 with TCP protocol', () => {
-            template.hasResourceProperties('AWS::ElasticLoadBalancingV2::TargetGroup', {
-                Name: 'k8s-dev-http',
-                Port: 80,
-                Protocol: 'TCP',
-                TargetType: 'instance',
-            });
-        });
-
-        it('should have an HTTPS target group on port 443 with TCP protocol', () => {
-            template.hasResourceProperties('AWS::ElasticLoadBalancingV2::TargetGroup', {
-                Name: 'k8s-dev-https',
-                Port: 443,
-                Protocol: 'TCP',
-                TargetType: 'instance',
-            });
-        });
-
-        it('should health-check HTTPS target group on port 80', () => {
-            template.hasResourceProperties('AWS::ElasticLoadBalancingV2::TargetGroup', {
-                Name: 'k8s-dev-https',
-                HealthCheckPort: '80',
-                HealthCheckProtocol: 'TCP',
-            });
-        });
-    });
-
-    // =========================================================================
-    // NLB — Listeners
-    // =========================================================================
-    describe('NLB — Listeners', () => {
-        it('should create 2 listeners (HTTP + HTTPS)', () => {
-            template.resourceCountIs('AWS::ElasticLoadBalancingV2::Listener', 2);
-        });
-
-        it('should have a TCP listener on port 80', () => {
-            template.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
-                Port: 80,
-                Protocol: 'TCP',
-            });
-        });
-
-        it('should have a TCP listener on port 443', () => {
-            template.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
-                Port: 443,
-                Protocol: 'TCP',
-            });
-        });
-    });
-
-    // =========================================================================
-    // NLB — Security Group
-    //
-    // CDK renders all NLB SG rules inline on the SecurityGroup resource:
-    // Inbound: 0.0.0.0/0 + ::/0 on ports 80 + 443 (IPv4 + IPv6)
-    // Outbound: VPC CIDR on ports 80 + 443 (replaces default 'Disallow all' egress)
-    // =========================================================================
-    describe('NLB — Security Group', () => {
-        it('should have NLB SG with correct description', () => {
-            template.hasResourceProperties('AWS::EC2::SecurityGroup', {
-                GroupDescription: Match.stringLikeRegexp('Security group for NLB'),
-            });
-        });
-
-        it('should have inbound TCP 80 from CloudFront Prefix List', () => {
-            template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
-                IpProtocol: 'tcp',
-                FromPort: 80,
-                ToPort: 80,
-                Description: Match.stringLikeRegexp('HTTP from CloudFront origin-facing IPs only'),
-                SourcePrefixListId: Match.anyValue(), // Validates it's bound to a prefix list ID
-            });
-        });
-
-        it('should have inline inbound TCP 443 from 0.0.0.0/0 (IPv4)', () => {
-            template.hasResourceProperties('AWS::EC2::SecurityGroup', {
-                GroupDescription: Match.stringLikeRegexp('Security group for NLB'),
-                SecurityGroupIngress: Match.arrayWith([
-                    Match.objectLike({
-                        IpProtocol: 'tcp',
-                        FromPort: 443,
-                        ToPort: 443,
-                        CidrIp: ANY_IPV4,
-                        Description: Match.stringLikeRegexp(`HTTPS from internet \\(admin access via Traefik\\)`),
-                    }),
-                ]),
-            });
-        });
-
-        it.each([80, 443])(
-            'should have inline outbound TCP %i to VPC CIDR',
-            (port) => {
-                template.hasResourceProperties('AWS::EC2::SecurityGroup', {
-                    GroupDescription: Match.stringLikeRegexp('Security group for NLB'),
-                    SecurityGroupEgress: Match.arrayWith([
-                        Match.objectLike({
-                            IpProtocol: 'tcp',
-                            FromPort: port,
-                            ToPort: port,
-                            CidrIp: TEST_VPC_CIDR,
-                            Description: Match.stringLikeRegexp(`TCP/${port} to targets`),
-                        }),
-                    ]),
-                });
-            },
-        );
-    });
-
-    // =========================================================================
     // KMS Key
     // =========================================================================
     describe('KMS Key', () => {
@@ -594,8 +448,8 @@ describe('KubernetesBaseStack', () => {
     // S3 Buckets
     // =========================================================================
     describe('S3 Buckets', () => {
-        it('should create 3 S3 buckets (scripts + access logs + NLB access logs)', () => {
-            template.resourceCountIs('AWS::S3::Bucket', 3);
+        it('should create 2 S3 buckets (scripts + access logs)', () => {
+            template.resourceCountIs('AWS::S3::Bucket', 2);
         });
 
         it('should encrypt all S3 buckets', () => {
@@ -608,51 +462,11 @@ describe('KubernetesBaseStack', () => {
     });
 
     // =========================================================================
-    // NLB Access Logs Bucket — Detailed
-    // =========================================================================
-    describe('NLB Access Logs Bucket', () => {
-        it('should use S3-managed encryption (AES256 / SSE-S3)', () => {
-            template.hasResourceProperties('AWS::S3::Bucket', {
-                BucketName: Match.stringLikeRegexp('nlb-access-logs'),
-                BucketEncryption: Match.objectLike({
-                    ServerSideEncryptionConfiguration: Match.arrayWith([
-                        Match.objectLike({
-                            ServerSideEncryptionByDefault: Match.objectLike({
-                                SSEAlgorithm: 'AES256',
-                            }),
-                        }),
-                    ]),
-                }),
-            });
-        });
-
-        it('should have a lifecycle rule with 3-day expiration', () => {
-            template.hasResourceProperties('AWS::S3::Bucket', {
-                BucketName: Match.stringLikeRegexp('nlb-access-logs'),
-                LifecycleConfiguration: Match.objectLike({
-                    Rules: Match.arrayWith([
-                        Match.objectLike({
-                            ExpirationInDays: NLB_LOG_LIFECYCLE_DAYS,
-                            Status: 'Enabled',
-                        }),
-                    ]),
-                }),
-            });
-        });
-
-        it('should have a bucket name containing the nlb-access-logs identifier', () => {
-            template.hasResourceProperties('AWS::S3::Bucket', {
-                BucketName: Match.stringLikeRegexp('k8s-dev-nlb-access-logs'),
-            });
-        });
-    });
-
-    // =========================================================================
     // SSM Parameters
     // =========================================================================
     describe('SSM Parameters', () => {
-        it('should create 14 SSM parameters for cross-stack discovery', () => {
-            template.resourceCountIs('AWS::SSM::Parameter', 14);
+        it('should create 11 SSM parameters for cross-stack discovery', () => {
+            template.resourceCountIs('AWS::SSM::Parameter', 11);
         });
 
         it('should create SSM parameters under the /k8s/development prefix', () => {
@@ -665,7 +479,7 @@ describe('KubernetesBaseStack', () => {
             const expectedPrefixes = paramNames.filter(
                 (name) => name.startsWith('/k8s/development/'),
             );
-            expect(expectedPrefixes).toHaveLength(14);
+            expect(expectedPrefixes).toHaveLength(11);
         });
 
         it('should publish the security group ID to SSM', () => {
@@ -709,20 +523,6 @@ describe('KubernetesBaseStack', () => {
         it('should publish the KMS key ARN to SSM', () => {
             template.hasResourceProperties('AWS::SSM::Parameter', {
                 Name: '/k8s/development/kms-key-arn',
-                Type: 'String',
-            });
-        });
-
-        it('should publish the NLB HTTP target group ARN to SSM', () => {
-            template.hasResourceProperties('AWS::SSM::Parameter', {
-                Name: '/k8s/development/nlb-http-target-group-arn',
-                Type: 'String',
-            });
-        });
-
-        it('should publish the NLB HTTPS target group ARN to SSM', () => {
-            template.hasResourceProperties('AWS::SSM::Parameter', {
-                Name: '/k8s/development/nlb-https-target-group-arn',
                 Type: 'String',
             });
         });
@@ -884,14 +684,14 @@ describe('KubernetesBaseStack', () => {
     // =========================================================================
     describe('Resource Counts', () => {
         it('should create expected number of core resources', () => {
-            template.resourceCountIs('AWS::EC2::SecurityGroup', 5);
+            template.resourceCountIs('AWS::EC2::SecurityGroup', 4);
             template.resourceCountIs('AWS::EC2::EIP', 1);
             template.resourceCountIs('AWS::KMS::Key', 1);
             template.resourceCountIs('AWS::KMS::Alias', 1);
             template.resourceCountIs('AWS::Route53::HostedZone', 1);
             template.resourceCountIs('AWS::Route53::RecordSet', 1);
-            template.resourceCountIs('AWS::S3::Bucket', 3);
-            template.resourceCountIs('AWS::SSM::Parameter', 14);
+            template.resourceCountIs('AWS::S3::Bucket', 2);
+            template.resourceCountIs('AWS::SSM::Parameter', 11);
         });
     });
 });

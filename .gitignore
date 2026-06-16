@@ -53,11 +53,10 @@ Thumbs.db
 scripts/local/diagnostics/.troubleshoot-logs/*
 !scripts/local/diagnostics/.troubleshoot-logs/.gitkeep
 
-# ── Generated Docs & Reports ────────────────────────────────────────────────
-# Only ignore generated typedoc output, not the hand-authored knowledge base.
-# (Previously `docs/` ignored the entire tree, so every KB doc had to be
-#  force-added with `git add -f`. typedoc.json emits to docs/api.)
-docs/api/
+# ── Reports ──────────────────────────────────────────────────────────────────
+# Nothing under docs/ is ignored — the whole docs tree is tracked, including
+# any generated typedoc output. (Earlier this ignored `docs/` wholesale, which
+# silently dropped hand-authored docs and forced `git add -f`.)
 security-reports/
 
 # ── AI Tooling ───────────────────────────────────────────────────────────────

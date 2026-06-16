@@ -150,7 +150,7 @@
     "cdk-nag": "^2.37.55",
     "chalk": "^5.6.2",
     "constructs": "^10.4.4",
-    "dotenv": "^16.3.1",
+    "dotenv": "^17.4.2",
     "source-map-support": "^0.5.21"
   },
   "resolutions": {

@@ -88,8 +88,10 @@ not transport encryption.
 
 ## Related
 
-- [admin-api project](../projects/admin-api.md) — pool config and PgBouncer
-  max-5-connections contract
+- admin-api (the client that owns the pool config and PgBouncer
+  max-5-connections contract) is documented in the sibling
+  [tucaken-app repo](https://github.com/Nelson-Lamounier/tucaken-app/blob/main/docs/projects/admin-api.md)
+- [Platform RDS + PgBouncer](../concepts/platform-rds-pgbouncer.md) — pool sizing and connection budget
 
 <!--
 Evidence trail (auto-generated):

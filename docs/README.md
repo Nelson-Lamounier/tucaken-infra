@@ -16,10 +16,13 @@
 | [0004: Crossplane over Terraform Modules](decisions/0004-crossplane-over-terraform-modules.md) | Why Crossplane manages in-cluster AWS resources instead of Terraform |
 | [0005: Cognito over Auth0](decisions/0005-cognito-over-auth0.md) | Why Amazon Cognito replaces Auth.js v5 Credentials provider |
 | [0006: NLB over EIP-Failover Lambda](decisions/0006-nlb-over-eip-failover-lambda.md) | Why the NLB replaced the Lambda-based EIP failover construct |
-| [0007: GitOps over Direct K8s Deploy](decisions/0007-gitops-over-direct-k8s-deploy.md) | Why ArgoCD Image Updater replaced the k8s-runner deploy job |
-| [0008: K8s Job Images from ConfigMap Files](decisions/0008-k8s-job-images-from-configmap-files.md) | Why Job image URIs are read from filesystem paths instead of env vars |
-| [0009: Argo Rollouts Blue/Green with Prometheus Analysis](decisions/0009-argo-rollouts-blue-green-prometheus.md) | Why Argo Rollouts drives Blue/Green with Prometheus pre-promotion gates |
 | [0010: ALB + Regional WAFv2 Edge over CloudFront and NLB](decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md) | Why the EKS edge is a single internet-facing ALB with SNI certs and a regional WebACL, retiring CloudFront and the NLB |
+
+> **Relocated (2026-06-16):** the GitOps / Argo decisions (ArgoCD Image
+> Updater, K8s Job image URIs from ESO ConfigMap, Argo Rollouts Blue/Green)
+> moved to [kubernetes-bootstrap](https://github.com/Nelson-Lamounier/kubernetes-bootstrap/tree/main/docs/decisions),
+> which owns ArgoCD, Argo Rollouts, and ESO. They documented code that no
+> longer lives in this infrastructure repo.
 
 ---
 
@@ -40,7 +43,6 @@
 |:---------|:------|
 | [cdk-monitoring Platform](projects/cdk-monitoring-platform.md) | **Canonical entry point** — what this repo is, what it owns, stack inventory, sibling repo relationships, deployment topology |
 | [CDK Platform Stacks](projects/cdk-platform-stacks.md) | Complete reference for all 16 stacks across kubernetes, shared, and org projects |
-| [admin-api BFF](projects/admin-api.md) | Hono BFF serving start-admin: Cognito JWKS auth, K8s Job dispatch, PgBouncer, FinOps route |
 | [cdk-governance-aspects](projects/cdk-governance-aspects.md) | Published npm package: DynamoDB read-only enforcement aspect and tagging aspect |
 | [Self-Healing Platform](projects/self-healing-platform.md) | Bedrock Agent + AMI Refresh pipelines: failure modes covered, remediation flows, manual intervention points, observability |
 
@@ -77,8 +79,6 @@
 
 | Document | Topic |
 |:---------|:------|
-| [Cognito JWKS Middleware](tools/cognito-jwks-middleware.md) | `jose`-based JWKS bearer token validation, per-pool cache, kid rotation, /healthz exemption |
-| [Hono BFF Framework](tools/hono-bff.md) | Port split, credential model (IMDS/Secret/ConfigMap), CORS rationale, middleware chain |
 | [Checkov IaC Scanner](tools/checkov.md) | Config, 29 custom checks, SARIF upload, CI integration, skip-check rationale |
 | [Dependency-Cruiser](tools/dependency-cruiser.md) | Architectural boundary enforcement, error/warn rules, CI integration |
 

@@ -143,7 +143,7 @@ is collected by Loki and can be alerted on.
 
 ## Related concepts
 
-- [Hono BFF (admin-api)](../tools/hono-bff.md) — framework, port split, CORS model, credential injection
+- admin-api (the Hono BFF that exposes the FinOps route) is documented in the sibling [tucaken-app repo](https://github.com/Nelson-Lamounier/tucaken-app/blob/main/docs/projects/admin-api.md) — its code moved there.
 
 <!--
 Evidence trail (auto-generated):

@@ -8,7 +8,7 @@
  * Domain: Data Layer (rarely changes)
  *
  * Resources:
- * 1. S3 Assets Bucket — Storage for images and media (served via CloudFront OAC)
+ * 1. S3 Assets Bucket — Storage for images and media (read by in-cluster workloads via IAM)
  * 2. S3 Access Logs Bucket — Server access logs for the assets bucket
  * 3. SSM Parameters — Cross-stack references (bucket name, region)
  * 4. CloudFormation Outputs — exports for downstream stacks (Base, Edge, AppIam)
@@ -101,11 +101,11 @@ export interface KubernetesDataStackProps extends cdk.StackProps {
  * S3 Assets Bucket:
  * - Stores article images, diagrams, and media files
  * - Versioning enabled for content recovery
- * - Block public access (serve via CloudFront OAC only)
+ * - Block public access (read by in-cluster workloads via task-role IAM)
  * - Lifecycle policies for cost optimisation
  *
  * SSM Parameters (published via SsmParameterStoreConstruct for-loop):
- * - assets-bucket-name — bucket name for CloudFront origin
+ * - assets-bucket-name — bucket name for asset reads
  * - aws-region — deployment region for SDK clients
  *
  * ═══════════════════════════════════════════════════════════════════
@@ -257,26 +257,12 @@ export class KubernetesDataStack extends cdk.Stack {
 
     this.assetsBucket = assetsBucketConstruct.bucket;
 
-    // Grant CloudFront read access to S3 bucket (OAC style - service principal)
-    //
-    // ⚠️ DEPLOYMENT NOTE: This OAC policy uses the CloudFront service principal
-    // with SourceAccount condition. If the CloudFront distribution ever moves
-    // to a stack that cannot reference this Data Stack (circular export lock),
-    // move this bucket policy to the CloudFront/Edge stack instead.
-    this.assetsBucket.addToResourcePolicy(
-      new iam.PolicyStatement({
-        sid: "AllowCloudFrontOACAccess",
-        effect: iam.Effect.ALLOW,
-        principals: [new iam.ServicePrincipal("cloudfront.amazonaws.com")],
-        actions: ["s3:GetObject"],
-        resources: [this.assetsBucket.arnForObjects("*")],
-        conditions: {
-          StringEquals: {
-            "AWS:SourceAccount": cdk.Stack.of(this).account,
-          },
-        },
-      }),
-    );
+    // NOTE: The CloudFront OAC bucket policy was removed on 2026-06-16 — the
+    // CloudFront edge was retired in the EKS migration (verified: no
+    // distributions exist in this account; the edge is now the shared ALB).
+    // Assets are read by in-cluster workloads via their own task-role IAM,
+    // not by a CloudFront service principal. Reinstate an OAC grant here only
+    // if a CloudFront distribution is ever reintroduced.
 
     // =================================================================
     // SSM PARAMETERS FOR CROSS-STACK REFERENCES
@@ -372,7 +358,7 @@ export class KubernetesDataStack extends cdk.Stack {
       {
         id: "AssetsBucketRegionalDomainName",
         value: this.assetsBucket.bucketRegionalDomainName,
-        description: "S3 bucket regional domain name for CloudFront origin",
+        description: "S3 bucket regional domain name (asset origin)",
         exportName: `${exportPrefix}-assets-bucket-domain`,
       },
       {

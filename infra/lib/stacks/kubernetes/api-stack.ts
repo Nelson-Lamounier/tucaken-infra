@@ -87,7 +87,8 @@ export interface NextJsApiStackProps extends cdk.StackProps {
 
     /**
      * Skip creating the REGIONAL WAF WebACL.
-     * Set to true when CloudFront WAF is protecting this API.
+     * Set to true when an upstream edge WAF already protects this API
+     * (e.g. the regional WebACL on the shared ALB — see EksPublicWafStack).
      * @default false
      */
     readonly skipWaf?: boolean;
@@ -287,8 +288,9 @@ export class NextJsApiStack extends cdk.Stack {
 
         // =====================================================================
         // WAF WEBACL
-        // Always created unless skipWaf is set (e.g. when CloudFront WAF
-        // already protects this API). Uses shared rule builder.
+        // Always created unless skipWaf is set (e.g. when an upstream edge
+        // WAF — the regional WebACL on the shared ALB — already protects
+        // this API). Uses shared rule builder.
         // =====================================================================
         if (!props.skipWaf) {
             this.webAcl = new wafv2.CfnWebACL(this, 'ApiWebAcl', {
@@ -303,7 +305,7 @@ export class NextJsApiStack extends cdk.Stack {
                 rules: buildWafRules({
                     envName,
                     namePrefix,
-                    // No SizeRestrictions_BODY exclusion for API (unlike CloudFront)
+                    // No SizeRestrictions_BODY exclusion for API (unlike the ALB edge WAF)
                     commonRuleExclusions: [],
                 }),
             });
@@ -314,11 +316,11 @@ export class NextJsApiStack extends cdk.Stack {
                 webAclArn: this.webAcl.attrArn,
             });
         } else {
-            // WAF intentionally skipped — API is protected by CloudFront edge WAF
+            // WAF intentionally skipped — API is protected by the upstream ALB edge WAF
             NagSuppressions.addResourceSuppressionsByPath(
                 this,
                 `/${this.stackName}/ArticlesApi/RestApi/DeploymentStage.api/Resource`,
-                [{ id: 'AwsSolutions-APIG3', reason: 'Regional WAF skipped — API is protected by CloudFront edge WAF (AwsSolutions-APIG3)' }],
+                [{ id: 'AwsSolutions-APIG3', reason: 'Regional WAF skipped — API is protected by the regional WebACL on the shared ALB (AwsSolutions-APIG3)' }],
             );
         }
 

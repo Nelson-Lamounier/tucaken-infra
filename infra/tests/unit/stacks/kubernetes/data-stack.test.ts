@@ -125,22 +125,15 @@ describe('KubernetesDataStack', () => {
             });
         });
 
-        it('should grant CloudFront OAC read access via bucket policy', () => {
+        it('should not grant the CloudFront service principal (OAC grant retired with CloudFront edge)', () => {
+            // CloudFront was retired in the EKS migration (the edge is now the
+            // shared ALB; no distributions exist in the account). The OAC bucket
+            // policy granting cloudfront.amazonaws.com was removed in data-stack.ts.
             const { template } = _createDataStack();
 
-            template.hasResourceProperties('AWS::S3::BucketPolicy', {
-                PolicyDocument: Match.objectLike({
-                    Statement: Match.arrayWith([
-                        Match.objectLike({
-                            Action: 's3:GetObject',
-                            Effect: 'Allow',
-                            Principal: Match.objectLike({
-                                Service: 'cloudfront.amazonaws.com',
-                            }),
-                        }),
-                    ]),
-                }),
-            });
+            // No bucket policy (or any resource) may reference the CloudFront
+            // service principal — the OAC grant was removed with the edge.
+            expect(JSON.stringify(template.toJSON())).not.toContain('cloudfront.amazonaws.com');
         });
 
         it('should have lifecycle rules on assets bucket', () => {

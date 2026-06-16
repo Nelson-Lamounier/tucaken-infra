@@ -487,6 +487,25 @@ export class EksPodIdentityStack extends cdk.Stack {
                         ],
                     }),
                 );
+                // FinOps / Cost tab: the admin-api finops routes read Cost
+                // Explorer and CloudWatch custom metrics directly (no
+                // intermediate Lambda). Without these the Cost tab is empty
+                // (ce: AccessDenied swallowed by the route try/catch) and the
+                // metric routes 500 (cloudwatch: denied). See issue #168.
+                // Cost Explorer is a global service with no resource-level
+                // scoping; cloudwatch:GetMetricData likewise requires '*'.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'AdminApiFinOpsReadOnly',
+                        actions: [
+                            'ce:GetCostAndUsage',
+                            'ce:GetTags',
+                            'cloudwatch:GetMetricData',
+                            'cloudwatch:ListMetrics',
+                        ],
+                        resources: ['*'],
+                    }),
+                );
                 break;
             case 'image-updater':
                 // ArgoCD Image Updater polls ECR for new image tags using

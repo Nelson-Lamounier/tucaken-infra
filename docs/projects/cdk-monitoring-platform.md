@@ -12,7 +12,6 @@ sources:
   - packages/cdk-governance-aspects/README.md
   - docs/projects/cdk-platform-stacks.md
   - docs/projects/self-healing-platform.md
-  - docs/projects/admin-api.md
   - docs/projects/cdk-governance-aspects.md
 created: 2026-04-29
 updated: 2026-04-29
@@ -286,7 +285,7 @@ SSM Parameter Store is the runtime discovery mechanism between this repo and sib
 
 Both services are containerised applications deployed via ArgoCD. cdk-monitoring provides the ECR repositories, IAM instance profile grants for the worker nodes, Platform RDS connection pool (PgBouncer), and Cognito JWKS endpoint the `admin-api` uses for JWT validation.
 
-Detailed `admin-api` architecture: [admin-api BFF](admin-api.md).
+Detailed `admin-api` architecture lives in the sibling [tucaken-app repo](https://github.com/Nelson-Lamounier/tucaken-app/blob/main/docs/projects/admin-api.md) — the admin-api code moved there.
 
 ---
 
@@ -367,8 +366,10 @@ npx cdk synth -c project=kubernetes -c environment=dev -c nagChecks=false   # sy
 **Project docs (this repo):**
 - [CDK Platform Stack Reference](cdk-platform-stacks.md) — full inventory of all 16 stacks with SSM outputs and CfnOutputs
 - [Self-Healing Platform](self-healing-platform.md) — Bedrock Agent + AMI Refresh pipelines, failure modes, observability
-- [admin-api BFF](admin-api.md) — Hono BFF architecture, K8s Job dispatch, Cognito JWKS auth
 - [cdk-governance-aspects](cdk-governance-aspects.md) — published npm package details
+
+**Sibling-repo docs:**
+- [admin-api BFF (tucaken-app)](https://github.com/Nelson-Lamounier/tucaken-app/blob/main/docs/projects/admin-api.md) — Hono BFF architecture, K8s Job dispatch, Cognito JWKS auth
 
 **Architecture decisions:**
 - [ADR-001: Self-Managed K8s vs EKS](../decisions/0001-self-managed-k8s-vs-eks.md) — rationale and cost analysis
@@ -392,5 +393,5 @@ Evidence trail (auto-generated):
 - Source: packages/cdk-governance-aspects/README.md (read on 2026-04-29) — TaggingAspect 7-tag schema, EnforceReadOnlyDynamoDbAspect forbidden actions, peer deps
 - Source: docs/projects/cdk-platform-stacks.md (read on 2026-04-29) — headings confirm 3 projects, 10+5+1 stacks structure
 - Source: docs/projects/self-healing-platform.md (read on 2026-04-29) — self-healing pipeline components for cross-reference
-- Source: docs/projects/admin-api.md (read on 2026-04-29) — admin-api architecture for cross-reference
+- Note: docs/projects/admin-api.md removed 2026-06-16 — admin-api migrated to the tucaken-app repo
 -->

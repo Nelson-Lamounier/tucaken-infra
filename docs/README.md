@@ -39,7 +39,6 @@
 |:---------|:------|
 | [cdk-monitoring Platform](projects/cdk-monitoring-platform.md) | **Canonical entry point** — what this repo is, what it owns, stack inventory, sibling repo relationships, deployment topology |
 | [CDK Platform Stacks](projects/cdk-platform-stacks.md) | Complete reference for all 16 stacks across kubernetes, shared, and org projects |
-| [admin-api BFF](projects/admin-api.md) | Hono BFF serving start-admin: Cognito JWKS auth, K8s Job dispatch, PgBouncer, FinOps route |
 | [cdk-governance-aspects](projects/cdk-governance-aspects.md) | Published npm package: DynamoDB read-only enforcement aspect and tagging aspect |
 | [Self-Healing Platform](projects/self-healing-platform.md) | Bedrock Agent + AMI Refresh pipelines: failure modes covered, remediation flows, manual intervention points, observability |
 
@@ -74,8 +73,6 @@
 
 | Document | Topic |
 |:---------|:------|
-| [Cognito JWKS Middleware](tools/cognito-jwks-middleware.md) | `jose`-based JWKS bearer token validation, per-pool cache, kid rotation, /healthz exemption |
-| [Hono BFF Framework](tools/hono-bff.md) | Port split, credential model (IMDS/Secret/ConfigMap), CORS rationale, middleware chain |
 | [Checkov IaC Scanner](tools/checkov.md) | Config, 29 custom checks, SARIF upload, CI integration, skip-check rationale |
 | [Dependency-Cruiser](tools/dependency-cruiser.md) | Architectural boundary enforcement, error/warn rules, CI integration |
 

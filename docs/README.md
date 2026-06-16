@@ -16,9 +16,12 @@
 | [0004: Crossplane over Terraform Modules](decisions/0004-crossplane-over-terraform-modules.md) | Why Crossplane manages in-cluster AWS resources instead of Terraform |
 | [0005: Cognito over Auth0](decisions/0005-cognito-over-auth0.md) | Why Amazon Cognito replaces Auth.js v5 Credentials provider |
 | [0006: NLB over EIP-Failover Lambda](decisions/0006-nlb-over-eip-failover-lambda.md) | Why the NLB replaced the Lambda-based EIP failover construct |
-| [0007: GitOps over Direct K8s Deploy](decisions/0007-gitops-over-direct-k8s-deploy.md) | Why ArgoCD Image Updater replaced the k8s-runner deploy job |
-| [0008: K8s Job Images from ConfigMap Files](decisions/0008-k8s-job-images-from-configmap-files.md) | Why Job image URIs are read from filesystem paths instead of env vars |
-| [0009: Argo Rollouts Blue/Green with Prometheus Analysis](decisions/0009-argo-rollouts-blue-green-prometheus.md) | Why Argo Rollouts drives Blue/Green with Prometheus pre-promotion gates |
+
+> **Relocated (2026-06-16):** the GitOps / Argo decisions (ArgoCD Image
+> Updater, K8s Job image URIs from ESO ConfigMap, Argo Rollouts Blue/Green)
+> moved to [kubernetes-bootstrap](https://github.com/Nelson-Lamounier/kubernetes-bootstrap/tree/main/docs/decisions),
+> which owns ArgoCD, Argo Rollouts, and ESO. They documented code that no
+> longer lives in this infrastructure repo.
 
 ---
 

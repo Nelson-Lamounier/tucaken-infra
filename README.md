@@ -224,9 +224,11 @@ The platform migrated kubeadm → EKS in 2026-05; ADRs 001 and 006 record the
 | [ADR-004](docs/decisions/0004-crossplane-over-terraform-modules.md) | Crossplane over Terraform modules | Kubernetes-native GitOps lifecycle for AWS resources; no separate Terraform state |
 | [ADR-005](docs/decisions/0005-cognito-over-auth0.md) | Amazon Cognito over Auth0 | PKCE flow, JWKS validation, threat protection at pennies per MAU |
 | [ADR-006](docs/decisions/0006-nlb-over-eip-failover-lambda.md) | NLB over EIP-failover Lambda *(pre-EKS edge)* | NLB SubnetMapping binds the EIP; TCP health checks route without Lambda re-association |
-| [ADR-007](docs/decisions/0007-gitops-over-direct-k8s-deploy.md) | ArgoCD Image Updater over direct K8s deploy in CI | GitOps delivery survives CI downtime; no cluster credentials in GitHub secrets |
-| [ADR-008](docs/decisions/0008-k8s-job-images-from-configmap-files.md) | Job image URIs from ConfigMap file mounts | ESO syncs ECR tags to a ConfigMap; admin-api reads them with a TTL — no Rollout on tag change |
-| [ADR-009](docs/decisions/0009-argo-rollouts-blue-green-prometheus.md) | Argo Rollouts Blue/Green with Prometheus pre-promotion analysis | Automated canary analysis gates promotion; manual promote preserves human sign-off |
+
+The GitOps / Argo delivery decisions (ArgoCD Image Updater, K8s Job image URIs
+from ESO ConfigMap, Argo Rollouts Blue/Green) live in the
+[kubernetes-bootstrap](https://github.com/Nelson-Lamounier/kubernetes-bootstrap/tree/main/docs/decisions)
+repo, which owns ArgoCD, Argo Rollouts, and ESO.
 
 ## Repository structure
 

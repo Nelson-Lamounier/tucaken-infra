@@ -19,6 +19,7 @@
 | [0007: GitOps over Direct K8s Deploy](decisions/0007-gitops-over-direct-k8s-deploy.md) | Why ArgoCD Image Updater replaced the k8s-runner deploy job |
 | [0008: K8s Job Images from ConfigMap Files](decisions/0008-k8s-job-images-from-configmap-files.md) | Why Job image URIs are read from filesystem paths instead of env vars |
 | [0009: Argo Rollouts Blue/Green with Prometheus Analysis](decisions/0009-argo-rollouts-blue-green-prometheus.md) | Why Argo Rollouts drives Blue/Green with Prometheus pre-promotion gates |
+| [0010: ALB + Regional WAFv2 Edge over CloudFront and NLB](decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md) | Why the EKS edge is a single internet-facing ALB with SNI certs and a regional WebACL, retiring CloudFront and the NLB |
 
 ---
 
@@ -67,6 +68,8 @@
 | [IaC Security — Dual-Layer](concepts/iac-security-dual-layer.md) | cdk-nag at synth time + Checkov in CI: complementary roles, skip-check rationale, SARIF integration |
 | [FinOps Observability](concepts/finops-observability.md) | admin-api FinOps route: CloudWatch Bedrock metrics, Cost Explorer queries, IAM permissions |
 | [Request Lifecycle — Viewer to Pod](concepts/request-lifecycle-viewer-to-pod.md) | End-to-end request path: DNS → CloudFront → WAF → NLB → Traefik → kube-proxy → Pod, with per-hop failure modes |
+| [EKS Platform Architecture](concepts/eks-platform-architecture.md) | EKS 1.34 cluster, stack-per-failure-domain decomposition, system MNG + Karpenter node provisioning, Pod Identity over IRSA, and where the ALB edge sits |
+| [Karpenter and Pod Identity Provisioning](concepts/karpenter-pod-identity-provisioning.md) | EC2NodeClass/NodePool internals, SQS interruption queue, prune:false rationale, and Pod Identity IAM-to-ServiceAccount association detail |
 
 ---
 
@@ -106,6 +109,7 @@
 | [cdk-nag COG8 — Cognito AdvancedSecurityMode Deprecated](troubleshooting/cognito-advanced-security-mode-cog8-failure.md) | `AdvancedSecurityMode.ENFORCED` deprecated; migrate to `featurePlan: FeaturePlan.PLUS` + `standardThreatProtectionMode` |
 | [GITHUB_OUTPUT Rejects Multi-line aws-cli JSON](troubleshooting/github-output-multiline-value-invalid-format.md) | `aws --output json` is pretty-printed; pipe through `jq -c '.'` before writing to GITHUB_OUTPUT |
 | [CloudFormation Execution Role Missing Service / Non-ASCII SG Description](troubleshooting/cfn-exec-role-missing-service-permissions.md) | Stack rollback on new service deploy (add to CDKCloudFormationEx.json + bootstrap); em dash in SG description causes HTTP 400 |
+| [The Public Edge is the ALB, not CloudFront](troubleshooting/edge-is-alb-not-cloudfront.md) | Stale CloudFront comments/SG residue mislead edge debugging; the live edge is the internet-facing ALB + regional WAFv2 — diagnosis commands |
 
 ---
 
@@ -118,6 +122,7 @@
 | [Bootstrap Deadlock — CCM](runbooks/bootstrap-deadlock-ccm.md) | Resolve Cloud Controller Manager deadlock during cluster bootstrap |
 | [Cross-AZ Recovery](runbooks/cross-az-recovery.md) | Recover cluster state after an AZ failure |
 | [GitHub Workflow Dispatch](runbooks/gh-workflow-dispatch.md) | Manual `gh workflow run` reference for all project pipelines |
+| [EKS Dev Start/Stop and Restore Order](runbooks/eks-dev-start-stop-restore.md) | Manual start/stop of the dev cluster and the correct MNG → Karpenter → ArgoCD restore sequence |
 
 ---
 

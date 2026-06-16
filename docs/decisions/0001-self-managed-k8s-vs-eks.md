@@ -1,8 +1,31 @@
 # ADR-001: Self-Managed Kubernetes over Amazon EKS
 
 **Date:** 2026-03-21
-**Status:** Accepted
+**Status:** Superseded (2026-05) — the platform migrated to Amazon EKS
 **Deciders:** Nelson Lamounier (solo developer)
+
+---
+
+## Status update — superseded by the EKS migration (2026-05)
+
+This decision was **reversed**. The platform now runs on **Amazon EKS** (verified
+live: cluster `k8s-eks-development`, Kubernetes 1.34), not a self-managed kubeadm
+cluster. Node capacity is provisioned by Karpenter on top of a managed system node
+group, and workload IAM uses EKS Pod Identity rather than the kubeadm-era patterns
+described below.
+
+The original record is retained as decision history. For the current architecture
+and the rationale for migrating, see:
+
+- [ADR-002: Tucaken Architecture Migration](0002-tucaken-architecture-migration.md)
+- [EKS platform architecture](../concepts/eks-platform-architecture.md)
+- [Karpenter and Pod Identity provisioning](../concepts/karpenter-pod-identity-provisioning.md)
+- [EKS migration design spec](../superpowers/specs/2026-05-05-eks-migration-design.md)
+
+Scope note: this repository is the **infrastructure** layer. The Next.js
+application referenced in the original context below is hosted as a workload, not
+owned by this repo — application code lives in the sibling `tucaken-app` and
+`ai-applications` repositories.
 
 ---
 
@@ -41,12 +64,16 @@ This was a deliberate learning decision, not a production recommendation. For a 
 
 ## Evidence
 
-> Files in this repository that demonstrate this decision:
+> Files that demonstrated this decision at the time. **Most have since moved or
+> been deprecated by the EKS migration** — `control-plane-stack.ts` and
+> `edge-stack.ts` now live under `infra/lib/stacks/kubernetes/deprecated/`, and
+> the `kubernetes-app/` bootstrap tree moved to the sibling `kubernetes-bootstrap`
+> repository. Paths are kept here as a historical pointer.
 
 ### Infrastructure as Code
-- [`base-stack.ts`](../../infra/lib/stacks/kubernetes/base-stack.ts) — VPC, security groups, IAM roles (28.7 KB)
-- [`control-plane-stack.ts`](../../infra/lib/stacks/kubernetes/control-plane-stack.ts) — EC2 instance, EBS, SSM Automation
-- [`edge-stack.ts`](../../infra/lib/stacks/kubernetes/edge-stack.ts) — NLB, Traefik, TLS termination (32 KB)
+- [`base-stack.ts`](../../infra/lib/stacks/kubernetes/base-stack.ts) — VPC, security groups, IAM roles (still present; carries kubeadm-era vestiges)
+- `infra/lib/stacks/kubernetes/deprecated/control-plane-stack.ts` — EC2 instance, EBS, SSM Automation (deprecated)
+- `infra/lib/stacks/kubernetes/deprecated/edge-stack.ts` — NLB, Traefik, TLS termination (deprecated)
 
 ### Bootstrap Automation
 - [`bootstrap_argocd.py`](../../kubernetes-app/k8s-bootstrap/system/argocd/bootstrap_argocd.py) — 1,400-line idempotent bootstrap (ArgoCD, cert-manager, app-of-apps)

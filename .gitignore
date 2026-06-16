@@ -54,7 +54,10 @@ scripts/local/diagnostics/.troubleshoot-logs/*
 !scripts/local/diagnostics/.troubleshoot-logs/.gitkeep
 
 # ── Generated Docs & Reports ────────────────────────────────────────────────
-docs/
+# Only ignore generated typedoc output, not the hand-authored knowledge base.
+# (Previously `docs/` ignored the entire tree, so every KB doc had to be
+#  force-added with `git add -f`. typedoc.json emits to docs/api.)
+docs/api/
 security-reports/
 
 # ── AI Tooling ───────────────────────────────────────────────────────────────

@@ -120,4 +120,32 @@ describe('EksPodIdentityStack', () => {
             });
         });
     });
+
+    describe('admin-api purpose', () => {
+        const bindings: PodIdentityBinding[] = [
+            { namespace: 'admin-api', serviceAccount: 'admin-api', purpose: 'admin-api' },
+        ];
+
+        // Regression for issue #168 — the FinOps/Cost tab was broken because the
+        // admin-api role lacked ce:/cloudwatch: actions.
+        it('should grant the FinOps routes ce: and cloudwatch: read access', () => {
+            const t = Template.fromStack(newStack(bindings));
+            t.hasResourceProperties('AWS::IAM::Policy', {
+                PolicyDocument: {
+                    Statement: Match.arrayWith([
+                        Match.objectLike({
+                            Sid: 'AdminApiFinOpsReadOnly',
+                            Action: Match.arrayWith([
+                                'ce:GetCostAndUsage',
+                                'ce:GetTags',
+                                'cloudwatch:GetMetricData',
+                                'cloudwatch:ListMetrics',
+                            ]),
+                            Resource: '*',
+                        }),
+                    ]),
+                },
+            });
+        });
+    });
 });

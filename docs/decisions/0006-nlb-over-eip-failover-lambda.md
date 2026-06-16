@@ -12,7 +12,16 @@ updated: 2026-04-28
 
 ## Status
 
-Accepted — implemented in `KubernetesBaseStack`
+**Superseded (2026-05)** by the EKS migration — the public edge is now an
+internet-facing ALB with a regional WAFv2 WebACL, not an NLB carrying the cluster
+EIP. See [ADR-0010: ALB + regional WAFv2 edge over CloudFront and NLB](0010-alb-wafv2-edge-over-cloudfront-nlb.md).
+The NLB existed to bind the EIP for a self-managed control plane; EKS manages its
+own control-plane endpoint, so the EIP/NLB binding is no longer required.
+
+This decision (NLB over the EIP-failover Lambda) was correct for the kubeadm era
+and is retained as decision history. Original record below.
+
+Originally: Accepted — implemented in `KubernetesBaseStack`
 (`infra/lib/stacks/kubernetes/base-stack.ts:350-413`).
 `EipFailoverConstruct` is deprecated and retained only in the compiled `dist/`
 directory (`infra/dist/lib/constructs/compute/constructs/eip-failover.d.ts`);

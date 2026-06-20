@@ -91,7 +91,13 @@ export class PlatformRdsStack extends cdk.Stack {
             }),
             instanceType: ec2.InstanceType.of(
                 ec2.InstanceClass.T4G,
-                ec2.InstanceSize.MICRO,
+                // Bumped MICRO -> SMALL. A t4g.micro (2 burstable vCPU, ~1 GB) cannot
+                // sustain canonical-ingestion load: parallel enrichment workers writing
+                // skills back exhaust the instance's CPU credits, after which it throttles
+                // to baseline and REFUSES/TIMES OUT connections (ECONNREFUSED/ETIMEDOUT),
+                // stalling repo migrations. In-place modify (DBInstanceClass) — no data
+                // loss; Single-AZ means a brief ~2-5 min reboot on deploy.
+                ec2.InstanceSize.SMALL,
             ),
             credentials,
             databaseName,

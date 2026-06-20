@@ -33,7 +33,7 @@ describe('PlatformRdsStack', () => {
             template.hasResourceProperties('AWS::RDS::DBInstance', {
                 Engine: 'postgres',
                 EngineVersion: Match.stringLikeRegexp('^18\\.'),
-                DBInstanceClass: 'db.t4g.micro',
+                DBInstanceClass: 'db.t4g.small',
                 DBName: 'tucaken',
                 StorageEncrypted: true,
             });

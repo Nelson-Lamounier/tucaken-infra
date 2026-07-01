@@ -148,4 +148,47 @@ describe('EksPodIdentityStack', () => {
             });
         });
     });
+
+    describe('article-pipeline purpose', () => {
+        const bindings: PodIdentityBinding[] = [
+            { namespace: 'article-pipeline', serviceAccount: 'article-pipeline', purpose: 'article-pipeline' },
+        ];
+
+        it('should grant the pipeline role bedrock:InvokeModel', () => {
+            const t = Template.fromStack(newStack(bindings));
+            t.hasResourceProperties('AWS::IAM::Policy', {
+                PolicyDocument: {
+                    Statement: Match.arrayWith([
+                        Match.objectLike({
+                            Sid: 'PipelineBedrockInvoke',
+                            Action: Match.arrayWith(['bedrock:InvokeModel']),
+                        }),
+                    ]),
+                },
+            });
+        });
+
+        // Regression guard: without S3 access the pipeline pod cannot read its
+        // draft (drafts/<slug>.md), so run-pipeline dies at readDraftFromS3 with
+        // AccessDenied on s3:GetObject. Scoped to the assets-bucket name pattern.
+        it('should grant the pipeline role S3 read/write on the assets bucket', () => {
+            const t = Template.fromStack(newStack(bindings));
+            t.hasResourceProperties('AWS::IAM::Policy', {
+                PolicyDocument: {
+                    Statement: Match.arrayWith([
+                        Match.objectLike({
+                            Sid: 'PipelineAssetsS3Objects',
+                            Action: Match.arrayWith(['s3:GetObject', 's3:PutObject']),
+                            Resource: 'arn:aws:s3:::bedrock-data-*-assetsbucket*/*',
+                        }),
+                        Match.objectLike({
+                            Sid: 'PipelineAssetsS3ListBucket',
+                            Action: 's3:ListBucket',
+                            Resource: 'arn:aws:s3:::bedrock-data-*-assetsbucket*',
+                        }),
+                    ]),
+                },
+            });
+        });
+    });
 });

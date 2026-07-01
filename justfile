@@ -912,6 +912,66 @@ github-app-secrets app-id private-key-file webhook-secret env="development" regi
     echo "  kubectl annotate externalsecret admin-api-github -n admin-api \\"
     echo "    force-sync=\$(date +%s) --overwrite"
 
+# Publish the public-api GitHub App secret ARN to SSM so the public-api-auth
+# ExternalSecret (aws-ssm store) can resolve GITHUB_APP_SECRET_ARN at boot.
+#
+# Unlike `github-app-secrets` (admin-api, which stores the creds themselves),
+# public-api consumes the GitHub App by REFERENCE: the SSM parameter holds the
+# *ARN* of the Secrets Manager secret, and public-api fetches the secret at
+# runtime via the node instance profile (KMS/SM grants on the worker role).
+#
+# Infrastructure flow:
+#   Secrets Manager: k8s/{env}/public-api-github-app  (creds; PREREQUISITE, out-of-band)
+#   SSM Parameter:   /k8s/{env}/public-api-github-app-arn  → the secret's ARN (this recipe)
+#   ESO ExternalSecret: public-api-auth (aws-ssm store, refreshes every 1h)
+#
+# Prerequisite (documented, NOT managed here): the Secrets Manager secret must
+# already exist and hold the GitHub App { appId, privateKeyPem, webhookSecret }.
+# Its value is a third-party credential injected out-of-band — create it once:
+#   aws secretsmanager create-secret --name k8s/development/public-api-github-app \
+#     --secret-string '{"appId":"…","privateKeyPem":"…","webhookSecret":"…"}' \
+#     --region eu-west-1 --profile dev-account
+#
+# Idempotent (put-parameter --overwrite): safe to re-run any time the parameter
+# is missing or stale (e.g. after a cluster rebuild, or if it is accidentally
+# deleted — which is exactly what once left public-api-secrets Degraded). The
+# ARN is resolved dynamically, so the secret's random suffix is never hardcoded.
+#
+# Usage:
+#   just public-api-github-app-arn
+#
+# After running: ESO refreshes within 1h. Force immediate sync with:
+#   kubectl annotate externalsecret public-api-auth -n public-api \
+#     force-sync=$(date +%s) --overwrite
+[group('k8s')]
+public-api-github-app-arn env="development" region="eu-west-1" profile="dev-account":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SM_SECRET="k8s/{{env}}/public-api-github-app"
+    SSM_ARN_PARAM="/k8s/{{env}}/public-api-github-app-arn"
+    echo "→ Resolving Secrets Manager ARN for ${SM_SECRET}"
+    SECRET_ARN=$(aws secretsmanager describe-secret \
+      --secret-id "${SM_SECRET}" \
+      --region {{region}} --profile {{profile}} \
+      --query 'ARN' --output text 2>/dev/null || echo "")
+    if [ -z "${SECRET_ARN}" ] || [ "${SECRET_ARN}" = "None" ]; then
+      echo "✗ Prerequisite missing: Secrets Manager secret '${SM_SECRET}' does not exist."
+      echo "  Create it out-of-band first (holds the GitHub App appId/privateKeyPem/webhookSecret)."
+      exit 1
+    fi
+    echo "→ Writing ARN to SSM: ${SSM_ARN_PARAM}"
+    aws ssm put-parameter \
+      --name "${SSM_ARN_PARAM}" \
+      --value "${SECRET_ARN}" \
+      --type String \
+      --overwrite \
+      --region {{region}} --profile {{profile}}
+    echo "✓ SSM parameter written: ${SSM_ARN_PARAM} → ${SECRET_ARN}"
+    echo ""
+    echo "ESO refreshes every 1h. Force immediate sync:"
+    echo "  kubectl annotate externalsecret public-api-auth -n public-api \\"
+    echo "    force-sync=\$(date +%s) --overwrite"
+
 # Restore the ArgoCD Image Updater writeback secret from SSM.
 # Run this whenever Image Updater logs "secrets argocd-image-updater-writeback-key not found".
 # SSM source: /k8s/{env}/argocd/image-updater-deploy-key (SecureString)

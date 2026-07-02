@@ -21,6 +21,13 @@
  *
  * Only instantiated for Environment.DEVELOPMENT (factory gate).
  *
+ * NOTE: both schedules are currently created in the DISABLED state. The live
+ * production app runs on the development account, so an active nightly stop
+ * would take prod offline 23:00-04:00. The stack (Lambdas, IAM, schedules)
+ * stays provisioned; nothing fires. Re-arm by setting state to 'ENABLED' on
+ * both CfnSchedules once prod has its own account. See the disable rationale
+ * at the two CfnSchedule definitions below.
+ *
  * @see docs/superpowers/specs/2026-05-07-eks-resource-optimisation-design.md §§ 3.4, 3.5
  */
 import { NagSuppressions } from 'cdk-nag';
@@ -432,9 +439,15 @@ def handler(event, context):
             }),
         );
 
+        // DISABLED: the live production app currently runs on the development
+        // account, so the nightly cluster stop/start would take prod offline
+        // 23:00-04:00 Europe/Dublin. Both schedules stay provisioned (Lambdas,
+        // IAM, EventBridge) but do not fire. To re-arm the cost-saver once prod
+        // moves to its own account, set state back to 'ENABLED' and redeploy.
         new scheduler.CfnSchedule(this, 'ScaleUpSchedule', {
             scheduleExpression: 'cron(0 4 * * ? *)',
             scheduleExpressionTimezone: 'Europe/Dublin',
+            state: 'DISABLED',
             flexibleTimeWindow: { mode: 'OFF' },
             target: {
                 arn: scaleUpFn.functionArn,
@@ -445,6 +458,7 @@ def handler(event, context):
         new scheduler.CfnSchedule(this, 'ScaleDownSchedule', {
             scheduleExpression: 'cron(0 23 * * ? *)',
             scheduleExpressionTimezone: 'Europe/Dublin',
+            state: 'DISABLED',
             flexibleTimeWindow: { mode: 'OFF' },
             target: {
                 arn: scaleDownFn.functionArn,

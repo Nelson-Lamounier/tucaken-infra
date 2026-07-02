@@ -454,6 +454,13 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                     'www.tucaken.com',
                 ],
                 rateLimitPerIp: 2000,
+                // GitHub App webhook (admin-api /api/github/webhook) is
+                // HMAC-verified, delivered from GitHub's IPs, and carries
+                // push payloads that exceed the Common rule set's 8 KB body
+                // cap — exempt it from the IP allowlist and the
+                // body-inspecting managed rules. IP reputation + rate limit
+                // still apply. Codifies the 2026-07-02 live WAF fix.
+                ipAllowlistExemptPaths: ['/api/github/webhook'],
                 ssmPrefix,
                 clusterName: eksConfig.clusterName,
             },

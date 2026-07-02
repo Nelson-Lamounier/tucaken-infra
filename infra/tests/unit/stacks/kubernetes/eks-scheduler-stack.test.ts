@@ -49,18 +49,30 @@ describe('EksSchedulerStack', () => {
         });
     });
 
-    it('should create scale-up schedule with Europe/Dublin timezone at 4am', () => {
+    it('should create scale-up schedule with Europe/Dublin timezone at 4am, disabled', () => {
         template.hasResourceProperties('AWS::Scheduler::Schedule', {
             ScheduleExpression: 'cron(0 4 * * ? *)',
             ScheduleExpressionTimezone: 'Europe/Dublin',
+            State: 'DISABLED',
         });
     });
 
-    it('should create scale-down schedule with Europe/Dublin timezone at 11pm', () => {
+    it('should create scale-down schedule with Europe/Dublin timezone at 11pm, disabled', () => {
         template.hasResourceProperties('AWS::Scheduler::Schedule', {
             ScheduleExpression: 'cron(0 23 * * ? *)',
             ScheduleExpressionTimezone: 'Europe/Dublin',
+            State: 'DISABLED',
         });
+    });
+
+    it('should disable both schedules so the nightly cluster stop cannot fire', () => {
+        // Live prod runs on the dev account; both schedules must ship DISABLED.
+        const schedules = template.findResources('AWS::Scheduler::Schedule');
+        const states = Object.values(schedules).map(
+            (s: Record<string, unknown>) =>
+                (s.Properties as Record<string, unknown>).State,
+        );
+        expect(states).toStrictEqual(['DISABLED', 'DISABLED']);
     });
 
     it('should put eks:UpdateNodegroupConfig in a separate statement from eks:ListNodegroups', () => {

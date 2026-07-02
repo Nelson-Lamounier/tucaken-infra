@@ -46,6 +46,12 @@ export interface EksPublicWafStackProps extends cdk.StackProps {
     /** Hosts to rate limit (e.g. api.*). */
     readonly rateLimitedHosts: readonly string[];
     readonly rateLimitPerIp?: number;
+    /**
+     * Self-authenticated URI paths (HMAC webhooks) exempt from the host IP
+     * allowlist and the body-inspecting managed rules. See
+     * {@link EksPublicWafProps.ipAllowlistExemptPaths}.
+     */
+    readonly ipAllowlistExemptPaths?: readonly string[];
     readonly ssmPrefix: string;
     readonly namePrefix?: string;
     /**
@@ -82,6 +88,7 @@ export class EksPublicWafStack extends cdk.Stack {
             allowlistedHosts: props.allowlistedHosts,
             rateLimitedHosts: props.rateLimitedHosts,
             rateLimitPerIp: props.rateLimitPerIp,
+            ipAllowlistExemptPaths: props.ipAllowlistExemptPaths,
         });
 
         this.webAclArn = waf.webAclArn;

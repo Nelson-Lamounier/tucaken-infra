@@ -356,6 +356,30 @@ export class EksPodIdentityStack extends cdk.Stack {
                         resources: ['*'],
                     }),
                 );
+                // S3 access to the Bedrock assets bucket. The article pipeline
+                // reads its draft from `drafts/<slug>.md` (research agent) and may
+                // write article assets there. The bucket is created by
+                // ai-applications/infra bedrock/data-stack with a CDK-random suffix
+                // (bedrock-data-<env>-assetsbucket<hash>) and its exact ARN is not
+                // available at synth time here — unlike admin-api (scoped to "*"),
+                // scope to the assets-bucket NAME PATTERN so the grant is bounded to
+                // that bucket family regardless of env/suffix. Without this the pod
+                // role has Bedrock but no S3, so the very first step
+                // (readDraftFromS3) fails with AccessDenied on s3:GetObject.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'PipelineAssetsS3Objects',
+                        actions: ['s3:GetObject', 's3:PutObject'],
+                        resources: ['arn:aws:s3:::bedrock-data-*-assetsbucket*/*'],
+                    }),
+                );
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'PipelineAssetsS3ListBucket',
+                        actions: ['s3:ListBucket'],
+                        resources: ['arn:aws:s3:::bedrock-data-*-assetsbucket*'],
+                    }),
+                );
                 break;
             case 'ontology-importer': {
                 // Bedrock Batch Inference for ontology categorization.
@@ -546,6 +570,22 @@ export class EksPodIdentityStack extends cdk.Stack {
                         actions: ['ssm:PutParameter'],
                         resources: [
                             `arn:aws:ssm:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:parameter/k8s/${props.targetEnvironment}/headlamp-viewer-token`,
+                        ],
+                    }),
+                );
+                break;
+
+            case 'public-api':
+                // public-api BFF fetches the Bedrock chatbot API key from Secrets
+                // Manager at runtime (chatbot-bff proxy). Scoped to the single
+                // bedrock-api-key secret; env segment wildcarded so one binding
+                // covers dev/prod. Replaces the interim IRSA role.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'PublicApiBedrockApiKeyRead',
+                        actions: ['secretsmanager:GetSecretValue'],
+                        resources: [
+                            `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:bedrock-*/bedrock-api-key-*`,
                         ],
                     }),
                 );

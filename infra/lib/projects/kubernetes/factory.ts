@@ -431,16 +431,13 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 allowlistIpv4SsmPath: `/k8s/${environment}/monitoring/allow-ipv4`,
                 allowlistIpv6SsmPath: `/k8s/${environment}/monitoring/allow-ipv6`,
                 allowlistedHosts: [
+                    // Operator-only hosts remain IP-gated. The Tucaken
+                    // product domains (tucaken.io / .com and www) were
+                    // dropped from this list at public launch — they now
+                    // default-ALLOW and rely on the AWS Managed Rule Sets
+                    // plus the per-IP rate limit below.
                     'admin.nelsonlamounier.com',
                     'ops.nelsonlamounier.com',
-                    // Tucaken pre-launch IP gate — application is still
-                    // under development. Drop these four entries when
-                    // going public; the AWS Managed Rule Sets and ACM
-                    // wildcards remain.
-                    'tucaken.io',
-                    'www.tucaken.io',
-                    'tucaken.com',
-                    'www.tucaken.com',
                 ],
                 // Edge per-IP rate limit (WAF RateBasedStatement, 5-min
                 // window). Covers the public tucaken-app + BFF surface in
@@ -455,6 +452,13 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                     'www.tucaken.com',
                 ],
                 rateLimitPerIp: 2000,
+                // GitHub App webhook (admin-api /api/github/webhook) is
+                // HMAC-verified, delivered from GitHub's IPs, and carries
+                // push payloads that exceed the Common rule set's 8 KB body
+                // cap — exempt it from the IP allowlist and the
+                // body-inspecting managed rules. IP reputation + rate limit
+                // still apply. Codifies the 2026-07-02 live WAF fix.
+                ipAllowlistExemptPaths: ['/api/github/webhook'],
                 ssmPrefix,
                 clusterName: eksConfig.clusterName,
             },

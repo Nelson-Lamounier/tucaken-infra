@@ -45,6 +45,24 @@ export interface EksPublicWafProps {
     readonly rateLimitedHosts: readonly string[];
     /** Rate limit per IP per 5 minutes on `rateLimitedHosts`. @default 2000 */
     readonly rateLimitPerIp?: number;
+    /**
+     * URI paths (lowercase, exact match) that carry their own request
+     * authentication (e.g. HMAC-signed webhooks) and therefore bypass BOTH
+     * the host IP allowlist and the body-inspecting managed rule sets
+     * (Common, KnownBadInputs, SQLi):
+     *
+     *   - GitHub webhook deliveries originate from GitHub's IPs, which are
+     *     never in the operator allowlist, so the allowlist rule 403s them
+     *     at the ALB.
+     *   - Push payloads routinely exceed the Common rule set's 8 KB
+     *     SizeRestrictions_BODY cap, and code diffs in the payload
+     *     false-positive the SQLi/KnownBadInputs body inspections.
+     *
+     * The endpoint's HMAC signature is the authentication for these paths;
+     * the IP-reputation rule set and the rate limit still apply.
+     * @default [] no exemptions
+     */
+    readonly ipAllowlistExemptPaths?: readonly string[];
 }
 
 export class EksPublicWafConstruct extends Construct {
@@ -93,6 +111,26 @@ export class EksPublicWafConstruct extends Construct {
 
         const rules: wafv2.CfnWebACL.RuleProperty[] = [];
 
+        // ---------- Self-authenticated path exemptions (e.g. HMAC webhooks) ----------
+        // One NOT(uri == path) leg per exempt path; ANDed into the allowlist
+        // rule and reused as the scope-down on body-inspecting managed groups.
+        const exemptPathNots: wafv2.CfnWebACL.StatementProperty[] =
+            (props.ipAllowlistExemptPaths ?? []).map((path) => ({
+                notStatement: {
+                    statement: {
+                        byteMatchStatement: {
+                            searchString: path,
+                            positionalConstraint: 'EXACTLY',
+                            fieldToMatch: { uriPath: {} },
+                            textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                        },
+                    },
+                },
+            }));
+        let exemptScopeDown: wafv2.CfnWebACL.StatementProperty | undefined;
+        if (exemptPathNots.length === 1) exemptScopeDown = exemptPathNots[0];
+        if (exemptPathNots.length > 1) exemptScopeDown = { andStatement: { statements: exemptPathNots } };
+
         // ---------- Rule: BLOCK allowlisted-host traffic from non-allowlisted IPs ----------
         if (hasAllowlist) {
             const ipSetStatement: wafv2.CfnWebACL.StatementProperty =
@@ -122,6 +160,9 @@ export class EksPublicWafConstruct extends Construct {
                         statements: [
                             hostMatchAny,
                             { notStatement: { statement: ipSetStatement } },
+                            // Self-authenticated paths (HMAC webhooks) stay
+                            // reachable from non-allowlisted IPs.
+                            ...exemptPathNots,
                         ],
                     },
                 },
@@ -170,13 +211,18 @@ export class EksPublicWafConstruct extends Construct {
         }
 
         // ---------- AWS Managed Rule Sets (apply to every host) ----------
-        const managedRules: { name: string; priority: number; metric: string }[] = [
-            { name: 'AWSManagedRulesCommonRuleSet', priority: 10, metric: 'common-rules' },
-            { name: 'AWSManagedRulesKnownBadInputsRuleSet', priority: 11, metric: 'known-bad-inputs' },
-            { name: 'AWSManagedRulesAmazonIpReputationList', priority: 12, metric: 'ip-reputation' },
-            { name: 'AWSManagedRulesSQLiRuleSet', priority: 13, metric: 'sqli' },
+        // Body-inspecting groups scope down past the exempt paths: webhook
+        // payloads exceed SizeRestrictions_BODY (8 KB) and their code diffs
+        // false-positive the SQLi/bad-input body rules. IP reputation only
+        // inspects the source address, so it keeps covering every path.
+        const managedRules: { name: string; priority: number; metric: string; inspectsBody: boolean }[] = [
+            { name: 'AWSManagedRulesCommonRuleSet', priority: 10, metric: 'common-rules', inspectsBody: true },
+            { name: 'AWSManagedRulesKnownBadInputsRuleSet', priority: 11, metric: 'known-bad-inputs', inspectsBody: true },
+            { name: 'AWSManagedRulesAmazonIpReputationList', priority: 12, metric: 'ip-reputation', inspectsBody: false },
+            { name: 'AWSManagedRulesSQLiRuleSet', priority: 13, metric: 'sqli', inspectsBody: true },
         ];
         for (const rule of managedRules) {
+            const scopeDownStatement = rule.inspectsBody ? exemptScopeDown : undefined;
             rules.push({
                 name: rule.name,
                 priority: rule.priority,
@@ -185,6 +231,7 @@ export class EksPublicWafConstruct extends Construct {
                     managedRuleGroupStatement: {
                         vendorName: 'AWS',
                         name: rule.name,
+                        ...(scopeDownStatement ? { scopeDownStatement } : {}),
                     },
                 },
                 visibilityConfig: {

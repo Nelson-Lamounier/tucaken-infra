@@ -574,6 +574,22 @@ export class EksPodIdentityStack extends cdk.Stack {
                     }),
                 );
                 break;
+
+            case 'public-api':
+                // public-api BFF fetches the Bedrock chatbot API key from Secrets
+                // Manager at runtime (chatbot-bff proxy). Scoped to the single
+                // bedrock-api-key secret; env segment wildcarded so one binding
+                // covers dev/prod. Replaces the interim IRSA role.
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'PublicApiBedrockApiKeyRead',
+                        actions: ['secretsmanager:GetSecretValue'],
+                        resources: [
+                            `arn:aws:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:bedrock-*/bedrock-api-key-*`,
+                        ],
+                    }),
+                );
+                break;
         }
     }
 }

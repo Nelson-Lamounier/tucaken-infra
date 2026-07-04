@@ -127,12 +127,16 @@ describe('PlatformRdsStack', () => {
     });
 
     describe('Secrets Manager', () => {
-        it('should create a generated secret for the restored RDS credentials', () => {
+        it('should create a fixed-name generated secret for the restored RDS credentials', () => {
             const { template } = createStack();
-            // The restore uses SnapshotCredentials.fromGeneratedSecret, which cannot
-            // name the secret — it is CDK auto-named. Consumers read the ARN from the
-            // published SSM secret-arn param, so the exact name is not asserted here.
-            template.resourceCountIs('AWS::SecretsManager::Secret', 1);
+            // Fixed name so the bootstrap ExternalSecret, which references
+            // k8s-<env>/platform-rds/credentials by name, survives restores.
+            template.hasResourceProperties('AWS::SecretsManager::Secret', {
+                Name: 'k8s-development/platform-rds/credentials',
+                GenerateSecretString: Match.objectLike({
+                    GenerateStringKey: 'password',
+                }),
+            });
         });
     });
 });

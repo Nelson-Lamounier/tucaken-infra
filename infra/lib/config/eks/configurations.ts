@@ -40,7 +40,8 @@ export interface PodIdentityBinding {
         | 'ingestion'
         | 'job-strategist'
         | 'article-pipeline'
-        | 'ontology-importer';
+        | 'ontology-importer'
+        | 'public-api';
 }
 
 export interface EksMngConfig {
@@ -112,6 +113,7 @@ const COMMON_BINDINGS: readonly PodIdentityBinding[] = [
     { namespace: 'admin-api',          serviceAccount: 'admin-api',                   purpose: 'admin-api' },
     { namespace: 'argocd',             serviceAccount: 'argocd-image-updater',        purpose: 'image-updater' },
     { namespace: 'headlamp',           serviceAccount: 'token-pusher',                purpose: 'headlamp-token-pusher' },
+    { namespace: 'public-api',         serviceAccount: 'public-api',                  purpose: 'public-api' },
     // ── AI pipeline workloads ─────────────────────────────────────────────────
     { namespace: 'ingestion',          serviceAccount: 'ingestion-sa',                purpose: 'ingestion' },
     { namespace: 'job-strategist',     serviceAccount: 'job-strategist-sa',           purpose: 'job-strategist' },

@@ -1,0 +1,152 @@
+<mxfile host="Electron" version="29.6.1">
+  <diagram name="Platform-RDS-Networking" id="platform-rds-networking">
+    <mxGraphModel dx="1200" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1720" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title block -->
+        <mxCell id="title-group" connectable="0" style="group;fontFamily=Helvetica;" value="" vertex="1" parent="1">
+          <mxGeometry height="83" width="1200" x="50" y="24" as="geometry" />
+        </mxCell>
+        <mxCell id="title-text" style="text;html=1;resizable=1;points=[];autosize=1;align=left;verticalAlign=top;spacingTop=-4;fontSize=30;fontStyle=1;fontFamily=Helvetica;" value="Platform RDS &#8212; Private Subnet &amp; PgBouncer Connectivity" vertex="1" parent="title-group">
+          <mxGeometry height="42" width="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle-text" style="text;html=1;resizable=0;points=[];autosize=1;align=left;verticalAlign=top;spacingTop=-4;fontSize=16;fontFamily=Helvetica;" value="PostgreSQL 18 in isolated (no-NAT) subnets, reached via PgBouncer through SG-to-SG ingress &#183; account 771826808455 &#183; eu-west-1" vertex="1" parent="title-group">
+          <mxGeometry height="25" width="1050" x="5" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="title-separator" style="line;strokeWidth=2;html=1;fontSize=14;strokeColor=#FF9900;fontFamily=Helvetica;" value="" vertex="1" parent="title-group">
+          <mxGeometry height="10" width="1050" x="5" y="70" as="geometry" />
+        </mxCell>
+
+        <!-- AWS Cloud -->
+        <mxCell id="aws-cloud" value="AWS Cloud" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud;strokeColor=#232F3E;fillColor=light-dark(#232F3E0D,#232F3E0D);fillStyle=auto;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="1040" height="800" as="geometry" />
+        </mxCell>
+
+        <!-- VPC -->
+        <mxCell id="vpc" value="VPC &#183; shared-vpc-development &#183; 10.0.0.0/16" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=1;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;strokeColor=#8C4FFF;fillColor=light-dark(#8C4FFF0D,#8C4FFF0D);fillStyle=auto;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;dashed=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0" vertex="1" parent="aws-cloud">
+          <mxGeometry x="40" y="50" width="960" height="520" as="geometry" />
+        </mxCell>
+
+        <!-- Public subnets -->
+        <mxCell id="public-subnet" value="Public Subnets &#183; 10.0.0.0/24, 10.0.1.0/24 &#183; route 0.0.0.0/0 &#8594; IGW" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=1;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_public_subnet;strokeColor=#248814;fillColor=light-dark(#2488140D,#2488140D);fillStyle=auto;verticalAlign=top;align=left;spacingLeft=30;fontColor=#248814;dashed=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0" vertex="1" parent="vpc">
+          <mxGeometry x="30" y="70" width="450" height="420" as="geometry" />
+        </mxCell>
+
+        <!-- EKS cluster SG boundary (decorative, inside public subnet) -->
+        <mxCell id="eks-sg" value="EKS cluster SG &#183; sg-07dc2b1a" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;fontStyle=1;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#DD3522;fillColor=none;verticalAlign=top;align=left;spacingLeft=26;fontColor=#DD3522;dashed=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0" vertex="1" parent="public-subnet">
+          <mxGeometry x="20" y="40" width="410" height="360" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eks-container" value="Compute" style="fillColor=#FFF2E8;strokeColor=#ED7100;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=11;fontColor=#ED7100;fontFamily=Helvetica;container=1;collapsible=0;shadow=1;strokeWidth=1.5;" vertex="1" parent="eks-sg">
+          <mxGeometry x="25" y="40" width="120" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="eks-icon" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;fontFamily=Helvetica;shadow=1;" value="EKS workload nodes&lt;div&gt;&lt;i&gt;Karpenter &#183; public subnets&lt;/i&gt;&lt;/div&gt;" vertex="1" parent="eks-container">
+          <mxGeometry x="36" y="30" width="48" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pgbouncer-box" value="PgBouncer&lt;div&gt;&lt;i&gt;platform ns &#183; :5432&lt;/i&gt;&lt;/div&gt;&lt;div&gt;&lt;i&gt;transaction mode &#183; &#8804;20 conns&lt;/i&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2E8;strokeColor=#ED7100;fontColor=#232F3E;fontFamily=Helvetica;fontSize=11;fontStyle=1;shadow=1;verticalAlign=middle;" vertex="1" parent="eks-sg">
+          <mxGeometry x="230" y="40" width="160" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="apppod-box" value="admin-api / worker pods&lt;div&gt;&lt;i&gt;pg Pool max 5&lt;/i&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2E8;strokeColor=#ED7100;fontColor=#232F3E;fontFamily=Helvetica;fontSize=11;fontStyle=1;shadow=1;verticalAlign=middle;" vertex="1" parent="eks-sg">
+          <mxGeometry x="25" y="210" width="160" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eso-box" value="External Secrets Operator&lt;div&gt;&lt;i&gt;SSM + Secrets Manager&lt;/i&gt;&lt;/div&gt;&lt;div&gt;&lt;i&gt;&#8594; K8s Secret&lt;/i&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontColor=#232F3E;fontFamily=Helvetica;fontSize=11;fontStyle=1;shadow=1;verticalAlign=middle;" vertex="1" parent="eks-sg">
+          <mxGeometry x="230" y="210" width="160" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Isolated subnets -->
+        <mxCell id="isolated-subnet" value="Isolated Subnets &#183; 10.0.2.0/24, 10.0.3.0/24 &#183; local route only &#8212; no IGW / no NAT" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=1;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_private_subnet;strokeColor=#147EBA;fillColor=light-dark(#147EBA0D,#147EBA0D);fillStyle=auto;verticalAlign=top;align=left;spacingLeft=30;fontColor=#147EBA;dashed=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0" vertex="1" parent="vpc">
+          <mxGeometry x="540" y="70" width="390" height="420" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rds-sg" value="Platform RDS SG &#183; sg-0a3858a8 &#183; ingress 5432 from cluster SG" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;fontStyle=1;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;strokeColor=#DD3522;fillColor=none;verticalAlign=top;align=left;spacingLeft=26;fontColor=#DD3522;dashed=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0" vertex="1" parent="isolated-subnet">
+          <mxGeometry x="60" y="120" width="270" height="230" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rds-container" value="Database" style="fillColor=#F5E6F7;strokeColor=#C925D1;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=11;fontColor=#C925D1;fontFamily=Helvetica;container=1;collapsible=0;shadow=1;strokeWidth=1.5;" vertex="1" parent="rds-sg">
+          <mxGeometry x="65" y="55" width="140" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="rds-icon" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;fontFamily=Helvetica;shadow=1;" value="RDS PostgreSQL 18.3&lt;div&gt;&lt;i&gt;k8s-dev-platform-rds-iso&lt;/i&gt;&lt;/div&gt;&lt;div&gt;&lt;i&gt;db.t4g.small &#183; publiclyAccessible false&lt;/i&gt;&lt;/div&gt;" vertex="1" parent="rds-container">
+          <mxGeometry x="46" y="30" width="48" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Regional services outside VPC: Secrets Manager + SSM -->
+        <mxCell id="sm-container" value="Security" style="fillColor=#FFEBEE;strokeColor=#DD344C;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=11;fontColor=#DD344C;fontFamily=Helvetica;container=1;collapsible=0;shadow=1;strokeWidth=1.5;" vertex="1" parent="aws-cloud">
+          <mxGeometry x="120" y="630" width="150" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="sm-icon" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fontFamily=Helvetica;shadow=1;" value="Secrets Manager&lt;div&gt;&lt;i&gt;RDS master credentials&lt;/i&gt;&lt;/div&gt;" vertex="1" parent="sm-container">
+          <mxGeometry x="51" y="30" width="48" height="48" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ssm-container" value="Management" style="fillColor=#FCE4EC;strokeColor=#E7157B;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=11;fontColor=#E7157B;fontFamily=Helvetica;container=1;collapsible=0;shadow=1;strokeWidth=1.5;" vertex="1" parent="aws-cloud">
+          <mxGeometry x="360" y="630" width="180" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ssm-icon" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.systems_manager;fontFamily=Helvetica;shadow=1;" value="SSM Parameter Store&lt;div&gt;&lt;i&gt;/k8s/dev/platform-rds/* + /shared/vpc/*&lt;/i&gt;&lt;/div&gt;" vertex="1" parent="ssm-container">
+          <mxGeometry x="66" y="30" width="48" height="48" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;elbow=vertical;startArrow=none;endFill=1;strokeColor=#545B64;rounded=0;fontFamily=Helvetica;fontSize=11;" edge="1" parent="1" source="apppod-box" target="pgbouncer-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1-lbl" value="1 &#183; pg Pool (max 5)" style="text;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=light-dark(#FFFFFF,#1A1A1A);connectable=0;" vertex="1" connectable="0" parent="e1">
+          <mxGeometry x="-0.1" y="0" relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;elbow=vertical;startArrow=none;endFill=1;strokeColor=#147EBA;rounded=0;fontFamily=Helvetica;fontSize=11;strokeWidth=2;" edge="1" parent="1" source="pgbouncer-box" target="rds-icon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2-lbl" value="2 &#183; TCP 5432 &#183; TLS &#183; &#8804;20 server conns" style="text;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=light-dark(#FFFFFF,#1A1A1A);connectable=0;" vertex="1" connectable="0" parent="e2">
+          <mxGeometry x="0" y="-1" relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;elbow=vertical;startArrow=none;endFill=0;strokeColor=#DD3522;rounded=0;dashed=1;fontFamily=Helvetica;fontSize=11;" edge="1" parent="1" source="eks-sg" target="rds-sg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3-lbl" value="3 &#183; SG-to-SG ingress :5432&lt;div&gt;(replaces VPC-CIDR rule)&lt;/div&gt;" style="text;html=1;fontFamily=Helvetica;fontSize=11;fontColor=#DD3522;labelBackgroundColor=light-dark(#FFFFFF,#1A1A1A);connectable=0;" vertex="1" connectable="0" parent="e3">
+          <mxGeometry x="0" y="0" relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;elbow=vertical;startArrow=none;endFill=1;strokeColor=#545B64;rounded=0;dashed=1;fontFamily=Helvetica;fontSize=11;" edge="1" parent="1" source="ssm-icon" target="eso-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4-lbl" value="4 &#183; host, port, secret-arn" style="text;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=light-dark(#FFFFFF,#1A1A1A);connectable=0;" vertex="1" connectable="0" parent="e4">
+          <mxGeometry x="0" y="0" relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;elbow=vertical;startArrow=none;endFill=1;strokeColor=#545B64;rounded=0;dashed=1;fontFamily=Helvetica;fontSize=11;" edge="1" parent="1" source="sm-icon" target="eso-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5-lbl" value="5 &#183; master credentials" style="text;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=light-dark(#FFFFFF,#1A1A1A);connectable=0;" vertex="1" connectable="0" parent="e5">
+          <mxGeometry x="0" y="0" relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;elbow=vertical;startArrow=none;endFill=1;strokeColor=#545B64;rounded=0;fontFamily=Helvetica;fontSize=11;" edge="1" parent="1" source="eso-box" target="pgbouncer-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6-lbl" value="6 &#183; K8s Secret (PG_HOST, creds)" style="text;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=light-dark(#FFFFFF,#1A1A1A);connectable=0;" vertex="1" connectable="0" parent="e6">
+          <mxGeometry x="0" y="0" relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend-bg" style="verticalLabelPosition=bottom;verticalAlign=top;html=1;shape=mxgraph.basic.rect;fillColor2=none;strokeWidth=1;size=20;indent=5;fillColor=light-dark(#EDF3FF,#305363);strokeColor=#6c8ebf;fontFamily=Helvetica;" value="" vertex="1" parent="1">
+          <mxGeometry height="700" width="560" x="1120" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" value="Connection path" style="text;html=1;align=left;verticalAlign=top;fontSize=18;fontStyle=1;fontFamily=Helvetica;fontColor=light-dark(#232F3E,#FFFFFF);" vertex="1" parent="1">
+          <mxGeometry x="1150" y="170" width="500" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-steps" value="&lt;b&gt;1 &#183; App pod &#8594; PgBouncer&lt;/b&gt;&#160; pg Pool (max 5 client conns), transaction-scoped.&lt;br&gt;&lt;br&gt;&lt;b&gt;2 &#183; PgBouncer &#8594; RDS&lt;/b&gt;&#160; TCP 5432 over TLS, &#8804;20 pooled server connections, VPC-internal via the local route.&lt;br&gt;&lt;br&gt;&lt;b&gt;3 &#183; SG-to-SG ingress&lt;/b&gt;&#160; EksClusterStack grants the RDS SG inbound 5432 from the EKS cluster SG. This replaces the removed VPC-CIDR rule; no CIDR ingress remains.&lt;br&gt;&lt;br&gt;&lt;b&gt;4 &#183; SSM &#8594; ESO&lt;/b&gt;&#160; host / port / secret-arn published by CDK; RDS reads the VPC + isolated subnet IDs from SSM at deploy time.&lt;br&gt;&lt;br&gt;&lt;b&gt;5 &#183; Secrets Manager &#8594; ESO&lt;/b&gt;&#160; auto-generated master credentials.&lt;br&gt;&lt;br&gt;&lt;b&gt;6 &#183; ESO &#8594; PgBouncer&lt;/b&gt;&#160; synced Kubernetes Secret injects PG_HOST + credentials at pod start." style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontFamily=Helvetica;fontColor=light-dark(#232F3E,#F5F5F5);whiteSpace=wrap;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="210" width="510" height="470" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-note" value="&lt;b&gt;Isolated subnet = private, zero NAT.&lt;/b&gt;&lt;br&gt;RDS needs no outbound internet; backups, metrics and Performance Insights ride the AWS backbone. The subnet route table is local-only (10.0.0.0/16), so there is no IGW or NAT Gateway cost (~$35/mo avoided)." style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontFamily=Helvetica;fontColor=light-dark(#232F3E,#F5F5F5);whiteSpace=wrap;spacingLeft=4;labelBackgroundColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="700" width="510" height="130" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

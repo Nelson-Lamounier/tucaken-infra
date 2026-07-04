@@ -113,5 +113,13 @@ export const TEST_VPC_CONTEXT = {
                 { subnetId: 'subnet-priv-1b', cidr: '10.0.12.0/24', availabilityZone: 'eu-west-1b', routeTableId: 'rtb-priv-1b' },
             ],
         },
+        {
+            name: 'Isolated',
+            type: 'Isolated',
+            subnets: [
+                { subnetId: 'subnet-isolated-1a', cidr: '10.0.21.0/24', availabilityZone: 'eu-west-1a', routeTableId: 'rtb-isolated-1a' },
+                { subnetId: 'subnet-isolated-1b', cidr: '10.0.22.0/24', availabilityZone: 'eu-west-1b', routeTableId: 'rtb-isolated-1b' },
+            ],
+        },
     ],
 } as const;

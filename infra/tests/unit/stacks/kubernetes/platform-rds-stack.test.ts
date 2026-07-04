@@ -91,11 +91,12 @@ describe('PlatformRdsStack', () => {
         it('should not allow TCP 5432 inbound from any CIDR block', () => {
             const { template } = createStack();
             const securityGroups = template.findResources('AWS::EC2::SecurityGroup');
-            const ingressRules = Object.values(securityGroups).flatMap((resource: any) =>
-                resource.Properties?.SecurityGroupIngress ?? [],
-            );
+            const ingressRules = Object.values(securityGroups)
+                .map((resource: any) => resource.Properties.SecurityGroupIngress)
+                .filter(Boolean)
+                .flat();
 
-            expect(ingressRules).not.toEqual(expect.arrayContaining([
+            expect(ingressRules).not.toStrictEqual(expect.arrayContaining([
                 expect.objectContaining({
                     IpProtocol: 'tcp',
                     FromPort: 5432,

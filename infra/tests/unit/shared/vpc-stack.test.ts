@@ -53,9 +53,19 @@ describe('SharedVpcStack', () => {
             });
         });
 
-        it('should create public subnets in multiple AZs', () => {
+        it('should create public and isolated subnets in multiple AZs', () => {
             const { template } = createSharedVpcStack({ maxAzs: 2 });
-            template.resourceCountIs('AWS::EC2::Subnet', 2);
+            template.resourceCountIs('AWS::EC2::Subnet', 4);
+            template.resourcePropertiesCountIs('AWS::EC2::Subnet', {
+                Tags: Match.arrayWith([
+                    Match.objectLike({ Key: 'aws-cdk:subnet-name', Value: 'Public' }),
+                ]),
+            }, 2);
+            template.resourcePropertiesCountIs('AWS::EC2::Subnet', {
+                Tags: Match.arrayWith([
+                    Match.objectLike({ Key: 'aws-cdk:subnet-name', Value: 'Isolated' }),
+                ]),
+            }, 2);
         });
 
         it('should not create NAT Gateways (cost optimization)', () => {
@@ -154,6 +164,22 @@ describe('SharedVpcStack', () => {
             const { template } = createSharedVpcStack({ targetEnvironment: Environment.DEVELOPMENT });
             // Outputs exist but are NOT exported (to avoid cross-stack coupling)
             template.hasOutput('VpcCidr', {});
+        });
+    });
+
+    describe('Subnet SSM parameters', () => {
+        it('should publish isolated subnet IDs for RDS deploy-time resolution', () => {
+            const { template } = createSharedVpcStack({ targetEnvironment: Environment.DEVELOPMENT });
+            // Consumed by PlatformRdsStack via valueForStringParameter (no fromLookup).
+            template.hasResourceProperties('AWS::SSM::Parameter', {
+                Name: '/shared/vpc/development/isolated-subnet-ids',
+            });
+            template.hasResourceProperties('AWS::SSM::Parameter', {
+                Name: '/shared/vpc/development/isolated-subnet-1-id',
+            });
+            template.hasResourceProperties('AWS::SSM::Parameter', {
+                Name: '/shared/vpc/development/isolated-subnet-2-id',
+            });
         });
     });
 

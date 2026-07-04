@@ -168,7 +168,8 @@ export class SharedVpcStack extends cdk.Stack {
 
         this.targetEnvironment = props.targetEnvironment;
 
-        // Create VPC with public subnets only (cost-optimized)
+        // Create VPC with public edge subnets and isolated data subnets.
+        // Isolated subnets add no NAT Gateway cost and keep RDS away from IGW routes.
         this.vpc = new ec2.Vpc(this, 'Vpc', {
             vpcName: `shared-vpc-${props.targetEnvironment}`,
             ipAddresses: ec2.IpAddresses.cidr(props.cidr ?? '10.0.0.0/16'),
@@ -178,6 +179,11 @@ export class SharedVpcStack extends cdk.Stack {
                 {
                     name: 'Public',
                     subnetType: ec2.SubnetType.PUBLIC,
+                    cidrMask: 24,
+                },
+                {
+                    name: 'Isolated',
+                    subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
                     cidrMask: 24,
                 },
             ],
@@ -1116,6 +1122,25 @@ export class SharedVpcStack extends cdk.Stack {
             parameterName: `${ssmPrefix}/public-subnet-ids`,
             stringValue: publicSubnets.map(s => s.subnetId).join(','),
             description: 'All public subnet IDs (comma-separated)',
+            tier: ssm.ParameterTier.STANDARD,
+        });
+
+        // Isolated (data-tier) subnet IDs — consumed by PlatformRdsStack via
+        // deploy-time SSM dynamic references (no Vpc.fromLookup, no context cache).
+        const isolatedSubnets = this.vpc.isolatedSubnets;
+        isolatedSubnets.forEach((subnet, idx) => {
+            new ssm.StringParameter(this, `SsmIsolatedSubnet${idx + 1}`, {
+                parameterName: `${ssmPrefix}/isolated-subnet-${idx + 1}-id`,
+                stringValue: subnet.subnetId,
+                description: `Isolated Subnet ${idx + 1} ID`,
+                tier: ssm.ParameterTier.STANDARD,
+            });
+        });
+
+        new ssm.StringParameter(this, 'SsmIsolatedSubnetIds', {
+            parameterName: `${ssmPrefix}/isolated-subnet-ids`,
+            stringValue: isolatedSubnets.map(s => s.subnetId).join(','),
+            description: 'All isolated subnet IDs (comma-separated)',
             tier: ssm.ParameterTier.STANDARD,
         });
 

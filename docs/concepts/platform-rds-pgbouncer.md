@@ -8,7 +8,7 @@ sources:
   - api/admin-api/src/lib/config.ts
   - docs/plans/2026-04-24-phase1-platform-rds.md
 created: 2026-04-28
-updated: 2026-04-28
+updated: 2026-06-23
 ---
 
 # Platform PostgreSQL + PgBouncer Architecture
@@ -17,7 +17,7 @@ updated: 2026-04-28
 
 The Tucaken platform runs a single PostgreSQL instance on Amazon RDS, fronted by a PgBouncer connection pooler deployed inside the Kubernetes cluster. All application pods connect exclusively through PgBouncer — never directly to RDS.
 
-The instance is `db.t4g.micro` running PostgreSQL (current CDK stack: `VER_18_2`) with `allowMajorVersionUpgrade: true`, enabling an in-place upgrade path to future major versions without stack replacement.
+The instance is `db.t4g.small` running PostgreSQL (current CDK stack: `VER_18_3`, matching the restored snapshot) with `allowMajorVersionUpgrade: true`, enabling an in-place upgrade path to future major versions without stack replacement.
 
 Sources: `infra/lib/stacks/kubernetes/platform-rds-stack.ts` lines 81–105.
 
@@ -34,7 +34,7 @@ flowchart LR
         B["PgBouncer\npgbouncer.platform.svc.cluster.local:5432\ntransaction mode · ≤20 server conns"]
     end
     subgraph AWS["AWS VPC"]
-        C["RDS PostgreSQL\ndb.t4g.micro\npubliclyAccessible: false"]
+        C["RDS PostgreSQL\ndb.t4g.small\nisolated subnets\npubliclyAccessible: false"]
     end
     A -->|"pg Pool (max: 5)"| B
     B -->|"≤20 server conns\nVPC-internal"| C
@@ -48,8 +48,9 @@ Sources: `infra/lib/stacks/kubernetes/platform-rds-stack.ts` header comment; `ap
 
 `infra/lib/stacks/kubernetes/platform-rds-stack.ts` provisions:
 
-- A `db.t4g.micro` RDS instance in the `SharedVpc` PUBLIC subnets (`SubnetType.PUBLIC`). The SharedVpc has no private subnets (`natGateways: 0`), so PUBLIC placement with `publiclyAccessible: false` is the only viable option. The security group is the access boundary.
-- A security group permitting TCP 5432 inbound from the VPC CIDR only (`ec2.Peer.ipv4(vpc.vpcCidrBlock)`), blocking all internet access.
+- A `db.t4g.small` RDS instance in the `SharedVpc` isolated subnets (`SubnetType.PRIVATE_ISOLATED`) with `publiclyAccessible: false`.
+- A database security group with no CIDR ingress. Approved source stacks add explicit SG-to-SG rules, such as the EKS cluster/workload SG rule in `EksClusterStack`.
+- IAM database authentication enabled on the RDS instance. PgBouncer still uses the generated Secrets Manager credentials until a separate IAM-token connection rollout is implemented.
 - Auto-generated credentials stored in AWS Secrets Manager (`k8s-<env>/platform-rds/credentials`).
 - Six SSM parameters under `/k8s/<env>/platform-rds/` (host, port, database, user, secret-arn, sg-id) consumed by pods via External Secrets Operator.
 - Production: `deletionProtection: true`, `backupRetention: 7 days`. Non-production: both relaxed for easy teardown.
@@ -72,19 +73,37 @@ _pool = new Pool({
 
 The PgBouncer host is supplied through `config.pgHost`, which is injected via the `PG_HOST` environment variable — populated from the ESO-synced `platform-rds-credentials` Secret at pod startup. Source: `api/admin-api/src/lib/config.ts` lines 130 and 179.
 
+## Deployment choreography
+
+The RDS stack resolves the VPC from SSM (not `Vpc.fromLookup()`): `vpcId` via
+`valueFromLookup` and the isolated subnet IDs via the deploy-time
+`valueForStringParameter`. The rollout order is:
+
+1. Deploy the shared VPC stack so the `Isolated` subnets exist and their IDs are
+   published to `/shared/vpc/<env>/isolated-subnet-ids`.
+2. Deploy the Platform RDS stack (resolves those SSM values at deploy time), then
+   the EKS cluster stack. The EKS cluster stack depends on Platform RDS so the
+   `/k8s/<env>/platform-rds/sg-id` SSM parameter exists before the narrow SG-to-SG
+   ingress rule is created.
+
+Moving the existing instance between subnets is a snapshot-and-restore, not an
+in-place change — see
+[Platform RDS — Networking, Isolated-Subnet Migration & PgBouncer](platform-rds-networking.md)
+for the full migration, networking, protocol and cost detail.
+
 ## Tradeoffs
 
 **Why PgBouncer in transaction mode, not session mode?**
 
-Session mode assigns a server connection for the full duration of a client session. HTTP handlers in admin-api are stateless — they open a connection, run a query, and release it immediately. Transaction mode reclaims the server connection as soon as the transaction commits, allowing far more client connections to share fewer server connections. The `db.t4g.micro` instance has a max_connections ceiling of approximately 85. Transaction mode keeps actual server connections well below that limit even as the number of pods scales.
+Session mode assigns a server connection for the full duration of a client session. HTTP handlers in admin-api are stateless — they open a connection, run a query, and release it immediately. Transaction mode reclaims the server connection as soon as the transaction commits, allowing far more client connections to share fewer server connections. Transaction mode keeps actual server connections well below the RDS connection limit even as the number of pods scales.
 
-**Why db.t4g.micro?**
+**Why db.t4g.small?**
 
-The platform RDS instance is a cost-constrained portfolio deployment. At ≤20 server connections (enforced by PgBouncer) the instance is never connection-starved. The instance can be resized to `db.t4g.small` if PgBouncer were removed, but that would increase cost without architectural benefit.
+The platform RDS instance is a cost-constrained portfolio deployment. At <=20 server connections (enforced by PgBouncer) the instance is not expected to be connection-starved. It was resized to `db.t4g.small` after ingestion workloads exhausted the CPU-credit headroom on `db.t4g.micro`.
 
-**Why PUBLIC subnets with publiclyAccessible: false?**
+**Why isolated subnets with publiclyAccessible: false?**
 
-The SharedVpc was provisioned with `natGateways: 0`, which means no private subnets exist. Placing RDS in PUBLIC subnets is unavoidable in this VPC design. `publiclyAccessible: false` (the RDS default for instances in public subnets when set explicitly) combined with the security group CIDR rule ensures the instance is unreachable from the internet. Source: `infra/lib/stacks/kubernetes/platform-rds-stack.ts` lines 75–95 and header comment.
+The SharedVpc now provisions isolated data subnets without adding NAT Gateway cost. RDS belongs in those isolated subnets, and `publiclyAccessible: false` remains an explicit outer boundary. The database security group does not admit VPC-wide CIDR traffic; database client stacks must declare narrow source-security-group ingress.
 
 ## Related concepts
 

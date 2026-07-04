@@ -59,10 +59,6 @@ export class EksClusterStack extends cdk.Stack {
             version: eks.KubernetesVersion.of(props.version),
             vpc: this.vpc,
             vpcSubnets: [{ subnetType: ec2.SubnetType.PUBLIC }],
-            // API server reachable only from inside the VPC. Admin access via
-            // SSM port-forward to the private endpoint; CI/CD via SSM + in-cluster
-            // ARC runners; ArgoCD/ESO in-cluster. See eks-cluster README / runbook.
-            endpointAccess: eks.EndpointAccess.PRIVATE,
             defaultCapacity: 0,
             // Required for EKS Access Entries (EksAccessStack) to work.
             // CDK defaults to CONFIG_MAP (legacy aws-auth ConfigMap), which
@@ -89,14 +85,14 @@ export class EksClusterStack extends cdk.Stack {
 
         cdk.Tags.of(this).add('eks-cluster', props.clusterName);
 
-        // EKS API server is PRIVATE-only (endpointPublicAccess=false). Deploys
-        // run via SSM + in-cluster ARC runners (not kubectl from public GitHub
-        // runners); ArgoCD/ESO run in-cluster. Access is scoped to inside the
-        // VPC plus AWS Access Entries (no aws-auth ConfigMap).
+        // EKS API server is public — V1 dev runs without NAT GW (cost
+        // guardrail) and GitHub Actions OIDC runners need API reachability
+        // for `kubectl wait` during deploy. Mitigated by AWS Access Entries
+        // (no aws-auth ConfigMap) and short-lived OIDC creds.
         NagSuppressions.addResourceSuppressions(this.cluster, [
             {
                 id: 'AwsSolutions-EKS1',
-                reason: 'Endpoint is PRIVATE-only (endpointPublicAccess=false); suppression retained for the managed cluster resource. Access via SSM + in-cluster runners.',
+                reason: 'Public API endpoint required for OIDC-based CI access without VPC connectivity; V1 dev runs without NAT GW per cost guardrail.',
             },
         ], true);
 

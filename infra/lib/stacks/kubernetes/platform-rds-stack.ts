@@ -20,6 +20,7 @@ import { NagSuppressions } from 'cdk-nag';
 
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as rds from 'aws-cdk-lib/aws-rds';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
 
@@ -128,12 +129,26 @@ export class PlatformRdsStack extends cdk.Stack {
         //
         // `snapshotIdentifier` seeds the data on first create only; it must be
         // retained for as long as this instance could be replaced.
-        // SnapshotCredentials.fromGeneratedSecret cannot name the secret (the API
-        // exposes no secretName), so the restore gets a CDK auto-named secret. That
-        // is fine: consumers read the ARN from `${ssmBase}/secret-arn` below, never a
-        // fixed secret name. The generated secret resets the master password on the
-        // restored instance.
-        const credentials = rds.SnapshotCredentials.fromGeneratedSecret('postgres');
+        // Master credentials in a FIXED-NAME secret. The kubernetes-bootstrap
+        // ExternalSecret references `k8s-<env>/platform-rds/credentials` by name with
+        // deletionPolicy: Delete, so an auto-named secret (the default for
+        // SnapshotCredentials.fromGeneratedSecret) breaks ESO on every restore — it
+        // loses its source and deletes the K8s Secret, crashing PgBouncer. Owning a
+        // named secret and attaching it via fromSecret keeps that reference stable
+        // across restores. fromSecret resets the restored instance's master password
+        // to this secret's generated value (in-place modify, no data loss).
+        const credentialsSecret = new secretsmanager.Secret(this, 'RdsCredentials', {
+            secretName: `k8s-${targetEnvironment}/platform-rds/credentials`,
+            description: 'Platform RDS master credentials (fixed name for bootstrap ESO)',
+            generateSecretString: {
+                secretStringTemplate: JSON.stringify({ username: 'postgres' }),
+                generateStringKey: 'password',
+                excludePunctuation: true,
+                passwordLength: 30,
+            },
+            removalPolicy,
+        });
+        const credentials = rds.SnapshotCredentials.fromSecret(credentialsSecret);
 
         // Explicit, separately-named subnet group in the isolated subnets. The old
         // instance's auto-created group ('Instance/SubnetGroup') must NOT be reused:
@@ -224,14 +239,10 @@ export class PlatformRdsStack extends cdk.Stack {
 
         NagSuppressions.addResourceSuppressions(this.instance, nagSuppressions, true);
 
-        NagSuppressions.addResourceSuppressionsByPath(
-            this,
-            `/${this.stackName}/Instance/Secret/Resource`,
-            [{
-                id: 'AwsSolutions-SMG4',
-                reason: 'Secret rotation deferred — schedule after Phase 2 migration is stable',
-            }],
-        );
+        NagSuppressions.addResourceSuppressions(credentialsSecret, [{
+            id: 'AwsSolutions-SMG4',
+            reason: 'Secret rotation deferred — schedule after Phase 2 migration is stable',
+        }]);
 
         new cdk.CfnOutput(this, 'RdsEndpoint', {
             value: this.instance.dbInstanceEndpointAddress,

@@ -343,6 +343,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 version: eksConfig.version,
             },
         );
+        eksClusterStack.addDependency(platformRdsStack);
         stacks.push(eksClusterStack); stackMap.eksCluster = eksClusterStack;
 
         const eksSystemNg = new EksSystemNodeGroupStack(

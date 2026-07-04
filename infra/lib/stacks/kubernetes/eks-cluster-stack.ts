@@ -18,6 +18,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib/core';
 
 import { Construct } from 'constructs';
@@ -81,6 +82,20 @@ export class EksClusterStack extends cdk.Stack {
             logGroupName: `/aws/eks/${props.clusterName}/cluster`,
             retention: logs.RetentionDays.ONE_MONTH,
             removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+
+        const platformRdsSecurityGroupId = ssm.StringParameter.valueForStringParameter(
+            this,
+            `/k8s/${props.targetEnvironment}/platform-rds/sg-id`,
+        );
+
+        new ec2.CfnSecurityGroupIngress(this, 'PlatformRdsIngressFromEksCluster', {
+            groupId: platformRdsSecurityGroupId,
+            ipProtocol: 'tcp',
+            fromPort: 5432,
+            toPort: 5432,
+            sourceSecurityGroupId: this.cluster.clusterSecurityGroupId,
+            description: 'PostgreSQL from EKS managed workload SG via PgBouncer',
         });
 
         cdk.Tags.of(this).add('eks-cluster', props.clusterName);

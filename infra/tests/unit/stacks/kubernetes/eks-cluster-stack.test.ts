@@ -1,7 +1,7 @@
 /** @format */
 process.env.AWS_ACCOUNT_ID = '123456789012';
 
-import { Template } from 'aws-cdk-lib/assertions';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import * as cdk from 'aws-cdk-lib/core';
 
 import { Environment } from '../../../../lib/config/environments';
@@ -39,6 +39,19 @@ describe('EksClusterStack', () => {
         template.hasResource('AWS::Logs::LogGroup', {
             DeletionPolicy: 'Retain',
             Properties: { LogGroupName: '/aws/eks/k8s-eks-development/cluster' },
+        });
+    });
+
+    it('should grant the EKS cluster security group PostgreSQL access to platform RDS', () => {
+        template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+            Description: 'PostgreSQL from EKS managed workload SG via PgBouncer',
+            FromPort: 5432,
+            GroupId: Match.objectLike({
+                Ref: Match.stringLikeRegexp('SsmParameterValuek8sdevelopmentplatformrdssgid'),
+            }),
+            IpProtocol: 'tcp',
+            SourceSecurityGroupId: Match.anyValue(),
+            ToPort: 5432,
         });
     });
 });

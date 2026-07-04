@@ -149,6 +149,35 @@ describe('EksPodIdentityStack', () => {
         });
     });
 
+    describe('yace purpose', () => {
+        const bindings: PodIdentityBinding[] = [
+            { namespace: 'monitoring', serviceAccount: 'yace', purpose: 'yace' },
+        ];
+
+        // YACE scrapes AWS/RDS CloudWatch metrics into Prometheus. It needs
+        // read-only CloudWatch access plus tag:GetResources for tag-based
+        // instance discovery (so a rename cannot break metric collection).
+        it('should grant the yace role CloudWatch read + tag:GetResources', () => {
+            const t = Template.fromStack(newStack(bindings));
+            t.hasResourceProperties('AWS::IAM::Policy', {
+                PolicyDocument: {
+                    Statement: Match.arrayWith([
+                        Match.objectLike({
+                            Sid: 'YaceCloudWatchRead',
+                            Action: Match.arrayWith([
+                                'cloudwatch:GetMetricData',
+                                'cloudwatch:GetMetricStatistics',
+                                'cloudwatch:ListMetrics',
+                                'tag:GetResources',
+                            ]),
+                            Resource: '*',
+                        }),
+                    ]),
+                },
+            });
+        });
+    });
+
     describe('article-pipeline purpose', () => {
         const bindings: PodIdentityBinding[] = [
             { namespace: 'article-pipeline', serviceAccount: 'article-pipeline', purpose: 'article-pipeline' },

@@ -34,6 +34,7 @@ export interface PodIdentityBinding {
         | 'external-secrets'
         | 'ebs-csi'
         | 'grafana-alerting'
+        | 'yace'
         | 'admin-api'
         | 'image-updater'
         | 'headlamp-token-pusher'
@@ -109,6 +110,7 @@ const COMMON_BINDINGS: readonly PodIdentityBinding[] = [
     { namespace: 'external-secrets',   serviceAccount: 'external-secrets',            purpose: 'external-secrets' },
     { namespace: 'kube-system',        serviceAccount: 'ebs-csi-controller-sa',       purpose: 'ebs-csi' },
     { namespace: 'monitoring',         serviceAccount: 'grafana',                     purpose: 'grafana-alerting' },
+    { namespace: 'monitoring',         serviceAccount: 'yace',                        purpose: 'yace' },
     // ── Platform workloads ─────────────────────────────────────────────────────
     { namespace: 'admin-api',          serviceAccount: 'admin-api',                   purpose: 'admin-api' },
     { namespace: 'argocd',             serviceAccount: 'argocd-image-updater',        purpose: 'image-updater' },

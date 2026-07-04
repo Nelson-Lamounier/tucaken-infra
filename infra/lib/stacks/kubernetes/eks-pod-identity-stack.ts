@@ -306,6 +306,29 @@ export class EksPodIdentityStack extends cdk.Stack {
                     }),
                 );
                 break;
+            case 'yace':
+                // YACE (yet-another-cloudwatch-exporter) scrapes AWS/RDS
+                // CloudWatch metrics into Prometheus so the RDS observability
+                // panels leave the fragile Grafana CloudWatch datasource.
+                // Read-only: GetMetricData/GetMetricStatistics/ListMetrics pull
+                // the metric series; tag:GetResources lets YACE discover the RDS
+                // instance(s) by tag, so an instance rename or a new instance is
+                // picked up with no config change. None of these CloudWatch or
+                // tagging actions support resource-level scoping, so '*' is
+                // required (same rationale as grafana-alerting's read policy).
+                role.addToPolicy(
+                    new iam.PolicyStatement({
+                        sid: 'YaceCloudWatchRead',
+                        actions: [
+                            'cloudwatch:GetMetricData',
+                            'cloudwatch:GetMetricStatistics',
+                            'cloudwatch:ListMetrics',
+                            'tag:GetResources',
+                        ],
+                        resources: ['*'],
+                    }),
+                );
+                break;
             case 'ingestion':
                 // Bedrock InvokeModel for chunk enrichment (BedrockChunkEnricher)
                 // and embeddings (TitanEmbeddingProvider). Scoped to all foundation

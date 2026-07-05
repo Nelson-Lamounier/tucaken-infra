@@ -324,6 +324,10 @@ export class EksPodIdentityStack extends cdk.Stack {
                             'cloudwatch:GetMetricStatistics',
                             'cloudwatch:ListMetrics',
                             'tag:GetResources',
+                            // YACE calls ListAccountAliases once per scrape to set
+                            // an account_alias label; without it metrics still
+                            // flow but the scrape logs a noisy AccessDenied.
+                            'iam:ListAccountAliases',
                         ],
                         resources: ['*'],
                     }),

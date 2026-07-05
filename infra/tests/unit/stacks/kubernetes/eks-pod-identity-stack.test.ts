@@ -169,6 +169,7 @@ describe('EksPodIdentityStack', () => {
                                 'cloudwatch:GetMetricStatistics',
                                 'cloudwatch:ListMetrics',
                                 'tag:GetResources',
+                                'iam:ListAccountAliases',
                             ]),
                             Resource: '*',
                         }),

@@ -42,6 +42,19 @@ describe('EksClusterStack', () => {
         });
     });
 
+    // Cost guard: API + AUDIT control-plane logs dominated the CloudWatch Logs
+    // bill (AUDIT ~102 GB/mo). Keep only the three cheap streams. This test
+    // fails loudly if a future change re-enables the expensive ones.
+    it('should enable only the three cheap control-plane log streams', () => {
+        const cluster = Object.values(
+            template.findResources('Custom::AWSCDK-EKS-Cluster'),
+        )[0] as { Properties: { Config: { logging: { clusterLogging: { types: string[] }[] } } } };
+        const types = cluster.Properties.Config.logging.clusterLogging[0].types;
+        expect(types).toStrictEqual(['authenticator', 'controllerManager', 'scheduler']);
+        expect(types).not.toContain('audit');
+        expect(types).not.toContain('api');
+    });
+
     it('should grant the EKS cluster security group PostgreSQL access to platform RDS', () => {
         template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
             Description: 'PostgreSQL from EKS managed workload SG via PgBouncer',

@@ -67,9 +67,13 @@ export class EksClusterStack extends cdk.Stack {
             authenticationMode: eks.AuthenticationMode.API_AND_CONFIG_MAP,
             kubectlLayer: new KubectlV34Layer(this, 'KubectlLayer'),
             secretsEncryptionKey: this.secretsKmsKey,
+            // API and AUDIT are deliberately excluded: they dominated the
+            // CloudWatch Logs bill (AUDIT alone ~102 GB/mo -> ~$34/mo) while the
+            // remaining three streams are small. AUTHENTICATOR (access
+            // debugging), CONTROLLER_MANAGER and SCHEDULER (control-loop health)
+            // are kept. Re-add AUDIT here if a compliance/forensics requirement
+            // for a Kubernetes audit trail arises.
             clusterLogging: [
-                eks.ClusterLoggingTypes.API,
-                eks.ClusterLoggingTypes.AUDIT,
                 eks.ClusterLoggingTypes.AUTHENTICATOR,
                 eks.ClusterLoggingTypes.CONTROLLER_MANAGER,
                 eks.ClusterLoggingTypes.SCHEDULER,

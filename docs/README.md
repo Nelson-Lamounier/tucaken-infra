@@ -91,6 +91,7 @@
 | [AMI Refresh IAM Permissions](troubleshooting/ami-refresh-iam-permissions.md) | Six-commit IAM debugging series: ec2:RunInstances → CalledVia → PassRole → Describe* → CreateTags |
 | [JWT userId Source — Ingestion Security Fix](troubleshooting/jwt-userid-source-security-fix.md) | userId taken from request body allowed impersonation; fix: always read from JWT payload |
 | [K8s Bootstrap Failure Modes](troubleshooting/k8s-bootstrap-failure-modes.md) | Missing podSubnet, CCM taint timeout, stale idempotency markers — three SSM Automation failure modes |
+| [Karpenter System Pool Pod-Density Starvation](troubleshooting/karpenter-system-pool-pod-density-starvation.md) | System pods Pending with idle CPU — Karpenter is blind to the ENI pod cap; floor instance sizes at t3.large (35 pods) not t3.medium (17) |
 | [NLB SG Rule Limit and Route53 A Record Drift](troubleshooting/nlb-sg-rule-limit-and-route53-drift.md) | CloudFront prefix list × 2 ports = 110 rules > 60-rule SG limit; Route53 A record drift after control plane IP change |
 | [CloudFormation Rejects $Latest/$Default in ASG LT Version](troubleshooting/cfn-asg-launch-template-version-latest-rejected.md) | CloudFormation hard-rejects $Latest/$Default as ASG LaunchTemplate Version at resource definition level |
 | [CloudFront Behaviour First-Match Auth Failure](troubleshooting/cloudfront-behaviour-first-match-auth-failure.md) | /api/auth/* listed after /api/* — auth callbacks matched wrong behaviour, session cookies stripped |

@@ -113,6 +113,10 @@ export class EksClusterStack extends cdk.Stack {
                 id: 'AwsSolutions-EKS1',
                 reason: 'Public API endpoint required for OIDC-based CI access without VPC connectivity; V1 dev runs without NAT GW per cost guardrail.',
             },
+            {
+                id: 'AwsSolutions-EKS2',
+                reason: 'API and AUDIT control-plane logs are deliberately excluded — AUDIT alone ingested ~102 GB/mo (~$34/mo, ~93% of the CloudWatch Logs bill). AUTHENTICATOR, CONTROLLER_MANAGER and SCHEDULER are retained. Re-enable AUDIT if a compliance/forensics requirement for a Kubernetes audit trail arises.',
+            },
         ], true);
 
         // CDK-managed EKS cluster resource provider creates nested stacks

@@ -50,7 +50,7 @@ describe('EksClusterStack', () => {
             template.findResources('Custom::AWSCDK-EKS-Cluster'),
         )[0] as { Properties: { Config: { logging: { clusterLogging: { types: string[] }[] } } } };
         const types = cluster.Properties.Config.logging.clusterLogging[0].types;
-        expect(types).toEqual(['authenticator', 'controllerManager', 'scheduler']);
+        expect(types).toStrictEqual(['authenticator', 'controllerManager', 'scheduler']);
         expect(types).not.toContain('audit');
         expect(types).not.toContain('api');
     });

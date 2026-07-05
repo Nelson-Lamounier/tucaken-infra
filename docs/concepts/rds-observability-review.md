@@ -15,6 +15,16 @@ updated: 2026-07-04
 Point-in-time audit of the Grafana `database` dashboard against what the live
 instance actually emits. Recorded as the baseline before closing the gaps.
 
+> **Update (2026-07-05) — partly superseded.** The CloudWatch-datasource
+> remediation described below (hardcoded-id → wildcard) was an interim step. The
+> RDS metric panels have since been migrated **off the Grafana CloudWatch
+> datasource onto Prometheus via YACE** — the panels now query `aws_rds_*`
+> series and the datasource's structural faults (no template-variable
+> interpolation into dimensions; image-renderer cannot query it) no longer
+> apply. RDS alerts now live in Prometheus too. See the current design:
+> `kubernetes-bootstrap/docs/projects/rds-observability-yace-migration.md`.
+> This document is retained as the point-in-time baseline.
+
 - **Instance:** `k8s-dev-platform-rds-iso` — `db.t4g.small`, gp2, PostgreSQL 18.3, eu-west-1
 - **Reviewed:** 2026-07-04
 - **Verdict:** Strong on application, pgvector and product analytics; **blind on the

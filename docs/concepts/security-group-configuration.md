@@ -338,10 +338,10 @@ via External Secrets Operator) and no public resolvability.
 ## Related concepts
 
 - [SSM Cross-Stack Pattern](../patterns/ssm-cross-stack-pattern.md)
-- [ADR-002: SSM over CloudFormation Exports](../adrs/0002-ssm-over-cloudformation-exports.md)
+- [ADR-002: SSM over CloudFormation Exports](../decisions/0003-ssm-over-cloudformation-exports.md)
 - [Monitoring Strategy](monitoring-strategy.md)
-- [NLB Security Group Configuration](../nlb-security-group-configuration.md)
-- [Networking Observability](../networking-observability.md)
+- [NLB Security Group Configuration (archived)](../_archive/concepts/nlb-architecture.md)
+- [Networking Observability](networking-observability.md)
 
 <!--
 Evidence trail (auto-generated):

@@ -138,8 +138,8 @@ for). Rejected at this stage; could be revisited if WAF requirements increase.
 
 ## Related
 
-- [Concept: NLB Architecture](../concepts/nlb-architecture.md)
-- [Runbook: Cross-AZ Recovery](../runbooks/cross-az-recovery.md)
+- [Concept: NLB Architecture](../_archive/concepts/nlb-architecture.md)
+- [Runbook: Cross-AZ Recovery](../_archive/runbooks/cross-az-recovery.md)
 - [Concept: Security Group Configuration](../concepts/security-group-configuration.md)
 
 <!--

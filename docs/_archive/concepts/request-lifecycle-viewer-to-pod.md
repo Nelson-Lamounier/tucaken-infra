@@ -14,6 +14,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document traces the pre-EKS request path (DNS -> CloudFront -> WAF -> NLB -> Traefik -> pod), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state.
+
 ## Overview
 
 Every request to `nelsonlamounier.com` or `admin.nelsonlamounier.com` crosses six distinct infrastructure layers before reaching a container process. This document traces that path hop by hop, naming what each component does, what it adds or strips from the request, and what can fail at each point. The path is the same whether the request is for a Next.js page, an API route, or an admin dashboard.
@@ -115,7 +117,7 @@ sequenceDiagram
 - **WAF false positive** — a legitimate Next.js form submission may match `CommonRuleSet` if it contains HTML-like content. CloudWatch `aws-waf-logs-*` log group captures blocked requests with the matching rule ID.
 - **Rate limit misconfiguration** — 5000 req/5min is generous for a personal portfolio. If the threshold is lowered, high-throughput automation (CI smoke tests, load tests) will self-block.
 
-**Reference:** [CloudFront Distribution — WAF section](cloudfront-distribution.md), [IaC Security — Dual-Layer](iac-security-dual-layer.md)
+**Reference:** [CloudFront Distribution — WAF section](cloudfront-distribution.md), [IaC Security — Dual-Layer](../../concepts/iac-security-dual-layer.md)
 
 ---
 
@@ -162,7 +164,7 @@ sequenceDiagram
 - **Target group draining** — when a Spot instance is reclaimed, the NLB drains in-flight connections (default 300s). Long-lived WebSocket connections can be disrupted.
 - **Health check port mismatch** — if Traefik is not listening on port 80 (e.g. config error), the health check fails and the node is deregistered.
 
-**Reference:** [NLB Architecture](nlb-architecture.md), [Security Group Configuration](security-group-configuration.md)
+**Reference:** [NLB Architecture](nlb-architecture.md), [Security Group Configuration](../../concepts/security-group-configuration.md)
 
 ---
 
@@ -183,7 +185,7 @@ sequenceDiagram
 - **SG drift** — if the CloudFront prefix list is updated by AWS (CIDRs added/removed), the SG rule automatically reflects the change. No drift risk from prefix list updates.
 - **Admin IP CIDR stale** — if the operator's IP changes and the allowlist is not updated, port 443 direct access is blocked. The SSM RunCommand document can update the CIDR without a CDK redeploy.
 
-**Reference:** [Security Group Configuration](security-group-configuration.md)
+**Reference:** [Security Group Configuration](../../concepts/security-group-configuration.md)
 
 ---
 
@@ -221,7 +223,7 @@ sequenceDiagram
 - **Pod not ready** — if kube-proxy's endpoint slice is stale (e.g. pod is terminating), a DNAT rule may route to a pod that is no longer accepting connections, resulting in a connection reset. Kubernetes readiness probes mitigate this by removing pod IPs from the endpoint slice before the pod terminates.
 - **Calico overlay failure** — VXLAN encapsulation requires UDP 4789 to be open between nodes. An SG misconfiguration that blocks this port causes cross-node pod communication to fail silently (connections time out rather than being refused).
 
-**Reference:** [Security Group Configuration — kube-proxy DNAT](security-group-configuration.md)
+**Reference:** [Security Group Configuration — kube-proxy DNAT](../../concepts/security-group-configuration.md)
 
 ---
 
@@ -262,7 +264,7 @@ Four logging layers capture traffic at different points in this path:
 5. **Connection timeout to NLB** → SG rule missing or IP not in allowlist; check VPC Flow Logs for REJECT records
 6. **Pod responds with 5xx** → application error; check pod logs in Loki
 
-**Reference:** [Networking Observability](networking-observability.md), [CloudWatch & Steampipe Data Paths](cloudwatch-steampipe-data-paths.md)
+**Reference:** [Networking Observability](../../concepts/networking-observability.md), [CloudWatch & Steampipe Data Paths](../../concepts/cloudwatch-steampipe-data-paths.md)
 
 ---
 
@@ -270,9 +272,9 @@ Four logging layers capture traffic at different points in this path:
 
 - [CloudFront Distribution](cloudfront-distribution.md) — dual-origin setup, behaviour ordering, cache policies, AUTH_COOKIES, WAF, cross-account DNS validation
 - [NLB Architecture](nlb-architecture.md) — EIP SubnetMapping, CDK L1 escape hatch, target group health check timing, live state reference
-- [Security Group Configuration](security-group-configuration.md) — all six SGs, kube-proxy DNAT source preservation, Calico VXLAN, two-layer perimeter design
-- [Networking Observability](networking-observability.md) — VPC Flow Logs, NLB access logs, CloudWatch metrics, troubleshooting decision tree
-- [CDK Construct Architecture](cdk-construct-architecture.md) — how `validateBehaviourOrdering()` and `validateAuthCookies()` encode correctness at synth time
+- [Security Group Configuration](../../concepts/security-group-configuration.md) — all six SGs, kube-proxy DNAT source preservation, Calico VXLAN, two-layer perimeter design
+- [Networking Observability](../../concepts/networking-observability.md) — VPC Flow Logs, NLB access logs, CloudWatch metrics, troubleshooting decision tree
+- [CDK Construct Architecture](../../concepts/cdk-construct-architecture.md) — how `validateBehaviourOrdering()` and `validateAuthCookies()` encode correctness at synth time
 
 ---
 

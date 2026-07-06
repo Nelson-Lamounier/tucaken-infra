@@ -309,7 +309,7 @@ harmless if no CloudFormation `WaitCondition` is waiting. No side effects.
 - [Self-Healing + SSM Integration](self-healing-ssm-integration.md)
 - [CloudWatch Logs Strategy](cloudwatch-logs-strategy.md)
 - [Security Group Configuration](security-group-configuration.md)
-- [ADR-002: SSM over CloudFormation Exports](../adrs/0002-ssm-over-cloudformation-exports.md)
+- [ADR-002: SSM over CloudFormation Exports](../decisions/0003-ssm-over-cloudformation-exports.md)
 
 <!--
 Evidence trail (auto-generated):

@@ -1,3 +1,5 @@
+> **Archived 2026-07-06 — superseded.** This document describes the self-managed kubeadm control plane, replaced by managed Amazon EKS in the kubeadm to EKS migration ([ADR-0001](../../decisions/0001-self-managed-k8s-vs-eks.md) records the original self-managed rationale; [EKS platform architecture](../../concepts/eks-platform-architecture.md) is the current design). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 # Cross-AZ Disaster Recovery Runbook
 
 > **Scenario**: eu-west-1a is unavailable. EBS volume is inaccessible.
@@ -193,6 +195,6 @@ pick up the new join token from SSM.
 
 ## Related
 
-- [Self-Healing Platform](../projects/self-healing-platform.md) — canonical entry point: cross-AZ recovery is the only failure mode with no automated path
+- [Self-Healing Platform](../../projects/self-healing-platform.md) — canonical entry point: cross-AZ recovery is the only failure mode with no automated path
 - [NLB Architecture](../concepts/nlb-architecture.md) — EIP SubnetMapping and how the NLB survives an AZ outage
 - [etcd Restore SAN Mismatch](../troubleshooting/etcd-restore-san-mismatch.md) — API server cert SANs reference old IP after control plane migration

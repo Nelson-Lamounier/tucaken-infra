@@ -10,6 +10,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 All requests to `nelsonlamounier.com` and `admin.nelsonlamounier.com` return `502 Bad Gateway` from CloudFront. The NLB health checks are passing. The EC2 worker nodes are running. The issue is not visible in the NLB metrics — traffic reaches the node but is rejected at the application layer.
@@ -129,7 +131,7 @@ A `403` on the direct EIP curl and a `200` via CloudFront confirms both that Tra
 
 - [CloudFront Distribution](../concepts/cloudfront-distribution.md) — origin secret wiring, `HTTP_ONLY` origin protocol, security rationale
 - [Request Lifecycle — Viewer to Pod](../concepts/request-lifecycle-viewer-to-pod.md) — Hop 4 (CloudFront → EIP) and Hop 7 (Traefik header validation)
-- [CDK valueFromLookup vs fromSsmParameter](cdk-value-from-lookup-vs-ssm-parameter.md) — SSM read-at-deploy-time pattern
+- [CDK valueFromLookup vs fromSsmParameter](../../troubleshooting/cdk-value-from-lookup-vs-ssm-parameter.md) — SSM read-at-deploy-time pattern
 
 <!--
 Evidence trail (auto-generated):

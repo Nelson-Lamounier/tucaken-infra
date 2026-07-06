@@ -2,11 +2,11 @@
 import { Template } from 'aws-cdk-lib/assertions';
 import * as cdk from 'aws-cdk-lib/core';
 
-import { EksPublicWafConstruct } from '../../../../lib/constructs/security/eks-public-waf';
+import { EksPublicWafConstruct, OversizeBodyExemptConfig } from '../../../../lib/constructs/security/eks-public-waf';
 
 const WEBHOOK_PATH = '/api/github/webhook';
 
-const synth = (exemptPaths?: readonly string[]): Template => {
+const synth = (exemptPaths?: readonly string[], oversizeBodyExempt?: OversizeBodyExemptConfig): Template => {
     const app = new cdk.App();
     const stack = new cdk.Stack(app, 'Test', { env: { account: '123456789012', region: 'eu-west-1' } });
     new EksPublicWafConstruct(stack, 'Waf', {
@@ -17,6 +17,7 @@ const synth = (exemptPaths?: readonly string[]): Template => {
         allowlistedHosts: ['admin.example.com', 'ops.example.com'],
         rateLimitedHosts: ['api.example.com'],
         ipAllowlistExemptPaths: exemptPaths,
+        oversizeBodyExempt,
     });
     return Template.fromStack(stack);
 };
@@ -25,7 +26,7 @@ type Rule = {
     Name: string;
     Statement: {
         AndStatement?: { Statements: unknown[] };
-        ManagedRuleGroupStatement?: { ScopeDownStatement?: unknown };
+        ManagedRuleGroupStatement?: { ScopeDownStatement?: unknown; RuleActionOverrides?: unknown[] };
     };
 };
 
@@ -63,5 +64,34 @@ describe('EksPublicWafConstruct — ipAllowlistExemptPaths', () => {
         for (const r of rules) {
             expect(r.Statement.ManagedRuleGroupStatement?.ScopeDownStatement).toBeUndefined();
         }
+    });
+});
+
+describe('EksPublicWafConstruct — oversizeBodyExempt', () => {
+    const OVERSIZE: OversizeBodyExemptConfig = { hosts: ['tucaken.io', 'www.tucaken.io'], pathPrefix: '/_serverfn/' };
+
+    const commonOverrides = (t: Template): unknown[] | undefined =>
+        rulesOf(t).find((r) => r.Name === 'AWSManagedRulesCommonRuleSet')!
+            .Statement.ManagedRuleGroupStatement?.RuleActionOverrides;
+
+    it('should override SizeRestrictions_BODY to Count on the Common rule set', () => {
+        const overrides = commonOverrides(synth(undefined, OVERSIZE));
+        expect(JSON.stringify(overrides)).toContain('SizeRestrictions_BODY');
+        expect(JSON.stringify(overrides)).toContain('Count');
+    });
+
+    it('should re-apply the body cap to every request except the server-function surface', () => {
+        const guard = rulesOf(synth(undefined, OVERSIZE)).find((r) => r.Name === 'BlockOversizeBodyExceptServerFn');
+        expect(guard).toBeDefined();
+        const s = JSON.stringify(guard);
+        expect(s).toContain('SizeConstraintStatement');
+        expect(s).toContain('NotStatement');
+        expect(s).toContain('/_serverfn/');
+        expect(s).toContain('tucaken.io');
+    });
+
+    it('should emit no oversize rule or override when the prop is omitted (back-compat)', () => {
+        expect(rulesOf(synth()).find((r) => r.Name === 'BlockOversizeBodyExceptServerFn')).toBeUndefined();
+        expect(commonOverrides(synth())).toBeUndefined();
     });
 });

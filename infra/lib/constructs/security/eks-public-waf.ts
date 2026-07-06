@@ -20,6 +20,21 @@ import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 
 import { Construct } from 'constructs';
 
+/**
+ * Config for {@link EksPublicWafProps.oversizeBodyExempt}. Relaxes the Common
+ * rule set's 8 KB body cap for one authenticated request surface.
+ */
+export interface OversizeBodyExemptConfig {
+    /** Hosts (lowercase, exact) where oversize bodies on the exempt path are allowed. */
+    readonly hosts: readonly string[];
+    /** URI path prefix (lowercase, STARTS_WITH), e.g. `/_serverfn/`. */
+    readonly pathPrefix: string;
+    /** HTTP method (exact) the exemption applies to. @default 'POST' */
+    readonly method?: string;
+    /** Body-size cap (bytes) re-applied to non-exempt requests. @default 8192 */
+    readonly maxBodyBytes?: number;
+}
+
 export interface EksPublicWafProps {
     readonly envName: string;
     readonly namePrefix: string;
@@ -63,6 +78,22 @@ export interface EksPublicWafProps {
      * @default [] no exemptions
      */
     readonly ipAllowlistExemptPaths?: readonly string[];
+
+    /**
+     * Relaxes the Common rule set's 8 KB `SizeRestrictions_BODY` cap for the
+     * SaaS app's TanStack server-function calls (POST `/_serverFn/*`), whose
+     * seroval-serialised payload (a pasted job description) routinely exceeds
+     * 8 KB and is otherwise 403'd at the ALB before reaching the app.
+     *
+     * The calls are Cognito-authenticated and Zod-validated server-side, and
+     * admin-api caps the job description at 100 KB, so relaxing ONLY the size
+     * rule is safe — SQLi/KnownBadInputs body inspection still applies. When
+     * set, `SizeRestrictions_BODY` is overridden to Count and a bespoke rule
+     * re-applies the body cap to every request EXCEPT `<method> <pathPrefix>*`
+     * on `hosts`.
+     * @default undefined — no oversize exemption
+     */
+    readonly oversizeBodyExempt?: OversizeBodyExemptConfig;
 }
 
 export class EksPublicWafConstruct extends Construct {
@@ -210,6 +241,91 @@ export class EksPublicWafConstruct extends Construct {
             });
         }
 
+        // ---------- Rule: relax the 8 KB body cap for the app's server functions ----------
+        // The SaaS app posts TanStack server-function calls (POST /_serverFn/*)
+        // whose serialised body — a pasted job description — routinely exceeds
+        // the Common rule set's 8 KB SizeRestrictions_BODY cap, so a full JD is
+        // 403'd at the ALB before reaching the app. Those calls are
+        // Cognito-authenticated + Zod-validated and admin-api caps the JD at
+        // 100 KB, so we override SizeRestrictions_BODY to Count (in the managed
+        // loop below) and re-apply an 8 KB body cap to every request EXCEPT that
+        // surface here. SQLi/KnownBadInputs body inspection still covers it.
+        const oversize = props.oversizeBodyExempt;
+        const hasOversizeExempt = oversize !== undefined && oversize.hosts.length > 0;
+        if (oversize && hasOversizeExempt) {
+            const method = (oversize.method ?? 'POST').toUpperCase();
+            const maxBodyBytes = oversize.maxBodyBytes ?? 8192;
+            const pathPrefix = oversize.pathPrefix.toLowerCase();
+
+            const oversizeHostMatches: wafv2.CfnWebACL.StatementProperty[] = oversize.hosts.map((host) => ({
+                byteMatchStatement: {
+                    searchString: host,
+                    positionalConstraint: 'EXACTLY',
+                    fieldToMatch: { singleHeader: { name: 'host' } },
+                    textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                },
+            }));
+            const oversizeHostAny: wafv2.CfnWebACL.StatementProperty =
+                oversizeHostMatches.length === 1
+                    ? oversizeHostMatches[0]
+                    : { orStatement: { statements: oversizeHostMatches } };
+
+            // The exempt surface: <method> <pathPrefix>* on one of the app hosts.
+            const serverFnRequest: wafv2.CfnWebACL.StatementProperty = {
+                andStatement: {
+                    statements: [
+                        {
+                            byteMatchStatement: {
+                                searchString: method,
+                                positionalConstraint: 'EXACTLY',
+                                fieldToMatch: { method: {} },
+                                textTransformations: [{ priority: 0, type: 'NONE' }],
+                            },
+                        },
+                        {
+                            byteMatchStatement: {
+                                searchString: pathPrefix,
+                                positionalConstraint: 'STARTS_WITH',
+                                fieldToMatch: { uriPath: {} },
+                                textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                            },
+                        },
+                        oversizeHostAny,
+                    ],
+                },
+            };
+
+            // Re-applies the 8 KB body cap everywhere EXCEPT the server-function
+            // surface (SizeRestrictions_BODY is Count'd below). oversizeHandling
+            // MATCH treats a body larger than the inspection window as a match,
+            // mirroring the managed rule it replaces.
+            rules.push({
+                name: 'BlockOversizeBodyExceptServerFn',
+                priority: 3,
+                action: { block: {} },
+                statement: {
+                    andStatement: {
+                        statements: [
+                            {
+                                sizeConstraintStatement: {
+                                    fieldToMatch: { body: { oversizeHandling: 'MATCH' } },
+                                    comparisonOperator: 'GT',
+                                    size: maxBodyBytes,
+                                    textTransformations: [{ priority: 0, type: 'NONE' }],
+                                },
+                            },
+                            { notStatement: { statement: serverFnRequest } },
+                        ],
+                    },
+                },
+                visibilityConfig: {
+                    cloudWatchMetricsEnabled: true,
+                    metricName: `${envName}-${namePrefix}-oversize-body`,
+                    sampledRequestsEnabled: true,
+                },
+            });
+        }
+
         // ---------- AWS Managed Rule Sets (apply to every host) ----------
         // Body-inspecting groups scope down past the exempt paths: webhook
         // payloads exceed SizeRestrictions_BODY (8 KB) and their code diffs
@@ -223,6 +339,14 @@ export class EksPublicWafConstruct extends Construct {
         ];
         for (const rule of managedRules) {
             const scopeDownStatement = rule.inspectsBody ? exemptScopeDown : undefined;
+            // When the app's server functions are exempted from the 8 KB body
+            // cap, override the managed SizeRestrictions_BODY sub-rule to Count —
+            // the bespoke BlockOversizeBodyExceptServerFn rule above re-applies
+            // the cap to every other request.
+            const ruleActionOverrides =
+                hasOversizeExempt && rule.name === 'AWSManagedRulesCommonRuleSet'
+                    ? [{ name: 'SizeRestrictions_BODY', actionToUse: { count: {} } }]
+                    : undefined;
             rules.push({
                 name: rule.name,
                 priority: rule.priority,
@@ -232,6 +356,7 @@ export class EksPublicWafConstruct extends Construct {
                         vendorName: 'AWS',
                         name: rule.name,
                         ...(scopeDownStatement ? { scopeDownStatement } : {}),
+                        ...(ruleActionOverrides ? { ruleActionOverrides } : {}),
                     },
                 },
                 visibilityConfig: {

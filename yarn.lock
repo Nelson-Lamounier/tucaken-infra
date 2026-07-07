@@ -1391,18 +1391,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-sdk/lib-dynamodb@npm:^3.1001.0":
-  version: 3.1053.0
-  resolution: "@aws-sdk/lib-dynamodb@npm:3.1053.0"
+"@aws-sdk/lib-dynamodb@npm:^3.1079.0":
+  version: 3.1079.0
+  resolution: "@aws-sdk/lib-dynamodb@npm:3.1079.0"
   dependencies:
-    "@aws-sdk/core": "npm:^3.974.13"
-    "@aws-sdk/util-dynamodb": "npm:^3.996.2"
-    "@smithy/core": "npm:^3.24.3"
-    "@smithy/types": "npm:^4.14.2"
+    "@aws-sdk/core": "npm:^3.974.27"
+    "@aws-sdk/util-dynamodb": "npm:^3.996.5"
+    "@smithy/core": "npm:^3.29.0"
+    "@smithy/types": "npm:^4.15.1"
     tslib: "npm:^2.6.2"
   peerDependencies:
-    "@aws-sdk/client-dynamodb": ^3.1053.0
-  checksum: 10c0/06414035381cfb7f091cf1849a3e7cd4f02677edadb3686bf71c3e1aebc0a57cdaa510df8e7babe1140ea365f036c6e69d81f1c4928aa3e99b36d11afa0e771b
+    "@aws-sdk/client-dynamodb": ^3.1079.0
+  checksum: 10c0/208b7c17f31e8025ebc9b8f9cbd4f0510e724e27ef9e045aed6415eaec322754f9c78f140a4c0ea7650fcca7f0cb7e45ff720fd562549ccdffbb76a503a58b4c
   languageName: node
   linkType: hard
 
@@ -1777,7 +1777,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-sdk/util-dynamodb@npm:^3.996.0, @aws-sdk/util-dynamodb@npm:^3.996.2":
+"@aws-sdk/util-dynamodb@npm:^3.996.0":
   version: 3.996.2
   resolution: "@aws-sdk/util-dynamodb@npm:3.996.2"
   dependencies:
@@ -1785,6 +1785,17 @@ __metadata:
   peerDependencies:
     "@aws-sdk/client-dynamodb": ^3.1003.0
   checksum: 10c0/84ddf532d7212ac8a50769bfe89569d1dff33109d4062a5bef1ce6f3ac243002125dd75370d93bd0a185e855dc00c596e359af37823c57ecb30e053ae683c3c8
+  languageName: node
+  linkType: hard
+
+"@aws-sdk/util-dynamodb@npm:^3.996.5":
+  version: 3.996.5
+  resolution: "@aws-sdk/util-dynamodb@npm:3.996.5"
+  dependencies:
+    tslib: "npm:^2.6.2"
+  peerDependencies:
+    "@aws-sdk/client-dynamodb": ^3.1069.0
+  checksum: 10c0/1c656ed4b52874d887ab97c55d0f42c35b144ddc79a9f4fe76cac4835ece4214fdd02ce2621450aa3f5c046d5dd9b89f759fff76b372c69baba06183ba8ba7da
   languageName: node
   linkType: hard
 
@@ -5254,7 +5265,7 @@ __metadata:
     "@aws-sdk/client-ssm": "npm:^3.1001.0"
     "@aws-sdk/client-sts": "npm:^3.1001.0"
     "@aws-sdk/credential-providers": "npm:^3.1001.0"
-    "@aws-sdk/lib-dynamodb": "npm:^3.1001.0"
+    "@aws-sdk/lib-dynamodb": "npm:^3.1079.0"
     "@aws-sdk/types": "npm:^3.973.4"
     "@nelsonlamounier/cdk-deploy-scripts": "npm:^1.0.3"
     "@types/mime-types": "npm:^3.0.1"
@@ -5304,7 +5315,7 @@ __metadata:
     "@aws-sdk/client-sqs": "npm:^3.1001.0"
     "@aws-sdk/client-ssm": "npm:^3.1001.0"
     "@aws-sdk/client-sts": "npm:^3.1001.0"
-    "@aws-sdk/lib-dynamodb": "npm:^3.1001.0"
+    "@aws-sdk/lib-dynamodb": "npm:^3.1079.0"
     "@aws-sdk/s3-request-presigner": "npm:^3.1078.0"
     "@aws-sdk/util-dynamodb": "npm:^3.996.0"
     "@cdklabs/generative-ai-cdk-constructs": "npm:^0.1.314"

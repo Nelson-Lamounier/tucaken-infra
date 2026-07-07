@@ -8,6 +8,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 `signIn()` silently fails on auth callback routes (`/api/auth/*`) even
@@ -64,7 +66,7 @@ wrong policy.
 
 The fix in commit `3dc412d0` moved `/api/auth/*` and `/admin/*` before
 the catch-all `/api/*` behaviour in the `additionalBehaviors` array at
-[`edge-stack.ts:514`](../../infra/lib/stacks/kubernetes/edge-stack.ts).
+[`edge-stack.ts:514`](../../../infra/lib/stacks/kubernetes/edge-stack.ts).
 
 ## How to fix
 

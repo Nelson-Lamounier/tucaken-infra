@@ -1,3 +1,5 @@
+> **Archived 2026-07-06 — superseded.** This document describes the self-managed kubeadm control plane, replaced by managed Amazon EKS in the kubeadm to EKS migration ([ADR-0001](../../decisions/0001-self-managed-k8s-vs-eks.md) records the original self-managed rationale; [EKS platform architecture](../../concepts/eks-platform-architecture.md) is the current design). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 # Bootstrap Deadlock Runbook — AWS Cloud Controller Manager
 
 > **Scenario**: ArgoCD and CoreDNS pods are stuck `Pending` after cluster
@@ -313,8 +315,8 @@ already installed.
 
 ## Related
 
-- [Self-Healing Platform](../projects/self-healing-platform.md) — canonical entry point: where the CCM deadlock fits in the broader self-healing architecture
-- [SSM Bootstrap & Self-Healing Pipeline Integration](../concepts/self-healing-ssm-integration.md) — failure classification, agent tool loop, run_summary.json structure
+- [Self-Healing Platform](../../projects/self-healing-platform.md) — canonical entry point: where the CCM deadlock fits in the broader self-healing architecture
+- [SSM Bootstrap & Self-Healing Pipeline Integration](../../concepts/self-healing-ssm-integration.md) — failure classification, agent tool loop, run_summary.json structure
 - [K8s Bootstrap Failure Modes](../troubleshooting/k8s-bootstrap-failure-modes.md) — three SSM Automation failure modes including CCM taint timeout
 
 ---

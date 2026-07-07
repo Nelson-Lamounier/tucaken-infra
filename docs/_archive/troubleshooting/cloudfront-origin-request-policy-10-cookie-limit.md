@@ -8,6 +8,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 Auth intermittently fails after adding a new session cookie or authentication
@@ -39,11 +41,11 @@ slot. Adding Cognito PKCE cookies (`__session`, `oauth_state`,
 exceeding the limit (commit `cafdf329`).
 
 The `AUTH_COOKIES` constant in
-[`infra/lib/config/nextjs.ts:76-89`](../../infra/lib/config/nextjs.ts)
+[`infra/lib/config/nextjs.ts:76-89`](../../../infra/lib/config/nextjs.ts)
 is the source of truth for the cookie allowList. The file includes
 `MAX_CLOUDFRONT_COOKIES = 10` and a `validateAuthCookies()` function that
 enforces this limit at synth time
-([`nextjs.ts:97-146`](../../infra/lib/config/nextjs.ts)).
+([`nextjs.ts:97-146`](../../../infra/lib/config/nextjs.ts)).
 
 ## How to diagnose
 
@@ -67,7 +69,7 @@ validateAuthCookies();
 ```
 
 The validation guards against three failure modes
-([`nextjs.ts:110-146`](../../infra/lib/config/nextjs.ts)):
+([`nextjs.ts:110-146`](../../../infra/lib/config/nextjs.ts)):
 1. Wildcard characters (`*`, `?`) — treated as literal strings by CloudFront
 2. Count exceeding `MAX_CLOUDFRONT_COOKIES` (10)
 3. Duplicate entries
@@ -102,7 +104,7 @@ any deploy attempt.
 - **The `validateAuthCookies()` function runs at module load time during
   `cdk synth`.** Any violation throws an error before synthesis completes,
   preventing a bad deploy. This is the primary safeguard
-  ([`nextjs.ts:148-150`](../../infra/lib/config/nextjs.ts)).
+  ([`nextjs.ts:148-150`](../../../infra/lib/config/nextjs.ts)).
 
 - **Document cookie purpose in `AUTH_COOKIES` comments.** The current
   implementation includes inline comments marking cookies as active or

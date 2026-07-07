@@ -1,8 +1,12 @@
 ---
 title: CloudWatch Logs Strategy
 type: concept
-tags: [cloudwatch, aws-cdk, observability, kubernetes, logging, kms, encryption]
+tags: [cloudwatch, aws-cdk, observability, kubernetes, eks, logging, kms, encryption, cost]
 sources:
+  - infra/lib/stacks/kubernetes/eks-cluster-stack.ts
+  - infra/lib/stacks/kubernetes/base-stack.ts
+  - infra/lib/stacks/kubernetes/eks-alb-certs-stack.ts
+  - infra/lib/config/kubernetes/configurations.ts
   - infra/lib/constructs/compute/constructs/launch-template.ts
   - infra/lib/constructs/compute/constructs/lambda-function.ts
   - infra/lib/constructs/events/ami-refresh/ami-refresh-construct.ts
@@ -10,14 +14,9 @@ sources:
   - infra/lib/shared/vpc-stack.ts
   - infra/lib/constructs/observability/bedrock-observability.ts
   - infra/lib/constructs/security/acm-certificate.ts
-  - infra/lib/stacks/kubernetes/edge-stack.ts
-  - infra/lib/stacks/kubernetes/base-stack.ts
-  - infra/lib/stacks/kubernetes/control-plane-stack.ts
-  - infra/lib/stacks/kubernetes/worker-asg-stack.ts
-  - infra/lib/config/kubernetes/configurations.ts
   - infra/lib/constructs/observability/operations-dashboard.ts
 created: 2026-04-28
-updated: 2026-04-28
+updated: 2026-07-06
 ---
 
 ## Overview
@@ -30,6 +29,46 @@ is tiered per environment, KMS encryption is applied selectively based on data
 sensitivity and deployment environment, and a shared platform key is propagated
 via SSM Parameter Store to avoid cross-stack hard dependencies.
 
+Since the migration to managed EKS, the single largest CloudWatch Logs cost is
+the EKS control-plane log group. That surface — and the decision to drop the
+API and AUDIT streams to contain it — is documented in its own section below
+and in [ADR-0011 EKS control-plane log cost](../decisions/0011-eks-control-plane-log-cost.md).
+
+> **Migration note.** Several log groups described in earlier revisions of this
+> document belonged to the self-hosted kubeadm platform (Deprecated_ControlPlaneStack,
+> Deprecated_WorkerAsgStack, the kubeadm edge stack). Those stacks now live under
+> `infra/lib/stacks/kubernetes/deprecated/` and are no longer deployed. Where a
+> kubeadm-era log group is retained below it is marked **historical** and must
+> not be read as a description of the current cluster.
+
+## EKS control-plane logs
+
+The managed control plane emits its logs to a single CDK-owned group,
+`/aws/eks/<cluster>/cluster`, provisioned in
+`infra/lib/stacks/kubernetes/eks-cluster-stack.ts:85-89`. Retention is
+`ONE_MONTH` with `RemovalPolicy.RETAIN` — the group survives a `cdk destroy`
+so post-incident forensics are not lost with the stack.
+
+Only three of the five EKS control-plane log types are shipped
+(`eks-cluster-stack.ts:76-80`):
+
+- `AUTHENTICATOR` — access / IAM-to-Kubernetes mapping, the primary surface
+  for debugging Access Entry problems
+- `CONTROLLER_MANAGER` — control-loop health
+- `SCHEDULER` — control-loop health
+
+`API` and `AUDIT` are deliberately excluded. Per the in-code comment and the
+cdk-nag suppression rationale (`eks-cluster-stack.ts:70-75,118`), the AUDIT
+stream alone ingested **~102 GB/mo (~$34/mo, ~93% of the CloudWatch Logs
+bill)** while the three retained streams are small. The full cost/benefit
+argument — and the condition under which AUDIT is re-enabled (a compliance or
+forensics requirement for a Kubernetes audit trail) — lives in
+[ADR-0011 EKS control-plane log cost](../decisions/0011-eks-control-plane-log-cost.md).
+
+The `AwsSolutions-EKS2` cdk-nag finding (missing control-plane log types) is
+suppressed on the cluster resource with that same rationale so the intentional
+drop does not read as an oversight.
+
 ## Retention tiers by environment
 
 Retention is set globally per environment in
@@ -38,9 +77,9 @@ props down to individual constructs:
 
 | Environment | Retention | Source line |
 |:------------|:----------|:------------|
-| Development | `ONE_WEEK` | `configurations.ts:554` |
-| Staging | `ONE_MONTH` | `configurations.ts:658` |
-| Production | `THREE_MONTHS` | `configurations.ts:762` |
+| Development | `ONE_WEEK` | `configurations.ts:579` |
+| Staging | `ONE_MONTH` | `configurations.ts:683` |
+| Production | `THREE_MONTHS` | `configurations.ts:787` |
 
 Constructs that use a fixed retention (not env-configured) are documented per
 service below. Those are cases where the cost/signal ratio was explicit at
@@ -48,41 +87,57 @@ author time rather than inherited from the environment default.
 
 ## KMS encryption strategy
 
-Encryption is applied at two levels: a shared platform key for EC2 and
-Kubernetes-adjacent log groups, and a dedicated key for VPC Flow Logs.
+Encryption is applied at three levels: a shared platform key for
+CloudWatch log groups, a dedicated key for VPC Flow Logs, and a separate
+Kubernetes Secrets envelope key on the EKS cluster (etcd encryption, not a
+log-group key).
 
 ```mermaid
 flowchart TD
     Base["BaseStack\ncreates shared KMS key\nalias: {namePrefix}-log-group\nenableKeyRotation: true"]
     SSM["SSM Parameter\n/k8s/{env}/kms-key-arn"]
-    CP["ControlPlaneStack\nreads key from SSM"]
-    WK["WorkerAsgStack\nreads key from SSM"]
-    LT["LaunchTemplateConstruct\nlog group encrypted"]
+    Dep["Deprecated_ControlPlaneStack /\nDeprecated_WorkerAsgStack\n(historical: read key from SSM)"]
+    LT["LaunchTemplateConstruct\nEC2 node log group encrypted\n(wired only by deprecated stacks)"]
+    Eks["EksClusterStack\nseparate secrets KMS key\nalias: {clusterName}-secrets\n(K8s Secrets envelope, NOT logs)"]
     VPC["SharedVpcStack\ndedicated KMS key\nalias: vpc-flow-logs-{env}\nRemovalPolicy.RETAIN"]
     FLG["VPC Flow Logs\nlog group encrypted\nwith dedicated key"]
 
     Base -->|publishes ARN| SSM
-    SSM -->|Key.fromKeyArn| CP
-    SSM -->|Key.fromKeyArn| WK
-    CP -->|logGroupKmsKey prop| LT
-    WK -->|logGroupKmsKey prop| LT
+    SSM -.->|historical: Key.fromKeyArn| Dep
+    Dep -.->|logGroupKmsKey prop| LT
     VPC --> FLG
 ```
 
-`BaseStack` (`infra/lib/stacks/kubernetes/base-stack.ts:292-319`) creates the
+`BaseStack` (`infra/lib/stacks/kubernetes/base-stack.ts:290-312`) creates the
 shared key with a key policy granting the `logs.{region}.amazonaws.com`
-service principal `kms:Encrypt*`, `kms:Decrypt*`, and `kms:GenerateDataKey*`
-under an `ArnLike` condition. The key ARN is written to
-`/k8s/{env}/kms-key-arn` in SSM. Consumer stacks (`ControlPlaneStack:161-164`,
-`WorkerAsgStack:249-304`) read it via `ssm.StringParameter.valueForStringParameter`
-and pass it as `logGroupKmsKey` — avoiding a CloudFormation `Fn::ImportValue`
-cross-stack hard dependency (see [ADR-002](../adrs/0002-ssm-over-cloudformation-exports.md)).
+service principal `kms:Encrypt*`, `kms:Decrypt*`, `kms:ReEncrypt*`,
+`kms:GenerateDataKey*`, and `kms:Describe*` under an `ArnLike` condition on
+`kms:EncryptionContext:aws:logs:arn`. The key ARN is published to
+`/k8s/{env}/kms-key-arn` in SSM (`base-stack.ts:428`).
+
+The stacks that historically consumed this key — the kubeadm control-plane and
+worker node stacks — now live under
+`infra/lib/stacks/kubernetes/deprecated/`. They read the ARN via
+`ssm.StringParameter.valueForStringParameter` and passed it as `logGroupKmsKey`
+to `LaunchTemplateConstruct`, avoiding a CloudFormation `Fn::ImportValue`
+cross-stack hard dependency (see
+[ADR-003: SSM over CloudFormation Exports](../decisions/0003-ssm-over-cloudformation-exports.md)).
+On the managed EKS platform **no active stack reads this key for node logs** —
+EKS node logging is handled by the control-plane group and node-level agents,
+not per-instance EC2 log groups. `BaseStack` still creates the key and
+publishes the ARN, and the encryption pattern remains live in
+`LaunchTemplateConstruct`, but only the deprecated node stacks instantiate it.
+
+Separately, `EksClusterStack` provisions its own KMS key
+`alias/{clusterName}-secrets` (`eks-cluster-stack.ts:51-56`) with rotation and
+`RemovalPolicy.RETAIN`. This is the envelope key for Kubernetes Secrets in etcd
+— it is not a CloudWatch log-group key and does not encrypt any log group.
 
 VPC Flow Logs use a completely separate KMS key provisioned in
 `SharedVpcStack` (`infra/lib/shared/vpc-stack.ts:780-822`) with
 `RemovalPolicy.RETAIN`. This key is kept independent because VPC Flow Logs
 may need to persist beyond a stack destroy, and the shared platform key's
-lifecycle is tied to the Kubernetes cluster.
+lifecycle is tied to the base networking stack.
 
 Log groups for Bedrock model invocations, Lambda functions, ACM providers,
 and Step Functions are not KMS-encrypted in this codebase. The rationale is
@@ -91,36 +146,50 @@ codes), not user data or secrets.
 
 ## CDK-managed log groups
 
-### EC2 instance logs — LaunchTemplateConstruct
+### EKS control-plane — EksClusterStack
+
+**Pattern:** `/aws/eks/{clusterName}/cluster`
+
+Provisioned by `infra/lib/stacks/kubernetes/eks-cluster-stack.ts:85-89`.
+Retention `ONE_MONTH`, `RemovalPolicy.RETAIN`. Only `AUTHENTICATOR`,
+`CONTROLLER_MANAGER`, and `SCHEDULER` streams are shipped; `API` and `AUDIT`
+are dropped for cost. See the [EKS control-plane logs](#eks-control-plane-logs)
+section above and [ADR-0011](../decisions/0011-eks-control-plane-log-cost.md).
+
+### EC2 instance logs — LaunchTemplateConstruct (historical, kubeadm era)
 
 **Pattern:** `/ec2/{namePrefix}/instances`
 
-Provisioned by `infra/lib/constructs/compute/constructs/launch-template.ts`.
+Provisioned by
+`infra/lib/constructs/compute/constructs/launch-template.ts:233-240`.
 Retention defaults to `ONE_MONTH` if not provided
 (`props.logRetention ?? ONE_MONTH`). KMS encryption is applied when the
-calling stack passes `logGroupKmsKey` (all Kubernetes node stacks do;
-see KMS strategy above). The construct calls `logGroup.grantWrite(role)` on
-the EC2 instance role so the CloudWatch agent running on the node can deliver
-logs without requiring a managed policy.
+calling stack passes `logGroupKmsKey` (see KMS strategy above). The construct
+calls `logGroup.grantWrite(role)` (`launch-template.ts:263-265`) on the EC2
+instance role so the CloudWatch agent on the node can deliver logs without a
+managed policy.
 
-**Why:** EC2 node logs (kubelet, systemd units, kernel) are the primary
-diagnostic surface for cluster bootstrap failures and runtime incidents.
-Without a dedicated log group, CloudWatch agent would auto-create one and
-retention/encryption could not be enforced.
+**Status:** This construct is only instantiated by
+`Deprecated_ControlPlaneStack` and `Deprecated_WorkerAsgStack` (both under
+`infra/lib/stacks/kubernetes/deprecated/`). It is not wired by any active EKS
+stack. The construct code is retained as a reference implementation; on managed
+EKS, node diagnostics come from the control-plane group and node-level agents,
+not this per-instance group.
 
 ### Lambda function logs — LambdaFunctionConstruct
 
 **Pattern:** `/aws/lambda/{functionName}`
 
-Provisioned by `infra/lib/constructs/compute/constructs/lambda-function.ts:15-34`.
-The construct creates the log group **before** the Lambda function and passes
-it via the `logGroup` prop. This is a deliberate ordering — if Lambda
-auto-creates its log group (the default CDK behaviour), subsequent deploys
-that specify `logRetentionDays` fail with a CloudFormation
-"log group already exists" error. Pre-creation transfers ownership to CDK.
+Provisioned by
+`infra/lib/constructs/compute/constructs/lambda-function.ts` (log-group
+strategy documented at lines 19-28). The construct creates the log group
+**before** the Lambda function and passes it via the `logGroup` prop. This is a
+deliberate ordering — if Lambda auto-creates its log group (the default CDK
+behaviour), a subsequent deploy that specifies an explicit group fails with a
+CloudFormation "already exists" error. Pre-creation transfers ownership to CDK.
 
 Retention defaults to `ONE_MONTH` (`props.logRetention ?? ONE_MONTH`).
-No KMS encryption by default; callers may supply `kmsKey` if needed.
+No KMS encryption by default; callers may supply a key if needed.
 
 ### Step Functions execution logs — AmiRefreshConstruct
 
@@ -137,7 +206,7 @@ Logs delivered outside this namespace are silently dropped by the SFN service.
 This is an AWS constraint, not a platform choice.
 
 **Why `includeExecutionData`:** The AMI refresh pipeline is a multi-step
-orchestration (SSM parameter update → instance refresh → health verification).
+orchestration (SSM parameter update -> instance refresh -> health verification).
 Input/output data on each state transition is critical for debugging stalled
 refreshes. The additional log volume is accepted for this infrequently-run
 workflow.
@@ -207,18 +276,21 @@ This construct runs a custom resource Lambda that manages DNS validation
 records in Route 53. The tiered retention mirrors the certificate lifecycle —
 certificate events in production are audit-relevant for longer.
 
-### Edge stack utility Lambda logs
+### EKS ALB certificate validation Lambda logs — EksAlbCertsStack
 
-**Pattern:** `/aws/lambda/{namePrefix}-dns-alias-provider-{envName}`
+**Pattern:** `/aws/lambda/{namePrefix}-acm-dns-validation-{environment}`
 
-Provisioned inline in `infra/lib/stacks/kubernetes/edge-stack.ts:685-688`
-via `LambdaFunctionConstruct`. Fixed retention: `TWO_WEEKS`. This Lambda
-manages Route 53 alias records for the NLB and runs only during stack deploys.
-Two-week retention is sufficient to cover post-deploy verification windows.
+Provisioned in `infra/lib/stacks/kubernetes/eks-alb-certs-stack.ts:74-86` via
+`LambdaFunctionConstruct`. Fixed retention: `TWO_WEEKS`. A single Lambda
+services every ALB wildcard certificate's custom-resource lifecycle (the
+handler routes by domain). Two-week retention covers post-deploy verification
+of certificate issuance.
 
-A second Lambda in the edge stack, the ACM DNS validation function, uses
-`logRetention: logs.RetentionDays.TWO_WEEKS`
-(`edge-stack.ts:280-293`) for the same reason.
+This is the active EKS replacement for the kubeadm edge stack's utility
+Lambdas. The historical `{namePrefix}-dns-alias-provider-{env}` and edge-stack
+ACM validation functions lived in the kubeadm edge stack, now under
+`infra/lib/stacks/kubernetes/deprecated/edge-stack.ts`, and are no longer
+deployed.
 
 ## SSM-created log groups (CDK-referenced only)
 
@@ -254,25 +326,34 @@ queries) for CloudTrail event signal.
 
 | Log Group Pattern | Construct / Stack | Retention | KMS |
 |:------------------|:------------------|:----------|:----|
-| `/ec2/{namePrefix}/instances` | `LaunchTemplateConstruct` | Env-tiered (dev=1w, stg=1m, prod=3m) | Yes — shared platform key |
+| `/aws/eks/{clusterName}/cluster` | `EksClusterStack` (control plane) | ONE_MONTH (RETAIN) | No — API/AUDIT dropped, 3 streams shipped |
+| `/ec2/{namePrefix}/instances` | `LaunchTemplateConstruct` (historical — deprecated stacks only) | Default 1m, configurable | Yes — shared platform key |
 | `/aws/lambda/{functionName}` | `LambdaFunctionConstruct` | Default 1m, configurable | Optional |
 | `/aws/vendedlogs/states{ssmPrefix}-ami-refresh` | `AmiRefreshConstruct` | ONE_WEEK (fixed) | No |
 | Auto-named | `ApiGatewayConstruct` access logs | Configurable | Yes in stg/prod |
 | `/vpc/shared-{env}/flow-logs` | `SharedVpcStack` | ONE_MONTH default | Yes — dedicated key (RETAIN) |
 | `/aws/bedrock/{namePrefix}/model-invocations` | `BedrockObservabilityConstruct` | 3 DAYS (fixed) | No |
 | `/aws/lambda/{namePrefix}-cert-provider-{env}` | `AcmCertificateDnsValidationConstruct` | Env-tiered at construct level | No |
-| `/aws/lambda/{namePrefix}-dns-alias-provider-{env}` | `EdgeStack` | TWO_WEEKS (fixed) | No |
+| `/aws/lambda/{namePrefix}-acm-dns-validation-{env}` | `EksAlbCertsStack` | TWO_WEEKS (fixed) | No |
 | `/ssm{ssmPrefix}/bootstrap` | SSM Automation (not CDK) | SSM-managed | No |
 | `/ssm{ssmPrefix}/deploy` | SSM Automation (not CDK) | SSM-managed | No |
 | `/ssm{ssmPrefix}/drift` | SSM Automation (not CDK) | SSM-managed | No |
 
 ## Tradeoffs
 
+**Dropping EKS API and AUDIT logs** — The single biggest CloudWatch Logs saving
+came from excluding the AUDIT stream (~102 GB/mo, ~$34/mo, ~93% of the
+CloudWatch Logs bill per `eks-cluster-stack.ts:118`). The cost is loss of a
+Kubernetes audit trail; the mitigation is that AUTHENTICATOR still captures
+access decisions and AUDIT can be re-enabled at a single call site if a
+compliance need arises. Full rationale in
+[ADR-0011](../decisions/0011-eks-control-plane-log-cost.md).
+
 **Selective KMS encryption** — Only log groups containing infrastructure
-event data from EC2 nodes and VPC traffic are encrypted. Lambda, API Gateway
-(in dev), Bedrock, and ACM log groups are not encrypted. This balances
-compliance posture with operational cost. For a production system handling
-PII, all log groups would be encrypted.
+event data (EC2 node groups on the kubeadm platform, VPC traffic) are
+encrypted. Lambda, API Gateway (in dev), Bedrock, and ACM log groups are not
+encrypted. This balances compliance posture with operational cost. For a
+production system handling PII, all log groups would be encrypted.
 
 **Pre-creation pattern for Lambda logs** — The `LambdaFunctionConstruct`
 pre-creates log groups at the cost of a slight increase in stack resource
@@ -291,7 +372,8 @@ single change point.
 - [Monitoring Strategy](monitoring-strategy.md)
 - [Self-Healing + SSM Integration](self-healing-ssm-integration.md)
 - [SSM Cross-Stack Pattern](../patterns/ssm-cross-stack-pattern.md)
-- [ADR-002: SSM over CloudFormation Exports](../adrs/0002-ssm-over-cloudformation-exports.md)
+- [ADR-003: SSM over CloudFormation Exports](../decisions/0003-ssm-over-cloudformation-exports.md)
+- [ADR-0011: EKS control-plane log cost](../decisions/0011-eks-control-plane-log-cost.md)
 
 <!--
 Evidence trail (auto-generated):
@@ -302,11 +384,12 @@ Evidence trail (auto-generated):
 - Source: infra/lib/shared/vpc-stack.ts:780-822 (read on 2026-04-28)
 - Source: infra/lib/constructs/observability/bedrock-observability.ts:60-145 (read on 2026-04-28)
 - Source: infra/lib/constructs/security/acm-certificate.ts:185-241 (read on 2026-04-28)
-- Source: infra/lib/stacks/kubernetes/edge-stack.ts:280-293,685-688 (read on 2026-04-28)
-- Source: infra/lib/stacks/kubernetes/base-stack.ts:292-319 (read on 2026-04-28)
-- Source: infra/lib/stacks/kubernetes/control-plane-stack.ts:161-164,191 (read on 2026-04-28)
-- Source: infra/lib/stacks/kubernetes/worker-asg-stack.ts:249-304 (read on 2026-04-28)
-- Source: infra/lib/config/kubernetes/configurations.ts:554,658,762 (read on 2026-04-28)
 - Source: infra/lib/constructs/observability/operations-dashboard.ts:179-180,275,303,315,385,513 (read on 2026-04-28)
 - Source: infra/lib/constructs/security/account-security-baseline.ts (read on 2026-04-28)
+- Refresh 2026-07-06: kubeadm edge-stack.ts, control-plane-stack.ts, worker-asg-stack.ts confirmed moved to infra/lib/stacks/kubernetes/deprecated/ — dropped from sources and body; former citations edge-stack.ts:280-293,685-688 / control-plane-stack.ts:161-164,191 / worker-asg-stack.ts:249-304 no longer resolve to active code.
+- Source: infra/lib/stacks/kubernetes/eks-cluster-stack.ts:51-56,70-89,118 (read on 2026-07-06) — control-plane log group /aws/eks/{cluster}/cluster ONE_MONTH RETAIN; clusterLogging AUTHENTICATOR/CONTROLLER_MANAGER/SCHEDULER; API+AUDIT dropped; AUDIT ~102 GB/mo ~$34/mo ~93% of CW Logs bill; secrets KMS key alias/{cluster}-secrets.
+- Source: infra/lib/stacks/kubernetes/base-stack.ts:290-312,428 (read on 2026-07-06) — shared LogGroupKey alias {namePrefix}-log-group, logs service principal policy under ArnLike EncryptionContext condition, ARN published to ssmPaths.kmsKeyArn (/k8s/{env}/kms-key-arn).
+- Source: infra/lib/config/kubernetes/configurations.ts:579,683,787 (read on 2026-07-06) — logRetention ONE_WEEK/ONE_MONTH/THREE_MONTHS per environment (line numbers moved from 554/658/762).
+- Source: infra/lib/stacks/kubernetes/eks-alb-certs-stack.ts:74-86 (read on 2026-07-06) — ACM DNS validation LambdaFunctionConstruct, functionName {namePrefix}-acm-dns-validation-{env}, logRetention TWO_WEEKS.
+- Source: infra/lib/constructs/compute/constructs/launch-template.ts:233-240,263-265 (read on 2026-07-06) — /ec2/{namePrefix}/instances log group; only instantiated by deprecated/control-plane-stack.ts:203 and deprecated/worker-asg-stack.ts:394.
 -->

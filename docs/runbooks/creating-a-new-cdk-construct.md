@@ -111,7 +111,7 @@ if (isProduction && !props.encryptionKey) {
 }
 ```
 
-See [CDK Aspects Governance](cdk-aspects-governance.md) for the full decision table on which mechanism to use.
+See [CDK Aspects Governance](../concepts/cdk-aspects-governance.md) for the full decision table on which mechanism to use.
 
 ## Step 4 — Export from the domain index
 

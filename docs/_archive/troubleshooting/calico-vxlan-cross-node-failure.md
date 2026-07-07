@@ -12,6 +12,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the self-managed kubeadm control plane, replaced by managed Amazon EKS in the kubeadm to EKS migration ([ADR-0001](../../decisions/0001-self-managed-k8s-vs-eks.md) records the original self-managed rationale; [EKS platform architecture](../../concepts/eks-platform-architecture.md) is the current design). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 Pods on the same node can communicate. Pods on different nodes time out — connections hang and are eventually reset. The symptom is asymmetric: `kubectl exec` works, the pod is running and passes readiness probes (which hit the same node), but HTTP calls to pods on a different node return no response.
@@ -145,7 +147,7 @@ The version is pinned at `configurations.ts:486` (and identically at `configurat
 
 ## Related
 
-- [Security Group Configuration](../concepts/security-group-configuration.md) — clusterBase SG rules, two-layer perimeter, kube-proxy DNAT source preservation
+- [Security Group Configuration](../../concepts/security-group-configuration.md) — clusterBase SG rules, two-layer perimeter, kube-proxy DNAT source preservation
 - [Request Lifecycle — Viewer to Pod](../concepts/request-lifecycle-viewer-to-pod.md) — Hop 8 (kube-proxy DNAT) — cross-node path where VXLAN is required
 - [K8s Bootstrap Failure Modes](k8s-bootstrap-failure-modes.md) — node bootstrap failures that can leave Calico in a broken state
 

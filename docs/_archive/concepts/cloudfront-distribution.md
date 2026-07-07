@@ -14,6 +14,8 @@ created: 2026-04-28
 updated: 2026-04-28
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Overview
 
 `KubernetesEdgeStack` (`infra/lib/stacks/kubernetes/edge-stack.ts`) is
@@ -497,10 +499,10 @@ enforces this hard limit.
 
 - [Request Lifecycle — Viewer to Pod](request-lifecycle-viewer-to-pod.md) — end-to-end path showing where CloudFront fits among all hops
 - [NLB Architecture](nlb-architecture.md)
-- [Security Group Configuration](security-group-configuration.md)
-- [CloudWatch Logs Strategy](cloudwatch-logs-strategy.md)
-- [Networking Observability](../networking-observability.md)
-- [ADR-006: NLB over EIP-Failover Lambda](../decisions/0006-nlb-over-eip-failover-lambda.md)
+- [Security Group Configuration](../../concepts/security-group-configuration.md)
+- [CloudWatch Logs Strategy](../../concepts/cloudwatch-logs-strategy.md)
+- [Networking Observability](../../concepts/networking-observability.md)
+- [ADR-006: NLB over EIP-Failover Lambda](../../decisions/0006-nlb-over-eip-failover-lambda.md)
 
 <!--
 Evidence trail (auto-generated):

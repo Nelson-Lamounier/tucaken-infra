@@ -301,7 +301,7 @@ scoping — it proves the aspect does not fire broadly on all IAM constructs.
 
 - [IaC Security — Dual-Layer](../concepts/iac-security-dual-layer.md)
 - [FinOps Observability](../concepts/finops-observability.md)
-- [CloudFront Distribution](../concepts/cloudfront-distribution.md)
+- [CloudFront Distribution](../_archive/concepts/cloudfront-distribution.md)
 - [cdk-governance-aspects project](../projects/cdk-governance-aspects.md)
 
 <!--

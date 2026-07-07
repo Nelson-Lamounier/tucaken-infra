@@ -505,7 +505,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-sdk/client-ec2@npm:^3.0.0, @aws-sdk/client-ec2@npm:^3.1001.0, @aws-sdk/client-ec2@npm:^3.1016.0":
+"@aws-sdk/client-ec2@npm:^3.0.0":
   version: 3.1053.0
   resolution: "@aws-sdk/client-ec2@npm:3.1053.0"
   dependencies:
@@ -521,6 +521,23 @@ __metadata:
     "@smithy/types": "npm:^4.14.2"
     tslib: "npm:^2.6.2"
   checksum: 10c0/d388be7556cbd0407d88d1ecc30d0c54a1a1233a1258c48bff79f8f5bbcac28eeadae8821b1871844783cc2047859db3c00d18b66b2b2874e263876f5726ab0b
+  languageName: node
+  linkType: hard
+
+"@aws-sdk/client-ec2@npm:^3.1079.0":
+  version: 3.1079.0
+  resolution: "@aws-sdk/client-ec2@npm:3.1079.0"
+  dependencies:
+    "@aws-sdk/core": "npm:^3.974.27"
+    "@aws-sdk/credential-provider-node": "npm:^3.972.62"
+    "@aws-sdk/middleware-sdk-ec2": "npm:^3.972.41"
+    "@aws-sdk/types": "npm:^3.973.15"
+    "@smithy/core": "npm:^3.29.0"
+    "@smithy/fetch-http-handler": "npm:^5.6.2"
+    "@smithy/node-http-handler": "npm:^4.9.2"
+    "@smithy/types": "npm:^4.15.1"
+    tslib: "npm:^2.6.2"
+  checksum: 10c0/93062bc85b127f2a989913d5c0e51c0d6753fb2c98b213bca34e7fd94a507ff3c368013da21e827f8039857163504655443a0f5c53e6fd71699a9f76a1e8d998
   languageName: node
   linkType: hard
 
@@ -1490,6 +1507,20 @@ __metadata:
     "@smithy/types": "npm:^4.14.2"
     tslib: "npm:^2.6.2"
   checksum: 10c0/5c8ddebb11fb3053be2fbb1cab1327f99bb7d0d1de733408a43f00a531c61323dc2a79dc1f7d2f81da49b414a362dbfcfcce586595a2f92d814d922167fbb107
+  languageName: node
+  linkType: hard
+
+"@aws-sdk/middleware-sdk-ec2@npm:^3.972.41":
+  version: 3.972.41
+  resolution: "@aws-sdk/middleware-sdk-ec2@npm:3.972.41"
+  dependencies:
+    "@aws-sdk/core": "npm:^3.974.27"
+    "@aws-sdk/types": "npm:^3.973.15"
+    "@smithy/core": "npm:^3.29.0"
+    "@smithy/signature-v4": "npm:^5.6.1"
+    "@smithy/types": "npm:^4.15.1"
+    tslib: "npm:^2.6.2"
+  checksum: 10c0/511308bf6840cb8ac15ebd0a044e61c150ae5f5ed661555d196c9c5f240ff1279c2670262cfaf727aa2a519402d55f5066955423a43ca5085e6ca6446e1919ed
   languageName: node
   linkType: hard
 
@@ -5214,7 +5245,7 @@ __metadata:
     "@aws-sdk/client-cloudwatch-logs": "npm:^3.1079.0"
     "@aws-sdk/client-dynamodb": "npm:^3.1001.0"
     "@aws-sdk/client-ebs": "npm:^3.1021.0"
-    "@aws-sdk/client-ec2": "npm:^3.1016.0"
+    "@aws-sdk/client-ec2": "npm:^3.1079.0"
     "@aws-sdk/client-elastic-load-balancing-v2": "npm:^3.1021.0"
     "@aws-sdk/client-lambda": "npm:^3.1045.0"
     "@aws-sdk/client-s3": "npm:^3.1001.0"
@@ -5254,7 +5285,7 @@ __metadata:
     "@aws-sdk/client-cloudwatch-logs": "npm:^3.1079.0"
     "@aws-sdk/client-cognito-identity-provider": "npm:^3.1013.0"
     "@aws-sdk/client-dynamodb": "npm:^3.1001.0"
-    "@aws-sdk/client-ec2": "npm:^3.1001.0"
+    "@aws-sdk/client-ec2": "npm:^3.1079.0"
     "@aws-sdk/client-ecr": "npm:^3.1001.0"
     "@aws-sdk/client-ecs": "npm:^3.1001.0"
     "@aws-sdk/client-efs": "npm:^3.1001.0"

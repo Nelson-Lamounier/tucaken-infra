@@ -91,6 +91,7 @@
 |:---------|:--------|
 | [AMI Refresh IAM Permissions](troubleshooting/ami-refresh-iam-permissions.md) | Six-commit IAM debugging series: ec2:RunInstances → CalledVia → PassRole → Describe* → CreateTags |
 | [JWT userId Source — Ingestion Security Fix](troubleshooting/jwt-userid-source-security-fix.md) | userId taken from request body allowed impersonation; fix: always read from JWT payload |
+| [Karpenter System Pool Pod-Density Starvation](troubleshooting/karpenter-system-pool-pod-density-starvation.md) | System pods Pending with idle CPU — Karpenter is blind to the ENI pod cap; floor instance sizes at t3.large (35 pods) not t3.medium (17) |
 | [CloudFormation Rejects $Latest/$Default in ASG LT Version](troubleshooting/cfn-asg-launch-template-version-latest-rejected.md) | CloudFormation hard-rejects $Latest/$Default as ASG LaunchTemplate Version at resource definition level |
 | [CDK valueFromLookup vs fromSsmParameter](troubleshooting/cdk-value-from-lookup-vs-ssm-parameter.md) | valueFromLookup() bakes AMI at synth time, breaks CI --no-lookups; use fromSsmParameter() instead |
 | [CDK LaunchTemplate.launchTemplateName Always Undefined](troubleshooting/cdk-launch-template-name-undefined.md) | CDK L2 LaunchTemplate.launchTemplateName is always undefined — build concrete name string directly |

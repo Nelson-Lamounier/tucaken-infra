@@ -249,22 +249,20 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-sdk/client-api-gateway@npm:^3.1001.0":
-  version: 3.1053.0
-  resolution: "@aws-sdk/client-api-gateway@npm:3.1053.0"
+"@aws-sdk/client-api-gateway@npm:^3.1079.0":
+  version: 3.1079.0
+  resolution: "@aws-sdk/client-api-gateway@npm:3.1079.0"
   dependencies:
-    "@aws-crypto/sha256-browser": "npm:5.2.0"
-    "@aws-crypto/sha256-js": "npm:5.2.0"
-    "@aws-sdk/core": "npm:^3.974.13"
-    "@aws-sdk/credential-provider-node": "npm:^3.972.44"
-    "@aws-sdk/middleware-sdk-api-gateway": "npm:^3.972.13"
-    "@aws-sdk/types": "npm:^3.973.9"
-    "@smithy/core": "npm:^3.24.3"
-    "@smithy/fetch-http-handler": "npm:^5.4.3"
-    "@smithy/node-http-handler": "npm:^4.7.3"
-    "@smithy/types": "npm:^4.14.2"
+    "@aws-sdk/core": "npm:^3.974.27"
+    "@aws-sdk/credential-provider-node": "npm:^3.972.62"
+    "@aws-sdk/middleware-sdk-api-gateway": "npm:^3.972.21"
+    "@aws-sdk/types": "npm:^3.973.15"
+    "@smithy/core": "npm:^3.29.0"
+    "@smithy/fetch-http-handler": "npm:^5.6.2"
+    "@smithy/node-http-handler": "npm:^4.9.2"
+    "@smithy/types": "npm:^4.15.1"
     tslib: "npm:^2.6.2"
-  checksum: 10c0/08107c60eff8d12ca31c5083ae842c83d43e1758e6b6558279c8ccea6a6a33e048d02692397469fa79b3f9b914c3300effaaaeaf8b25fd69306b2971c95d440f
+  checksum: 10c0/6db3c4be8e689a3146c87e157ef54c3c1cfcf26edaafe585a7b1d04b510e8f7ada8da2f5f22f3e8502ce2b841825cdf8d0dc4ee0a528465d883af22f8908523a
   languageName: node
   linkType: hard
 
@@ -1469,15 +1467,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-sdk/middleware-sdk-api-gateway@npm:^3.972.13":
-  version: 3.972.13
-  resolution: "@aws-sdk/middleware-sdk-api-gateway@npm:3.972.13"
+"@aws-sdk/middleware-sdk-api-gateway@npm:^3.972.21":
+  version: 3.972.21
+  resolution: "@aws-sdk/middleware-sdk-api-gateway@npm:3.972.21"
   dependencies:
-    "@aws-sdk/types": "npm:^3.973.9"
-    "@smithy/core": "npm:^3.24.3"
-    "@smithy/types": "npm:^4.14.2"
+    "@aws-sdk/types": "npm:^3.973.15"
+    "@smithy/core": "npm:^3.29.0"
+    "@smithy/types": "npm:^4.15.1"
     tslib: "npm:^2.6.2"
-  checksum: 10c0/f5f10ef621b348dde920d92eb06732849869a2ec22224bc5880ba4cc99825e184705f3a46d74534a6dff3dbb4c817945e7283b776ee58d485f8b502d7c66a844
+  checksum: 10c0/1b843ae0402bfd268990ac3a02daa90d71565ff2040ebaaba4833006a43a2b0e94ecf42820e536211c8bed314f1aa8472677e1ec4e8cd2d7b8b45c241a030ab9
   languageName: node
   linkType: hard
 
@@ -5111,7 +5109,7 @@ __metadata:
     "@aws-cdk/lambda-layer-kubectl-v34": "npm:^2.2.1"
     "@aws-lambda-powertools/logger": "npm:^2.30.2"
     "@aws-sdk/client-acm": "npm:^3.1001.0"
-    "@aws-sdk/client-api-gateway": "npm:^3.1001.0"
+    "@aws-sdk/client-api-gateway": "npm:^3.1079.0"
     "@aws-sdk/client-auto-scaling": "npm:^3.1001.0"
     "@aws-sdk/client-bedrock-agent-runtime": "npm:^3.1001.0"
     "@aws-sdk/client-bedrock-runtime": "npm:^3.1001.0"

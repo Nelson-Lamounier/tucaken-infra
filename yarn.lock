@@ -788,21 +788,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-sdk/client-sns@npm:^3.1001.0, @aws-sdk/client-sns@npm:^3.1016.0":
-  version: 3.1053.0
-  resolution: "@aws-sdk/client-sns@npm:3.1053.0"
+"@aws-sdk/client-sns@npm:^3.1079.0":
+  version: 3.1079.0
+  resolution: "@aws-sdk/client-sns@npm:3.1079.0"
   dependencies:
-    "@aws-crypto/sha256-browser": "npm:5.2.0"
-    "@aws-crypto/sha256-js": "npm:5.2.0"
-    "@aws-sdk/core": "npm:^3.974.13"
-    "@aws-sdk/credential-provider-node": "npm:^3.972.44"
-    "@aws-sdk/types": "npm:^3.973.9"
-    "@smithy/core": "npm:^3.24.3"
-    "@smithy/fetch-http-handler": "npm:^5.4.3"
-    "@smithy/node-http-handler": "npm:^4.7.3"
-    "@smithy/types": "npm:^4.14.2"
+    "@aws-sdk/core": "npm:^3.974.27"
+    "@aws-sdk/credential-provider-node": "npm:^3.972.62"
+    "@aws-sdk/types": "npm:^3.973.15"
+    "@smithy/core": "npm:^3.29.0"
+    "@smithy/fetch-http-handler": "npm:^5.6.2"
+    "@smithy/node-http-handler": "npm:^4.9.2"
+    "@smithy/types": "npm:^4.15.1"
     tslib: "npm:^2.6.2"
-  checksum: 10c0/17684e86d93c1c68ba1e684ed0b9a1fa664e1399adf9c70aac6ab7c5ab1db53a337ad063db00ed1038e7792014cee2f51b07bab2bc4e4ab8d3637de2bd1f5432
+  checksum: 10c0/fa9580bccd1c8f392cd70b162ce76ed22636a78f97cfc8a149c1fdd613bb5f81090cc5409128776908a28cf97fe0babed44dceffc8f2338f455bed6416c5573b
   languageName: node
   linkType: hard
 
@@ -5090,7 +5088,7 @@ __metadata:
     "@aws-sdk/client-lambda": "npm:^3.1045.0"
     "@aws-sdk/client-s3": "npm:^3.1001.0"
     "@aws-sdk/client-sfn": "npm:^3.1045.0"
-    "@aws-sdk/client-sns": "npm:^3.1016.0"
+    "@aws-sdk/client-sns": "npm:^3.1079.0"
     "@aws-sdk/client-ssm": "npm:^3.1001.0"
     "@aws-sdk/client-sts": "npm:^3.1001.0"
     "@aws-sdk/credential-providers": "npm:^3.1001.0"
@@ -5140,7 +5138,7 @@ __metadata:
     "@aws-sdk/client-secrets-manager": "npm:^3.1003.0"
     "@aws-sdk/client-ses": "npm:^3.1073.0"
     "@aws-sdk/client-sfn": "npm:^3.1045.0"
-    "@aws-sdk/client-sns": "npm:^3.1001.0"
+    "@aws-sdk/client-sns": "npm:^3.1079.0"
     "@aws-sdk/client-sqs": "npm:^3.1001.0"
     "@aws-sdk/client-ssm": "npm:^3.1001.0"
     "@aws-sdk/client-sts": "npm:^3.1001.0"

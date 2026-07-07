@@ -107,8 +107,8 @@ The SharedVpc now provisions isolated data subnets without adding NAT Gateway co
 
 ## Related concepts
 
-- [NLB Architecture](../adrs/nlb-architecture.md) — network boundary for the cluster
-- [ADR-0002: SSM over CloudFormation Exports](../adrs/0002-ssm-over-cloudformation-exports.md) — why RDS parameters are published to SSM
+- [NLB Architecture](../_archive/concepts/nlb-architecture.md) — network boundary for the cluster
+- [ADR-0002: SSM over CloudFormation Exports](../decisions/0003-ssm-over-cloudformation-exports.md) — why RDS parameters are published to SSM
 
 <!-- evidence-trail
   platform-rds-stack.ts: lines 1–159 — full stack implementation read

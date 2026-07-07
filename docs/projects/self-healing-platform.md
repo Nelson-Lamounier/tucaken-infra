@@ -305,7 +305,7 @@ Symptoms: all pods Pending, 'uninitialized' taint on all nodes, ArgoCD absent
   → Full platform sync via ArgoCD sync waves (~15 min total)
 ```
 
-See [Bootstrap Deadlock — CCM](../runbooks/bootstrap-deadlock-ccm.md) for exact commands. The deadlock was observed in practice on 2026-03-25 with 15-minute recovery time.
+See [Bootstrap Deadlock — CCM](../_archive/runbooks/bootstrap-deadlock-ccm.md) for exact commands. The deadlock was observed in practice on 2026-03-25 with 15-minute recovery time.
 
 ### Cross-AZ recovery (always manual)
 
@@ -322,7 +322,7 @@ AZ eu-west-1a fails
   → Worker nodes rejoin (or re-bootstrap if fresh init)
 ```
 
-Expected duration: ~45 minutes with S3 backups. See [Cross-AZ Recovery](../runbooks/cross-az-recovery.md).
+Expected duration: ~45 minutes with S3 backups. See [Cross-AZ Recovery](../_archive/runbooks/cross-az-recovery.md).
 
 ---
 
@@ -389,8 +389,8 @@ yarn tsx scripts/local/control-plane-troubleshoot.ts --profile <profile>
 
 - [SSM Bootstrap & Self-Healing Pipeline Integration](../concepts/self-healing-ssm-integration.md) — technical deep dive: `run_summary.json` structure, failure classification, agent tool loop, Cognito M2M auth, `ConverseCommand` sequence diagrams
 - [AMI Refresh IAM Permission Failures](../troubleshooting/ami-refresh-iam-permissions.md) — six-commit IAM debugging series; why `aws:CalledVia` breaks AutoScaling simulation; final correct policy
-- [Bootstrap Deadlock — CCM](../runbooks/bootstrap-deadlock-ccm.md) — CCM deadlock diagnosis, manual Helm fix, 2026-03-25 incident timeline
-- [Cross-AZ Recovery](../runbooks/cross-az-recovery.md) — step-by-step AZ failover including EBS volume migration, CDK changes, bootstrap restore
+- [Bootstrap Deadlock — CCM](../_archive/runbooks/bootstrap-deadlock-ccm.md) — CCM deadlock diagnosis, manual Helm fix, 2026-03-25 incident timeline
+- [Cross-AZ Recovery](../_archive/runbooks/cross-az-recovery.md) — step-by-step AZ failover including EBS volume migration, CDK changes, bootstrap restore
 - [cdk-monitoring Platform](cdk-monitoring-platform.md) — canonical project entry point: where self-healing fits in the full infrastructure picture
 
 ---

@@ -10,6 +10,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the self-managed kubeadm control plane, replaced by managed Amazon EKS in the kubeadm to EKS migration ([ADR-0001](../../decisions/0001-self-managed-k8s-vs-eks.md) records the original self-managed rationale; [EKS platform architecture](../../concepts/eks-platform-architecture.md) is the current design). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 After restoring an etcd snapshot onto a new control plane instance (cross-AZ
@@ -43,13 +45,13 @@ failure.
 This failure mode is documented in the troubleshooter's Phase 3 (DR &
 Certificate Diagnostics) which checks certificate SANs against the current
 IMDS private IP
-([`control-plane-troubleshoot.ts:691-724`](../../scripts/local/control-plane-troubleshoot.ts)).
+([`control-plane-troubleshoot.ts:691-724`](../../../scripts/local/control-plane-troubleshoot.ts)).
 
 The `etcd-restore-rto-test.sh` script times the restore sequence but does
 not regenerate certificates — the SAN mismatch only surfaces when the
 restored cluster starts on a different IP than where it was originally
 initialised
-([`scripts/local/etcd-restore-rto-test.sh`](../../scripts/local/etcd-restore-rto-test.sh)).
+([`scripts/local/etcd-restore-rto-test.sh`](../../../scripts/local/etcd-restore-rto-test.sh)).
 
 ## How to diagnose
 

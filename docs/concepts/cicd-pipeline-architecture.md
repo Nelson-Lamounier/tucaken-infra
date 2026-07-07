@@ -88,8 +88,8 @@ The composite action `.github/actions/configure-aws/action.yml` wraps `aws-actio
 
 ## Related concepts
 
-- [docs/adrs/0006-gitops-over-direct-k8s-deploy.md](../adrs/0006-gitops-over-direct-k8s-deploy.md) — decision record for removing the k8s-runner deploy job
-- [docs/adrs/0001-self-managed-k8s-vs-eks.md](../adrs/0001-self-managed-k8s-vs-eks.md) — why the cluster is self-managed, affecting how deploy workflows interact with it
+- [GitOps over direct k8s deploy (relocated to kubernetes-bootstrap)](https://github.com/Nelson-Lamounier/kubernetes-bootstrap/tree/main/docs/decisions) — decision record for removing the k8s-runner deploy job
+- [docs/adrs/0001-self-managed-k8s-vs-eks.md](../decisions/0001-self-managed-k8s-vs-eks.md) — why the cluster is self-managed, affecting how deploy workflows interact with it
 
 <!--
 Evidence trail (auto-generated):

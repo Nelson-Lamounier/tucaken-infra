@@ -380,7 +380,7 @@ npx cdk synth -c project=kubernetes -c environment=dev -c nagChecks=false   # sy
 **Concept docs:**
 - [CDK Construct Architecture](../concepts/cdk-construct-architecture.md) — L1/L2/L3 model, factory pattern, compile-time validation
 - [CDK Aspects Governance](../concepts/cdk-aspects-governance.md) — `TaggingAspect`, `EnforceReadOnlyDynamoDbAspect`, cdk-nag scheduling
-- [Request Lifecycle — Viewer to Pod](../concepts/request-lifecycle-viewer-to-pod.md) — end-to-end path from DNS to container
+- [Request Lifecycle — Viewer to Pod](../_archive/concepts/request-lifecycle-viewer-to-pod.md) — end-to-end path from DNS to container
 
 <!--
 Evidence trail (auto-generated):

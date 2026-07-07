@@ -13,6 +13,8 @@ created: 2026-04-28
 updated: 2026-04-28
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Overview
 
 An internet-facing Network Load Balancer distributes all external traffic to
@@ -24,7 +26,7 @@ distribution and automatic health-check-based failover.
 
 This replaced the previous `EipFailoverConstruct` approach (a Lambda that
 re-associated the EIP on ASG lifecycle events). See
-[ADR-006](../decisions/0006-nlb-over-eip-failover-lambda.md) for the migration
+[ADR-006](../../decisions/0006-nlb-over-eip-failover-lambda.md) for the migration
 rationale.
 
 ## Traffic flow
@@ -164,7 +166,7 @@ asgConstruct.autoScalingGroup.attachToNetworkTargetGroup(nlbHttpsTg);  // line 7
 ```
 
 This avoids a `Fn::ImportValue` cross-stack dependency (see
-[ADR-003](../decisions/0003-ssm-over-cloudformation-exports.md)).
+[ADR-003](../../decisions/0003-ssm-over-cloudformation-exports.md)).
 
 ## Security design
 
@@ -390,10 +392,10 @@ zcat *.log.gz | head -20
 ## Related
 
 - [Request Lifecycle — Viewer to Pod](request-lifecycle-viewer-to-pod.md) — end-to-end path showing where NLB fits among all hops
-- [ADR-006: NLB over EIP-Failover Lambda](../decisions/0006-nlb-over-eip-failover-lambda.md)
-- [Security Group Configuration](security-group-configuration.md)
-- [Networking Observability](../networking-observability.md)
-- [SSM Cross-Stack Pattern](../patterns/ssm-cross-stack-pattern.md)
+- [ADR-006: NLB over EIP-Failover Lambda](../../decisions/0006-nlb-over-eip-failover-lambda.md)
+- [Security Group Configuration](../../concepts/security-group-configuration.md)
+- [Networking Observability](../../concepts/networking-observability.md)
+- [SSM Cross-Stack Pattern](../../patterns/ssm-cross-stack-pattern.md)
 - [Runbook: Cross-AZ Recovery](../runbooks/cross-az-recovery.md)
 
 <!--

@@ -257,18 +257,18 @@ Integration tests in `infra/tests/integration/` run against real AWS resources. 
 
 ## Deeper detail
 
-- [CloudFront Distribution](cloudfront-distribution.md) — complete cache behaviour table, origin request policies, auth cookie limits, WAF rules, and live state
+- [CloudFront Distribution](../_archive/concepts/cloudfront-distribution.md) — complete cache behaviour table, origin request policies, auth cookie limits, WAF rules, and live state
 - [CDK Aspects Governance](cdk-aspects-governance.md) — how `visit()` is scheduled, token resolution in `EnforceReadOnlyDynamoDbAspect.inspectPolicyDocument()`, three annotation mechanisms, NagSuppressions API
 - [Creating a New CDK Construct](../runbooks/creating-a-new-cdk-construct.md) — domain placement, inline defaults, exports, test fixture boilerplate, verification checklist
 - [CDK Aspects Validation Failures](../troubleshooting/cdk-aspects-validation-failures.md) — `AwsSolutions-L1` on framework Lambdas, `EnforceReadOnlyDynamoDb` false positives, suppression recipes
 
 ## Related concepts
 
-- [ASG Configuration](../asg-configuration.md)
-- [Launch Template Configuration](../launch-template-configuration.md)
-- [IAC Security Dual-Layer](../iac-security-dual-layer.md)
-- [FinOps Observability](../finops-observability.md)
-- [CloudWatch Logs Strategy](../cloudwatch-logs-strategy.md)
+- [ASG Configuration](asg-configuration.md)
+- [Launch Template Configuration](launch-template-configuration.md)
+- [IAC Security Dual-Layer](iac-security-dual-layer.md)
+- [FinOps Observability](finops-observability.md)
+- [CloudWatch Logs Strategy](cloudwatch-logs-strategy.md)
 
 <!--
 Evidence trail (auto-generated):

@@ -9,6 +9,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 Two distinct deployment failures that occurred together in the same
@@ -89,7 +91,7 @@ Keep port 443 open to `anyIpv4`/`anyIpv6` at the NLB layer. Fine-grained
 access restriction is enforced by the Kubernetes node ingress security group
 (admin IP allowlist), not by the NLB SG. Port 80 stays restricted to the
 CloudFront prefix list to block HTTP scanners
-([`network-load-balancer.ts`](../../infra/lib/constructs/networking/elb/network-load-balancer.ts)).
+([`network-load-balancer.ts`](../../../infra/lib/constructs/networking/elb/network-load-balancer.ts)).
 
 ```typescript
 // Port 443 — open at NLB layer, K8s node SG enforces allowlist downstream
@@ -105,7 +107,7 @@ nlbSg.addIngressRule(ec2.Peer.prefixList('pl-4fa04526'), ec2.Port.tcp(80), 'HTTP
 Replace the CDK L2 `ARecord` with a `CfnRecordSet` using the actual live
 IP, and apply a `RETAIN` removal policy. The control plane is the authoritative
 owner of this record after Day-0; CDK only seeds it
-([`base-stack.ts`](../../infra/lib/stacks/kubernetes/base-stack.ts)).
+([`base-stack.ts`](../../../infra/lib/stacks/kubernetes/base-stack.ts)).
 
 ```typescript
 const cpRecord = new route53.CfnRecordSet(this, 'ControlPlaneRecord', {

@@ -8,6 +8,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 Integration tests that verify NLB target group registration fail
@@ -44,7 +46,7 @@ NLB documentation.
 
 The fix introduced in commit `81c020af` adds a `waitForTargetRegistration()`
 polling helper to the integration test. Constants from the compiled test
-([`argocd-worker-stack.integration.test.js:273-275`](../../infra/dist/tests/integration/kubernetes/argocd-worker-stack.integration.test.js)):
+([`argocd-worker-stack.integration.test.js:273-275`](../../../infra/dist/tests/integration/kubernetes/argocd-worker-stack.integration.test.js)):
 
 ```javascript
 const NLB_MAX_ATTEMPTS = 10;
@@ -53,7 +55,7 @@ const NLB_BACKOFF_MS = 15_000;   // 15 seconds between attempts
 ```
 
 Each test using NLB target verification also has a 180-second Jest timeout
-([`argocd-worker-stack.integration.test.js:285, 290`](../../infra/dist/tests/integration/kubernetes/argocd-worker-stack.integration.test.js)).
+([`argocd-worker-stack.integration.test.js:285, 290`](../../../infra/dist/tests/integration/kubernetes/argocd-worker-stack.integration.test.js)).
 
 ## How to diagnose
 

@@ -8,6 +8,8 @@ created: 2026-04-29
 updated: 2026-04-29
 ---
 
+> **Archived 2026-07-06 — superseded.** This document describes the pre-EKS public edge (CloudFront / NLB / Traefik), retired in the kubeadm to Amazon EKS migration. The edge is now a single internet-facing ALB with a regional WAFv2 WebACL ([ADR-0010](../../decisions/0010-alb-wafv2-edge-over-cloudfront-nlb.md)); see [EKS platform architecture](../../concepts/eks-platform-architecture.md). Kept as decision and debugging history — do not treat as current state. Some code and cross-doc links below point at kubeadm-era paths that have since moved.
+
 ## Symptom
 
 CloudFront distribution creation or update fails with an error indicating
@@ -41,7 +43,7 @@ hostname resolves to the same IP address.
 
 The `EdgeStack` converts the EIP to its EC2 DNS hostname using a CDK
 `Fn.join` transformation at synthesis time
-([`edge-stack.ts:443-447`](../../infra/lib/stacks/kubernetes/edge-stack.ts#L443)):
+([`edge-stack.ts:443-447`](../../../infra/lib/stacks/kubernetes/edge-stack.ts#L443)):
 
 ```typescript
 const eipDnsName = cdk.Fn.join('', [
@@ -67,7 +69,7 @@ DNS, causing CloudFront to fail all origin requests.
 The SharedVpc in eu-west-1 is imported via `Vpc.fromLookup` in `BaseStack`
 and is not managed by CDK. The DNS Hostnames setting must be enabled
 manually in the AWS Console or via CLI on the imported VPC
-([`edge-stack.ts:438-442`](../../infra/lib/stacks/kubernetes/edge-stack.ts#L438)):
+([`edge-stack.ts:438-442`](../../../infra/lib/stacks/kubernetes/edge-stack.ts#L438)):
 
 ```
 PREREQUISITE: The VPC in eu-west-1 MUST have "DNS Hostnames" enabled
@@ -119,7 +121,7 @@ transformation automatically — no manual string manipulation is needed.
 
 ## Related
 
-- [cdk-monitoring Platform](../projects/cdk-monitoring-platform.md) — EdgeStack
+- [cdk-monitoring Platform](../../projects/cdk-monitoring-platform.md) — EdgeStack
   ownership (us-east-1) and SSM integration with eu-west-1 EIP parameter
 - [docs/troubleshooting/cloudfront-behaviour-first-match-auth-failure.md](cloudfront-behaviour-first-match-auth-failure.md)
   — other EdgeStack CloudFront failure modes

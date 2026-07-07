@@ -26,7 +26,7 @@ import * as cdk from 'aws-cdk-lib/core';
 import { Construct } from 'constructs';
 
 import { Environment } from '../../config/environments';
-import { EksPublicWafConstruct } from '../../constructs/security/eks-public-waf';
+import { EksPublicWafConstruct, OversizeBodyExemptConfig } from '../../constructs/security/eks-public-waf';
 
 export interface EksPublicWafStackProps extends cdk.StackProps {
     readonly targetEnvironment: Environment;
@@ -52,6 +52,11 @@ export interface EksPublicWafStackProps extends cdk.StackProps {
      * {@link EksPublicWafProps.ipAllowlistExemptPaths}.
      */
     readonly ipAllowlistExemptPaths?: readonly string[];
+    /**
+     * Relaxes the 8 KB body cap for the app's TanStack server-function calls.
+     * See {@link EksPublicWafProps.oversizeBodyExempt}.
+     */
+    readonly oversizeBodyExempt?: OversizeBodyExemptConfig;
     readonly ssmPrefix: string;
     readonly namePrefix?: string;
     /**
@@ -89,6 +94,7 @@ export class EksPublicWafStack extends cdk.Stack {
             rateLimitedHosts: props.rateLimitedHosts,
             rateLimitPerIp: props.rateLimitPerIp,
             ipAllowlistExemptPaths: props.ipAllowlistExemptPaths,
+            oversizeBodyExempt: props.oversizeBodyExempt,
         });
 
         this.webAclArn = waf.webAclArn;

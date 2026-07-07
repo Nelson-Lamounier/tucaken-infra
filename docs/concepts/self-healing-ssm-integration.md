@@ -260,5 +260,5 @@ sequenceDiagram
 ## Related
 
 - [Self-Healing Platform](../projects/self-healing-platform.md) — canonical project-level entry point: all components, failure modes, manual intervention points, and AMI refresh pipeline in one view
-- [Bootstrap Deadlock — CCM](../runbooks/bootstrap-deadlock-ccm.md) — manual fallback for CCM circular dependency
+- [Bootstrap Deadlock — CCM](../_archive/runbooks/bootstrap-deadlock-ccm.md) — manual fallback for CCM circular dependency
 - [AMI Refresh IAM Permission Failures](../troubleshooting/ami-refresh-iam-permissions.md) — IAM debugging series for the AMI refresh Step Functions pipeline

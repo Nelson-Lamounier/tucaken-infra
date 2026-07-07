@@ -412,8 +412,8 @@ worker stacks already `addDependency(controlPlaneStack)`
 - [Security Group Configuration](security-group-configuration.md)
 - [CloudWatch Logs Strategy](cloudwatch-logs-strategy.md)
 - [SSM Cross-Stack Pattern](../patterns/ssm-cross-stack-pattern.md)
-- [ADR-001: Self-Managed K8s vs EKS](../adrs/0001-self-managed-k8s-vs-eks.md)
-- [Launch Template & AMI Deployment](../launch-template-ami-deployment.md)
+- [ADR-001: Self-Managed K8s vs EKS](../decisions/0001-self-managed-k8s-vs-eks.md)
+- [Launch Template Configuration](launch-template-configuration.md)
 
 <!--
 Evidence trail (auto-generated):

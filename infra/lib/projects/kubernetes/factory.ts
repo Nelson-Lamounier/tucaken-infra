@@ -423,6 +423,10 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
         // Host-scoped allowlist + managed rules + rate limit. Attached to
         // the shared ALB via `alb.ingress.kubernetes.io/wafv2-acl-arn` on
         // a workload Ingress. Plan 5b § 0.4.
+        //
+        // Product hosts (tucaken-app) — shared by the per-IP rate limit and the
+        // server-function oversize-body exemption below so the two never drift.
+        const productHosts = ['tucaken.io', 'www.tucaken.io', 'tucaken.com', 'www.tucaken.com'];
         const eksPublicWaf = new EksPublicWafStack(
             scope,
             stackId(this.namespace, 'EksPublicWaf', environment),
@@ -444,13 +448,7 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 // addition to the API host — defence-in-depth above the
                 // app-level per-IP limiter, which is per-pod and therefore
                 // weak under the blue/green + HPA replica fan-out.
-                rateLimitedHosts: [
-                    'api.nelsonlamounier.com',
-                    'tucaken.io',
-                    'www.tucaken.io',
-                    'tucaken.com',
-                    'www.tucaken.com',
-                ],
+                rateLimitedHosts: ['api.nelsonlamounier.com', ...productHosts],
                 rateLimitPerIp: 2000,
                 // GitHub App webhook (admin-api /api/github/webhook) is
                 // HMAC-verified, delivered from GitHub's IPs, and carries
@@ -459,6 +457,15 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 // body-inspecting managed rules. IP reputation + rate limit
                 // still apply. Codifies the 2026-07-02 live WAF fix.
                 ipAllowlistExemptPaths: ['/api/github/webhook'],
+                // tucaken-app posts TanStack server functions (POST /_serverFn/*)
+                // whose serialised job-description body exceeds the Common rule
+                // set's 8 KB SizeRestrictions_BODY cap; relax that one rule for
+                // the product hosts only. Calls are Cognito-authenticated +
+                // Zod-validated and admin-api caps the JD at 100 KB.
+                oversizeBodyExempt: {
+                    hosts: productHosts,
+                    pathPrefix: '/_serverfn/',
+                },
                 ssmPrefix,
                 clusterName: eksConfig.clusterName,
             },

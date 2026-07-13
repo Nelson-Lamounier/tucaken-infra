@@ -85,7 +85,7 @@
     "@types/source-map-support": "^0.5.10",
     "@typescript-eslint/eslint-plugin": "^8.18.1",
     "@typescript-eslint/parser": "^8.59.2",
-    "aws-cdk": "^2.1129.0",
+    "aws-cdk": "^2.1130.0",
     "aws-sdk-client-mock": "^4.1.0",
     "aws-sdk-client-mock-jest": "^4.1.0",
     "dependency-cruiser": "^17.3.7",

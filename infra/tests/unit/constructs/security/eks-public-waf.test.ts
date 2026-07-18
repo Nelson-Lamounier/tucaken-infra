@@ -94,4 +94,41 @@ describe('EksPublicWafConstruct — oversizeBodyExempt', () => {
         expect(rulesOf(synth()).find((r) => r.Name === 'BlockOversizeBodyExceptServerFn')).toBeUndefined();
         expect(commonOverrides(synth())).toBeUndefined();
     });
+
+    it('should exempt extra surfaces from the re-applied cap: any-host telemetry + host-scoped webhook', () => {
+        // Codifies the 2026-07-18 live fix: Faro RUM batches (/faro/collect,
+        // any host) and large GitHub push deliveries (/api/github/webhook on
+        // the admin host) were being 403'd by the re-applied 8 KB cap.
+        const cfg: OversizeBodyExemptConfig = {
+            ...OVERSIZE,
+            extraExemptPaths: [
+                { pathPrefix: '/faro/collect' },
+                { pathPrefix: '/api/github/webhook', hosts: ['admin.example.com'] },
+            ],
+        };
+        const guard = rulesOf(synth(undefined, cfg)).find((r) => r.Name === 'BlockOversizeBodyExceptServerFn');
+        expect(guard).toBeDefined();
+        const s = JSON.stringify(guard);
+        // All three surfaces present, OR'd inside the NOT
+        expect(s).toContain('/_serverfn/');
+        expect(s).toContain('/faro/collect');
+        expect(s).toContain('/api/github/webhook');
+        expect(s).toContain('admin.example.com');
+        expect(s).toContain('OrStatement');
+    });
+
+    it('should not host-scope an extra surface that omits hosts', () => {
+        const cfg: OversizeBodyExemptConfig = {
+            hosts: ['tucaken.io'],
+            pathPrefix: '/_serverfn/',
+            extraExemptPaths: [{ pathPrefix: '/faro/collect' }],
+        };
+        const guard = rulesOf(synth(undefined, cfg)).find((r) => r.Name === 'BlockOversizeBodyExceptServerFn');
+        const not = JSON.stringify(guard!.Statement.AndStatement!.Statements[1]);
+        // The faro leg carries method + path only — exactly one Host header
+        // matcher may appear in the whole NOT (the server-fn surface's).
+        const hostMatches = (not.match(/"SingleHeader":\{"Name":"host"\}/gi) ?? not.match(/host/gi) ?? []).length;
+        expect(not).toContain('/faro/collect');
+        expect((not.match(/singleheader/gi) ?? []).length).toBe(1);
+    });
 });

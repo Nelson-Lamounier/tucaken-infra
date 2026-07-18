@@ -49,6 +49,7 @@ import {
     EksAddonsStack,
     EksAlbCertsStack,
     EksPublicWafStack,
+    EksDeadmanStack,
     EksClusterStack,
     EksKarpenterStack,
     EksPodIdentityStack,
@@ -456,7 +457,17 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 // cap — exempt it from the IP allowlist and the
                 // body-inspecting managed rules. IP reputation + rate limit
                 // still apply. Codifies the 2026-07-02 live WAF fix.
-                ipAllowlistExemptPaths: ['/api/github/webhook'],
+                ipAllowlistExemptPaths: [
+                    '/api/github/webhook',
+                    // Prometheus liveness pass-through probed by the
+                    // Route53 dead-man health check (EksDeadmanStack).
+                    // Checkers come from Route53's global IP fleet, so
+                    // the operator IP allowlist must not gate it. The
+                    // path is liveness-only: the auth-proxy nginx
+                    // exact-match location proxies it without auth and
+                    // it exposes no metric data.
+                    '/prometheus/-/healthy',
+                ],
                 // tucaken-app posts TanStack server functions (POST /_serverFn/*)
                 // whose serialised job-description body exceeds the Common rule
                 // set's 8 KB SizeRestrictions_BODY cap; relax that one rule for
@@ -471,6 +482,25 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
             },
         );
         stacks.push(eksPublicWaf); stackMap.eksPublicWaf = eksPublicWaf;
+
+        // External dead-man's-switch for Prometheus (2026-07 incident: a
+        // 22h PVC-full crashloop paged nobody because every alert evaluates
+        // inside Prometheus). Route53 health check + alarm live in
+        // us-east-1 — R53 publishes HealthCheckStatus only there, and an
+        // alarm can only notify a same-region SNS topic. No cross-stack
+        // references, so the region split needs no crossRegionReferences.
+        const eksDeadman = new EksDeadmanStack(
+            scope,
+            stackId(this.namespace, 'EksDeadman', environment),
+            {
+                env: { account: env.account, region: 'us-east-1' },
+                targetEnvironment: environment,
+                monitoredHost: 'ops.nelsonlamounier.com',
+                monitoredPath: '/prometheus/-/healthy',
+                notificationEmail: process.env.NOTIFICATION_EMAIL,
+            },
+        );
+        stacks.push(eksDeadman); stackMap.eksDeadman = eksDeadman;
 
         if (environment === Environment.DEVELOPMENT) {
             const eksScheduler = new EksSchedulerStack(

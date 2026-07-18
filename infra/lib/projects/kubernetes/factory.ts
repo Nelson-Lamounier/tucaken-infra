@@ -465,6 +465,20 @@ export class KubernetesProjectFactory implements IProjectFactory<KubernetesFacto
                 oversizeBodyExempt: {
                     hosts: productHosts,
                     pathPrefix: '/_serverfn/',
+                    // 2026-07-18 live fix (WAF sampled requests showed BLOCKs):
+                    //  - /faro/collect: Faro RUM batches routinely exceed 8 KB
+                    //    and were 403'ing, silently dropping browser telemetry.
+                    //    The ALB routes this path host-agnostically, so no host
+                    //    scope; Alloy validates the payload server-side.
+                    //  - /api/github/webhook: multi-commit push deliveries
+                    //    exceed 8 KB and were being dropped (missed repo
+                    //    syncs). HMAC verification is the authenticity check;
+                    //    the existing ipAllowlistExemptPaths entry only covered
+                    //    the IP gate and managed rules, not this custom cap.
+                    extraExemptPaths: [
+                        { pathPrefix: '/faro/collect' },
+                        { pathPrefix: '/api/github/webhook', hosts: ['admin.nelsonlamounier.com'] },
+                    ],
                 },
                 ssmPrefix,
                 clusterName: eksConfig.clusterName,

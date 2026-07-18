@@ -24,6 +24,20 @@ import { Construct } from 'constructs';
  * Config for {@link EksPublicWafProps.oversizeBodyExempt}. Relaxes the Common
  * rule set's 8 KB body cap for one authenticated request surface.
  */
+/**
+ * One additional surface exempted from the re-applied body cap. Each surface
+ * must carry its own authenticity check (HMAC, collector-side validation,
+ * authenticated session) — the cap is the only protection being waived.
+ */
+export interface OversizeExemptPathConfig {
+    /** URI path prefix (lowercase, STARTS_WITH), e.g. `/faro/collect`. */
+    readonly pathPrefix: string;
+    /** HTTP method (exact). @default 'POST' */
+    readonly method?: string;
+    /** Hosts (lowercase, exact). Omit to exempt the path on ANY host. */
+    readonly hosts?: readonly string[];
+}
+
 export interface OversizeBodyExemptConfig {
     /** Hosts (lowercase, exact) where oversize bodies on the exempt path are allowed. */
     readonly hosts: readonly string[];
@@ -33,6 +47,13 @@ export interface OversizeBodyExemptConfig {
     readonly method?: string;
     /** Body-size cap (bytes) re-applied to non-exempt requests. @default 8192 */
     readonly maxBodyBytes?: number;
+    /**
+     * Further surfaces exempted from the re-applied cap (OR'd with the
+     * server-function surface). Added 2026-07-18 for /faro/collect (RUM
+     * batches, any host) and /api/github/webhook (large push deliveries),
+     * both of which the cap was silently 403'ing.
+     */
+    readonly extraExemptPaths?: readonly OversizeExemptPathConfig[];
 }
 
 export interface EksPublicWafProps {
@@ -257,43 +278,60 @@ export class EksPublicWafConstruct extends Construct {
             const maxBodyBytes = oversize.maxBodyBytes ?? 8192;
             const pathPrefix = oversize.pathPrefix.toLowerCase();
 
-            const oversizeHostMatches: wafv2.CfnWebACL.StatementProperty[] = oversize.hosts.map((host) => ({
-                byteMatchStatement: {
-                    searchString: host,
-                    positionalConstraint: 'EXACTLY',
-                    fieldToMatch: { singleHeader: { name: 'host' } },
-                    textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
-                },
-            }));
-            const oversizeHostAny: wafv2.CfnWebACL.StatementProperty =
-                oversizeHostMatches.length === 1
-                    ? oversizeHostMatches[0]
-                    : { orStatement: { statements: oversizeHostMatches } };
-
-            // The exempt surface: <method> <pathPrefix>* on one of the app hosts.
-            const serverFnRequest: wafv2.CfnWebACL.StatementProperty = {
-                andStatement: {
-                    statements: [
-                        {
-                            byteMatchStatement: {
-                                searchString: method,
-                                positionalConstraint: 'EXACTLY',
-                                fieldToMatch: { method: {} },
-                                textTransformations: [{ priority: 0, type: 'NONE' }],
-                            },
+            // Build one exempt surface: <method> <pathPrefix>* [on one of hosts].
+            // Hosts omitted → the path is exempt on any host (e.g. /faro/collect,
+            // which the ALB routes host-agnostically).
+            const buildExemptSurface = (
+                surfaceMethod: string,
+                surfacePathPrefix: string,
+                surfaceHosts?: readonly string[],
+            ): wafv2.CfnWebACL.StatementProperty => {
+                const legs: wafv2.CfnWebACL.StatementProperty[] = [
+                    {
+                        byteMatchStatement: {
+                            searchString: surfaceMethod,
+                            positionalConstraint: 'EXACTLY',
+                            fieldToMatch: { method: {} },
+                            textTransformations: [{ priority: 0, type: 'NONE' }],
                         },
-                        {
-                            byteMatchStatement: {
-                                searchString: pathPrefix,
-                                positionalConstraint: 'STARTS_WITH',
-                                fieldToMatch: { uriPath: {} },
-                                textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
-                            },
+                    },
+                    {
+                        byteMatchStatement: {
+                            searchString: surfacePathPrefix,
+                            positionalConstraint: 'STARTS_WITH',
+                            fieldToMatch: { uriPath: {} },
+                            textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
                         },
-                        oversizeHostAny,
-                    ],
-                },
+                    },
+                ];
+                if (surfaceHosts && surfaceHosts.length > 0) {
+                    const hostMatches: wafv2.CfnWebACL.StatementProperty[] = surfaceHosts.map((host) => ({
+                        byteMatchStatement: {
+                            searchString: host,
+                            positionalConstraint: 'EXACTLY',
+                            fieldToMatch: { singleHeader: { name: 'host' } },
+                            textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                        },
+                    }));
+                    legs.push(hostMatches.length === 1 ? hostMatches[0] : { orStatement: { statements: hostMatches } });
+                }
+                return { andStatement: { statements: legs } };
             };
+
+            const exemptSurfaces: wafv2.CfnWebACL.StatementProperty[] = [
+                buildExemptSurface(method, pathPrefix, oversize.hosts),
+                ...(oversize.extraExemptPaths ?? []).map((extra) =>
+                    buildExemptSurface(
+                        (extra.method ?? 'POST').toUpperCase(),
+                        extra.pathPrefix.toLowerCase(),
+                        extra.hosts,
+                    ),
+                ),
+            ];
+            const serverFnRequest: wafv2.CfnWebACL.StatementProperty =
+                exemptSurfaces.length === 1
+                    ? exemptSurfaces[0]
+                    : { orStatement: { statements: exemptSurfaces } };
 
             // Re-applies the 8 KB body cap everywhere EXCEPT the server-function
             // surface (SizeRestrictions_BODY is Count'd below). oversizeHandling

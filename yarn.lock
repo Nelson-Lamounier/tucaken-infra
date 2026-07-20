@@ -3173,7 +3173,7 @@ __metadata:
   dependencies:
     "@types/jest": "npm:^29.5.14"
     aws-cdk-lib: "npm:^2.261.0"
-    constructs: "npm:^10.4.2"
+    constructs: "npm:^10.7.0"
     jest: "npm:^29.7.0"
     ts-jest: "npm:^29.3.1"
     typescript: "npm:~5.8.2"
@@ -4963,12 +4963,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"aws-cdk@npm:^2.1129.0":
-  version: 2.1129.0
-  resolution: "aws-cdk@npm:2.1129.0"
+"aws-cdk@npm:^2.1132.0":
+  version: 2.1132.0
+  resolution: "aws-cdk@npm:2.1132.0"
   bin:
     cdk: bin/cdk
-  checksum: 10c0/ed0b59b05d1d3ec50e51dec52ba8b01b06755a61a497499647c7ded2f50f5716ee1ba465ff18032e66bbc86f94e0bc420c943c775f851f31f5145545c448ff03
+  checksum: 10c0/a1129675fa5a2f52d28367afdc2ae1630f5d5122ccb5c204edeff7f8b8609c2dd26e72bc68b45c907168071df06c121fbc8562a7ae62d4e198c229a9d55d227c
   languageName: node
   linkType: hard
 
@@ -5330,13 +5330,13 @@ __metadata:
     "@types/source-map-support": "npm:^0.5.10"
     "@typescript-eslint/eslint-plugin": "npm:^8.18.1"
     "@typescript-eslint/parser": "npm:^8.59.2"
-    aws-cdk: "npm:^2.1129.0"
+    aws-cdk: "npm:^2.1132.0"
     aws-cdk-lib: "npm:^2.261.0"
     aws-sdk-client-mock: "npm:^4.1.0"
     aws-sdk-client-mock-jest: "npm:^4.1.0"
     cdk-nag: "npm:^2.37.55"
     chalk: "npm:^5.6.2"
-    constructs: "npm:^10.4.4"
+    constructs: "npm:^10.7.0"
     dependency-cruiser: "npm:^17.3.7"
     dotenv: "npm:^16.3.1"
     esbuild: "npm:^0.28.0"
@@ -5515,10 +5515,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"constructs@npm:^10.4.2, constructs@npm:^10.4.4":
-  version: 10.6.0
-  resolution: "constructs@npm:10.6.0"
-  checksum: 10c0/67fbd1719698509b527d2d7c1f8a6ac26d91eaf15edc69fedebc71100abf4d8ebc306184883fbb677299d6fd9c2dcbbea80db0e4201564f88f9ff88f15d6668f
+"constructs@npm:^10.7.0":
+  version: 10.7.0
+  resolution: "constructs@npm:10.7.0"
+  checksum: 10c0/b1c5148dbe0404e30bd3e2a8aa2c40a14459f932749f68fe600a828549eae3445e5cf9ccddc37b47733b2486d06111cc5534384b62eaf7bfbaac479f41e05425
   languageName: node
   linkType: hard
 

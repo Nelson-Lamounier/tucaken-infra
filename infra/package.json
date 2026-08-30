@@ -142,7 +142,7 @@
     "@aws-sdk/client-ssm": "^3.1001.0",
     "@aws-sdk/lib-dynamodb": "^3.1079.0",
     "@aws-sdk/s3-request-presigner": "^3.1078.0",
-    "@aws-sdk/util-dynamodb": "^3.996.0",
+    "@aws-sdk/util-dynamodb": "^3.996.6",
     "@cdklabs/generative-ai-cdk-constructs": "^0.1.314",
     "@nelsonlamounier/cdk-deploy-scripts": "^1.0.3",
     "@smithy/util-waiter": "^4.2.8",

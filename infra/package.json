@@ -83,7 +83,7 @@
     "@types/jest": "^29.5.11",
     "@types/node": "^22.0.0",
     "@types/source-map-support": "^0.5.10",
-    "@typescript-eslint/eslint-plugin": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.59.2",
     "aws-cdk": "^2.1129.0",
     "aws-sdk-client-mock": "^4.1.0",

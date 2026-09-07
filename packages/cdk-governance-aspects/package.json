@@ -23,7 +23,7 @@
     "aws-cdk-lib": "^2.261.0",
     "constructs": "^10.4.2",
     "jest": "^29.7.0",
-    "ts-jest": "^29.3.1",
+    "ts-jest": "^29.4.12",
     "typescript": "~5.8.2"
   },
   "keywords": [
